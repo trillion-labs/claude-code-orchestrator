@@ -1044,8 +1044,12 @@ if work:
     const managed = this.sessions.get(sessionId);
     if (!managed) throw new Error(`Session ${sessionId} not found`);
 
-    const workDir = managed.session.workDir;
+    const rawWorkDir = managed.session.workDir;
     const machine = managed.machine;
+    // Expand ~ to home directory for local filesystem operations
+    const workDir = rawWorkDir.startsWith("~")
+      ? rawWorkDir.replace(/^~/, homedir())
+      : rawWorkDir;
 
     if (machine.type === "local") {
       // Local: read from filesystem directly
@@ -1079,8 +1083,12 @@ if work:
     const managed = this.sessions.get(sessionId);
     if (!managed) throw new Error(`Session ${sessionId} not found`);
 
-    const workDir = managed.session.workDir;
+    const rawWorkDir = managed.session.workDir;
     const machine = managed.machine;
+    // Expand ~ to home directory for local filesystem operations
+    const workDir = rawWorkDir.startsWith("~")
+      ? rawWorkDir.replace(/^~/, homedir())
+      : rawWorkDir;
     const dirPath = `${workDir}/.claude`;
     const fileName = file === "settings" ? "settings.local.json" : "CLAUDE.md";
 
