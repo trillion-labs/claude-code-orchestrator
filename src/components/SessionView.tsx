@@ -1,13 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
 import { PromptInput } from "./PromptInput";
 import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Monitor, Server, X, FolderOpen, ShieldAlert, ShieldOff } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, ShieldAlert, ShieldOff, Settings } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
+import { SettingsDialog } from "./SettingsDialog";
+import type { ClientMessage } from "@/lib/shared/protocol";
 
 interface SessionViewProps {
   session: Session;
@@ -17,6 +20,7 @@ interface SessionViewProps {
   onSendPrompt: (prompt: string) => void;
   onPermissionResponse: (requestId: string, allow: boolean) => void;
   onTerminate: () => void;
+  send: (msg: ClientMessage) => void;
 }
 
 export function SessionView({
@@ -27,9 +31,18 @@ export function SessionView({
   onSendPrompt,
   onPermissionResponse,
   onTerminate,
+  send,
 }: SessionViewProps) {
   const isLocal = session.machineId === "local";
   const isBusy = session.status === "busy" || session.status === "starting";
+  const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
+
+  const handleSessionSettingsOpen = (open: boolean) => {
+    setSessionSettingsOpen(open);
+    if (open) {
+      send({ type: "session.config.read", sessionId: session.id });
+    }
+  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -83,6 +96,14 @@ export function SessionView({
           <Button
             variant="ghost"
             size="icon"
+            onClick={() => handleSessionSettingsOpen(true)}
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          >
+            <Settings className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onTerminate}
             className="h-8 w-8 text-destructive hover:text-destructive"
           >
@@ -110,6 +131,14 @@ export function SessionView({
 
       {/* Input */}
       <PromptInput onSend={onSendPrompt} disabled={isBusy} />
+
+      <SettingsDialog
+        open={sessionSettingsOpen}
+        onOpenChange={handleSessionSettingsOpen}
+        send={send}
+        mode="session"
+        sessionId={session.id}
+      />
     </div>
   );
 }

@@ -1038,6 +1038,82 @@ if work:
     }
   }
 
+  // ── Session-local config (.claude/settings.local.json + .claude/CLAUDE.md) ──
+
+  async readSessionConfig(sessionId: string): Promise<{ settings: string; claudemd: string }> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) throw new Error(`Session ${sessionId} not found`);
+
+    const workDir = managed.session.workDir;
+    const machine = managed.machine;
+
+    if (machine.type === "local") {
+      // Local: read from filesystem directly
+      let settings = "{}";
+      let claudemd = "";
+      try {
+        settings = await readFile(join(workDir, ".claude", "settings.local.json"), "utf-8");
+      } catch { /* file may not exist */ }
+      try {
+        claudemd = await readFile(join(workDir, ".claude", "CLAUDE.md"), "utf-8");
+      } catch { /* file may not exist */ }
+      return { settings, claudemd };
+    } else {
+      // SSH: use execFresh to avoid hanging on connections with forwardIn
+      const readCmd = (filePath: string, fallback: string) =>
+        `cat "${filePath}" 2>/dev/null || echo '${fallback}'`;
+
+      const settingsPath = `${workDir}/.claude/settings.local.json`;
+      const claudemdPath = `${workDir}/.claude/CLAUDE.md`;
+
+      const [settings, claudemd] = await Promise.all([
+        this.execRemoteRead(machine, readCmd(settingsPath, "{}")),
+        this.execRemoteRead(machine, readCmd(claudemdPath, "")),
+      ]);
+
+      return { settings, claudemd };
+    }
+  }
+
+  async writeSessionConfig(sessionId: string, file: "settings" | "claudemd", content: string): Promise<void> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) throw new Error(`Session ${sessionId} not found`);
+
+    const workDir = managed.session.workDir;
+    const machine = managed.machine;
+    const dirPath = `${workDir}/.claude`;
+    const fileName = file === "settings" ? "settings.local.json" : "CLAUDE.md";
+
+    if (file === "settings") {
+      // Validate JSON before writing
+      JSON.parse(content);
+    }
+
+    if (machine.type === "local") {
+      const { mkdir: mkdirFs } = await import("fs/promises");
+      await mkdirFs(join(workDir, ".claude"), { recursive: true });
+      await writeFile(join(workDir, ".claude", fileName), content, "utf-8");
+    } else {
+      // SSH: ensure directory exists, then write via SFTP
+      const mkdirCh = await this.sshManager.execFresh(machine, `mkdir -p "${dirPath}"`);
+      await new Promise<void>((resolve) => {
+        mkdirCh.on("close", () => resolve());
+        mkdirCh.on("error", () => resolve());
+      });
+      await this.sshManager.writeRemoteFile(machine, `${dirPath}/${fileName}`, content);
+    }
+  }
+
+  private async execRemoteRead(machine: MachineConfig, command: string): Promise<string> {
+    const channel = await this.sshManager.execFresh(machine, command);
+    return new Promise((resolve) => {
+      let out = "";
+      channel.on("data", (data: Buffer) => { out += data.toString(); });
+      channel.on("close", () => resolve(out));
+      channel.on("error", () => resolve(""));
+    });
+  }
+
   getSSHManager(): SSHConnectionManager {
     return this.sshManager;
   }

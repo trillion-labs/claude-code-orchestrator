@@ -2,8 +2,9 @@ import type { WebSocket } from "ws";
 import type { IncomingMessage, ServerResponse } from "http";
 import { SessionManager } from "./session-manager";
 import { loadSSHHosts } from "./ssh-config-loader";
-import { readFile } from "fs/promises";
+import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import type { MachineConfig, PermissionRequest } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 
@@ -179,6 +180,83 @@ export class WebSocketHandler {
 
       case "session.permissionResponse": {
         this.sessionManager.resolvePermission(msg.requestId, msg.allow);
+        break;
+      }
+
+      case "config.read": {
+        try {
+          const claudeDir = join(homedir(), ".claude");
+          let settings = "";
+          let claudemd = "";
+          try {
+            settings = await readFile(join(claudeDir, "settings.json"), "utf-8");
+          } catch {
+            settings = "{}";
+          }
+          try {
+            claudemd = await readFile(join(claudeDir, "CLAUDE.md"), "utf-8");
+          } catch {
+            claudemd = "";
+          }
+          this.send(ws, { type: "config.data", settings, claudemd });
+        } catch (err) {
+          this.send(ws, { type: "config.error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "session.config.read": {
+        try {
+          const config = await this.sessionManager.readSessionConfig(msg.sessionId);
+          this.send(ws, {
+            type: "session.config.data",
+            sessionId: msg.sessionId,
+            settings: config.settings,
+            claudemd: config.claudemd,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "session.config.error",
+            sessionId: msg.sessionId,
+            error: (err as Error).message,
+          });
+        }
+        break;
+      }
+
+      case "session.config.write": {
+        try {
+          await this.sessionManager.writeSessionConfig(msg.sessionId, msg.file, msg.content);
+          this.send(ws, {
+            type: "session.config.saved",
+            sessionId: msg.sessionId,
+            file: msg.file,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "session.config.error",
+            sessionId: msg.sessionId,
+            error: (err as Error).message,
+          });
+        }
+        break;
+      }
+
+      case "config.write": {
+        try {
+          const claudeDir = join(homedir(), ".claude");
+          await mkdir(claudeDir, { recursive: true });
+          if (msg.file === "settings") {
+            // Validate JSON before writing
+            JSON.parse(msg.content);
+            await writeFile(join(claudeDir, "settings.json"), msg.content, "utf-8");
+          } else {
+            await writeFile(join(claudeDir, "CLAUDE.md"), msg.content, "utf-8");
+          }
+          this.send(ws, { type: "config.saved", file: msg.file });
+        } catch (err) {
+          this.send(ws, { type: "config.error", error: (err as Error).message });
+        }
         break;
       }
     }

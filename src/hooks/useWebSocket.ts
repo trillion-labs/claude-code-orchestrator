@@ -26,6 +26,8 @@ export function useWebSocket() {
     appendStreamDelta,
     setDiscoveredSessions,
     addAttention,
+    setGlobalConfig,
+    setSessionConfig,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -88,6 +90,30 @@ export function useWebSocket() {
           setDiscoveredSessions(msg.machineId, msg.sessions);
           break;
 
+        case "config.data":
+          setGlobalConfig(msg.settings, msg.claudemd);
+          break;
+
+        case "config.saved":
+          console.log(`[Config] Saved ${msg.file}`);
+          break;
+
+        case "config.error":
+          console.error("[Config] Error:", msg.error);
+          break;
+
+        case "session.config.data":
+          setSessionConfig(msg.sessionId, msg.settings, msg.claudemd);
+          break;
+
+        case "session.config.saved":
+          console.log(`[SessionConfig] Saved ${msg.file} for ${msg.sessionId}`);
+          break;
+
+        case "session.config.error":
+          console.error(`[SessionConfig] Error for ${msg.sessionId}:`, msg.error);
+          break;
+
         case "session.error":
           console.error(`Session ${msg.sessionId} error:`, msg.error);
           break;
@@ -97,7 +123,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention]
+    [addSession, updateSessionStatus, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig]
   );
 
   const connect = useCallback(() => {

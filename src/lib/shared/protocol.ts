@@ -35,7 +35,11 @@ export type ClientMessage =
       sessionId: string;
       requestId: string;
       allow: boolean;
-    };
+    }
+  | { type: "config.read" }
+  | { type: "config.write"; file: "settings" | "claudemd"; content: string }
+  | { type: "session.config.read"; sessionId: string }
+  | { type: "session.config.write"; sessionId: string; file: "settings" | "claudemd"; content: string };
 
 // ── Server → Client Messages ──
 
@@ -87,6 +91,35 @@ export type ServerMessage =
       type: "session.permissionRequest";
       sessionId: string;
       request: PermissionRequest;
+    }
+  | {
+      type: "config.data";
+      settings: string;
+      claudemd: string;
+    }
+  | {
+      type: "config.saved";
+      file: "settings" | "claudemd";
+    }
+  | {
+      type: "config.error";
+      error: string;
+    }
+  | {
+      type: "session.config.data";
+      sessionId: string;
+      settings: string;
+      claudemd: string;
+    }
+  | {
+      type: "session.config.saved";
+      sessionId: string;
+      file: "settings" | "claudemd";
+    }
+  | {
+      type: "session.config.error";
+      sessionId: string;
+      error: string;
     }
   | {
       type: "error";

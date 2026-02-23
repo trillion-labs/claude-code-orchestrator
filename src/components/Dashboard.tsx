@@ -1,13 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useSessionStore } from "@/hooks/useSessionStore";
 import { SessionCard } from "./SessionCard";
 import { SessionView } from "./SessionView";
 import { MachineSelector } from "./MachineSelector";
+import { SettingsDialog } from "./SettingsDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Terminal } from "lucide-react";
+import { Terminal, Settings } from "lucide-react";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
@@ -52,6 +54,14 @@ export function Dashboard() {
     send({ type: "session.terminate", sessionId: activeSessionId });
   };
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const handleSettingsOpen = (open: boolean) => {
+    setSettingsOpen(open);
+    if (open) {
+      send({ type: "config.read" });
+    }
+  };
+
   const activeDisplayName = activeSessionId
     ? getSessionDisplayName(activeSessionId)
     : undefined;
@@ -63,8 +73,20 @@ export function Dashboard() {
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
             <Terminal className="w-5 h-5" />
-            <h1 className="font-semibold text-sm">Claude Orchestrator</h1>
+            <h1 className="font-semibold text-sm flex-1">Claude Orchestrator</h1>
+            <button
+              onClick={() => handleSettingsOpen(true)}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={handleSettingsOpen}
+            send={send}
+            mode="global"
+          />
           <MachineSelector
             machines={machines}
             discoveredSessions={discoveredSessions}
@@ -115,6 +137,7 @@ export function Dashboard() {
             onSendPrompt={handleSendPrompt}
             onPermissionResponse={handlePermissionResponse}
             onTerminate={handleTerminate}
+            send={send}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">

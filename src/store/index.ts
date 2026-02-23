@@ -17,6 +17,11 @@ interface SessionState {
   pendingAttention: Map<string, Set<string>>;
   // Custom session names (user-set or auto-extracted from first message)
   sessionNames: Map<string, string>;
+  // Global config
+  globalSettings: string | null;
+  globalClaudeMd: string | null;
+  // Session-local config
+  sessionConfig: Map<string, { settings: string; claudemd: string }>;
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -51,6 +56,11 @@ interface SessionState {
 
   // Session names
   setSessionName: (sessionId: string, name: string) => void;
+
+  // Global config
+  setGlobalConfig: (settings: string, claudemd: string) => void;
+  // Session-local config
+  setSessionConfig: (sessionId: string, settings: string, claudemd: string) => void;
 }
 
 export const useStore = create<SessionState>((set) => ({
@@ -63,6 +73,9 @@ export const useStore = create<SessionState>((set) => ({
   respondedPermissions: new Map(),
   pendingAttention: new Map(),
   sessionNames: new Map(),
+  globalSettings: null,
+  globalClaudeMd: null,
+  sessionConfig: new Map(),
 
   setSessions: (sessions) =>
     set(() => {
@@ -106,12 +119,15 @@ export const useStore = create<SessionState>((set) => ({
       pendingAttention.delete(sessionId);
       const sessionNames = new Map(state.sessionNames);
       sessionNames.delete(sessionId);
+      const sessionConfig = new Map(state.sessionConfig);
+      sessionConfig.delete(sessionId);
       return {
         sessions,
         messages,
         streamingText,
         pendingAttention,
         sessionNames,
+        sessionConfig,
         activeSessionId:
           state.activeSessionId === sessionId ? null : state.activeSessionId,
       };
@@ -201,5 +217,15 @@ export const useStore = create<SessionState>((set) => ({
       const sessionNames = new Map(state.sessionNames);
       sessionNames.set(sessionId, name);
       return { sessionNames };
+    }),
+
+  setGlobalConfig: (settings, claudemd) =>
+    set({ globalSettings: settings, globalClaudeMd: claudemd }),
+
+  setSessionConfig: (sessionId, settings, claudemd) =>
+    set((state) => {
+      const sessionConfig = new Map(state.sessionConfig);
+      sessionConfig.set(sessionId, { settings, claudemd });
+      return { sessionConfig };
     }),
 }));

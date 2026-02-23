@@ -8,6 +8,7 @@ import {
   type ComponentProps,
 } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -700,6 +701,22 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
       </div>
     );
   },
+  table({ children }) {
+    return (
+      <div className="my-4 overflow-x-auto">
+        <table className="w-full text-sm border-collapse">{children}</table>
+      </div>
+    );
+  },
+  thead({ children }) {
+    return <thead className="border-b border-white/10">{children}</thead>;
+  },
+  th({ children }) {
+    return <th className="text-left px-3 py-2 text-xs font-semibold text-gray-300 uppercase tracking-wider">{children}</th>;
+  },
+  td({ children }) {
+    return <td className="px-3 py-2 text-gray-300 border-t border-white/[0.04]">{children}</td>;
+  },
 };
 
 // ── Segment-based Markdown Content ──
@@ -714,7 +731,7 @@ function MarkdownContent({ content }: { content: string }) {
       {segments.map((seg, i) => {
         if (seg.type === "text") {
           return (
-            <ReactMarkdown key={`text-${i}`} components={markdownComponents}>
+            <ReactMarkdown key={`text-${i}`} remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {seg.content}
             </ReactMarkdown>
           );
