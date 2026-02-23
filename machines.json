@@ -1,0 +1,10 @@
+{
+  "machines": [
+    {
+      "id": "local",
+      "name": "Local Machine",
+      "type": "local",
+      "defaultWorkDir": "~"
+    }
+  ]
+}
