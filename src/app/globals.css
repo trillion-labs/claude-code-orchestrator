@@ -123,4 +123,10 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Fix Radix ScrollArea inner table-display div that expands beyond viewport width.
+     This div (auto-created by Radix) uses display:table which sizes to content,
+     causing children to overflow in width-constrained containers like the sidebar. */
+  [data-sidebar-scroll] [data-slot="scroll-area-viewport"] > div {
+    display: block !important;
+  }
 }

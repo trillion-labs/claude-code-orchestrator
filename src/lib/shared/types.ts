@@ -17,7 +17,7 @@ export interface MachineConfig {
 
 // ── Permission Mode ──
 
-export type PermissionMode = "default" | "accept-edits" | "bypass-permissions";
+export type PermissionMode = "default" | "plan" | "accept-edits" | "bypass-permissions";
 
 export interface PermissionModeConfig {
   label: string;
@@ -30,6 +30,12 @@ export const PERMISSION_MODES: Record<PermissionMode, PermissionModeConfig> = {
   default: {
     label: "Default",
     description: "Asks permission for every tool use",
+    cliArgs: [],
+    dangerLevel: "safe",
+  },
+  plan: {
+    label: "Plan",
+    description: "Read-only analysis tools only",
     cliArgs: [],
     dangerLevel: "safe",
   },

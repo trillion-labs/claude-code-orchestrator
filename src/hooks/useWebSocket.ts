@@ -19,6 +19,7 @@ export function useWebSocket() {
   const {
     addSession,
     updateSessionStatus,
+    updateSessionPermissionMode,
     removeSession,
     setSessions,
     setMachines,
@@ -28,6 +29,7 @@ export function useWebSocket() {
     addAttention,
     setGlobalConfig,
     setSessionConfig,
+    setPlanContent,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -46,19 +48,12 @@ export function useWebSocket() {
         case "session.permissionRequest":
           if (msg.request.toolName === "AskUserQuestion") {
             addAttention(msg.sessionId, "question");
-            // Auto-allow to unblock server's handlePermissionRequest —
-            // the actual user answer is delivered via the prompt flow
-            (event.target as WebSocket).send(
-              JSON.stringify({
-                type: "session.permissionResponse",
-                sessionId: msg.sessionId,
-                requestId: msg.request.requestId,
-                allow: true,
-              })
-            );
-          } else {
-            addAttention(msg.sessionId, `perm:${msg.request.requestId}`);
           }
+          addAttention(msg.sessionId, `perm:${msg.request.requestId}`);
+          break;
+
+        case "session.permissionModeChanged":
+          updateSessionPermissionMode(msg.sessionId, msg.mode);
           break;
 
         case "session.message":
@@ -102,6 +97,10 @@ export function useWebSocket() {
           console.error("[Config] Error:", msg.error);
           break;
 
+        case "session.planContent":
+          setPlanContent(msg.sessionId, msg.content);
+          break;
+
         case "session.config.data":
           setSessionConfig(msg.sessionId, msg.settings, msg.claudemd);
           break;
@@ -123,7 +122,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent]
   );
 
   const connect = useCallback(() => {

@@ -43,10 +43,11 @@ export function Dashboard() {
     removeAttention(activeSessionId, "question");
   };
 
-  const handlePermissionResponse = (requestId: string, allow: boolean) => {
+  const handlePermissionResponse = (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => {
     if (!activeSessionId) return;
-    send({ type: "session.permissionResponse", sessionId: activeSessionId, requestId, allow });
+    send({ type: "session.permissionResponse", sessionId: activeSessionId, requestId, allow, answers, message });
     removeAttention(activeSessionId, `perm:${requestId}`);
+    removeAttention(activeSessionId, "question");
   };
 
   const handleTerminate = () => {
@@ -69,7 +70,7 @@ export function Dashboard() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Left Panel - Session List */}
-      <div className="w-72 border-r flex flex-col">
+      <div className="w-72 border-r flex flex-col overflow-hidden">
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
             <Terminal className="w-5 h-5" />
@@ -95,7 +96,7 @@ export function Dashboard() {
           />
         </div>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-w-0" data-sidebar-scroll>
           <div className="p-2 space-y-1">
             {sessions.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">

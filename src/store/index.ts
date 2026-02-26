@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode } from "@/lib/shared/types";
 
 interface SessionState {
   sessions: Map<string, Session>;
@@ -13,6 +13,8 @@ interface SessionState {
   discoveredSessions: Map<string, ClaudeSessionInfo[]>;
   // Permission decisions: requestId → "allow" | "deny"
   respondedPermissions: Map<string, "allow" | "deny">;
+  // Answered question selections: requestId → {questionIdx: selectedLabel}
+  permissionAnswers: Map<string, Map<number, string | string[]>>;
   // Pending attention indicators per session (e.g. "perm:reqId", "question")
   pendingAttention: Map<string, Set<string>>;
   // Custom session names (user-set or auto-extracted from first message)
@@ -22,6 +24,9 @@ interface SessionState {
   globalClaudeMd: string | null;
   // Session-local config
   sessionConfig: Map<string, { settings: string; claudemd: string }>;
+  // Plan panel
+  planContent: Map<string, string>; // sessionId → plan markdown
+  planPanelOpen: Map<string, boolean>; // sessionId → panel open state
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -32,6 +37,7 @@ interface SessionState {
     totalCostUsd?: number,
     error?: string
   ) => void;
+  updateSessionPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   removeSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string | null) => void;
   setMachines: (machines: MachineConfig[]) => void;
@@ -48,6 +54,7 @@ interface SessionState {
 
   // Permissions
   respondPermission: (requestId: string, decision: "allow" | "deny") => void;
+  setPermissionAnswers: (requestId: string, selections: Map<number, string | string[]>) => void;
 
   // Attention
   addAttention: (sessionId: string, key: string) => void;
@@ -61,6 +68,10 @@ interface SessionState {
   setGlobalConfig: (settings: string, claudemd: string) => void;
   // Session-local config
   setSessionConfig: (sessionId: string, settings: string, claudemd: string) => void;
+  // Plan panel
+  setPlanContent: (sessionId: string, content: string) => void;
+  setPlanPanelOpen: (sessionId: string, open: boolean) => void;
+  clearPlanContent: (sessionId: string) => void;
 }
 
 export const useStore = create<SessionState>((set) => ({
@@ -71,11 +82,14 @@ export const useStore = create<SessionState>((set) => ({
   streamingText: new Map(),
   discoveredSessions: new Map(),
   respondedPermissions: new Map(),
+  permissionAnswers: new Map(),
   pendingAttention: new Map(),
   sessionNames: new Map(),
   globalSettings: null,
   globalClaudeMd: null,
   sessionConfig: new Map(),
+  planContent: new Map(),
+  planPanelOpen: new Map(),
 
   setSessions: (sessions) =>
     set(() => {
@@ -107,6 +121,16 @@ export const useStore = create<SessionState>((set) => ({
       return { sessions };
     }),
 
+  updateSessionPermissionMode: (sessionId, mode) =>
+    set((state) => {
+      const sessions = new Map(state.sessions);
+      const session = sessions.get(sessionId);
+      if (session) {
+        sessions.set(sessionId, { ...session, permissionMode: mode });
+      }
+      return { sessions };
+    }),
+
   removeSession: (sessionId) =>
     set((state) => {
       const sessions = new Map(state.sessions);
@@ -121,6 +145,10 @@ export const useStore = create<SessionState>((set) => ({
       sessionNames.delete(sessionId);
       const sessionConfig = new Map(state.sessionConfig);
       sessionConfig.delete(sessionId);
+      const planContent = new Map(state.planContent);
+      planContent.delete(sessionId);
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.delete(sessionId);
       return {
         sessions,
         messages,
@@ -128,6 +156,8 @@ export const useStore = create<SessionState>((set) => ({
         pendingAttention,
         sessionNames,
         sessionConfig,
+        planContent,
+        planPanelOpen,
         activeSessionId:
           state.activeSessionId === sessionId ? null : state.activeSessionId,
       };
@@ -180,6 +210,13 @@ export const useStore = create<SessionState>((set) => ({
       return { respondedPermissions };
     }),
 
+  setPermissionAnswers: (requestId, selections) =>
+    set((state) => {
+      const permissionAnswers = new Map(state.permissionAnswers);
+      permissionAnswers.set(requestId, selections);
+      return { permissionAnswers };
+    }),
+
   addAttention: (sessionId, key) =>
     set((state) => {
       const pendingAttention = new Map(state.pendingAttention);
@@ -227,5 +264,30 @@ export const useStore = create<SessionState>((set) => ({
       const sessionConfig = new Map(state.sessionConfig);
       sessionConfig.set(sessionId, { settings, claudemd });
       return { sessionConfig };
+    }),
+
+  setPlanContent: (sessionId, content) =>
+    set((state) => {
+      const planContent = new Map(state.planContent);
+      planContent.set(sessionId, content);
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.set(sessionId, true); // Auto-open panel when plan content arrives
+      return { planContent, planPanelOpen };
+    }),
+
+  setPlanPanelOpen: (sessionId, open) =>
+    set((state) => {
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.set(sessionId, open);
+      return { planPanelOpen };
+    }),
+
+  clearPlanContent: (sessionId) =>
+    set((state) => {
+      const planContent = new Map(state.planContent);
+      planContent.delete(sessionId);
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.delete(sessionId);
+      return { planContent, planPanelOpen };
     }),
 }));

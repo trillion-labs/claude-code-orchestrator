@@ -46,9 +46,13 @@ export function MachineSelector({
     resetAndClose();
   };
 
-  const handleResume = (sessionId: string) => {
+  const handleResume = (sessionId: string, sessionProject?: string) => {
     if (!selectedMachine) return;
-    onCreateSession(selectedMachine, workDir, sessionId);
+    // Use the discovered session's project path as workDir (fall back to input field value)
+    const resumeWorkDir = sessionProject
+      ? (sessionProject.startsWith("/") ? sessionProject : `/${sessionProject}`)
+      : workDir;
+    onCreateSession(selectedMachine, resumeWorkDir, sessionId);
     resetAndClose();
   };
 
@@ -240,7 +244,7 @@ export function MachineSelector({
                     {sessions.map((s) => (
                       <button
                         key={s.sessionId}
-                        onClick={() => handleResume(s.sessionId)}
+                        onClick={() => handleResume(s.sessionId, s.project)}
                         className="w-full text-left p-3 rounded-lg border border-border hover:bg-accent transition-colors"
                       >
                         <div className="flex items-center justify-between mb-1">

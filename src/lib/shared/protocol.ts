@@ -35,6 +35,13 @@ export type ClientMessage =
       sessionId: string;
       requestId: string;
       allow: boolean;
+      answers?: Record<string, string>; // AskUserQuestion: user's selected answers
+      message?: string; // Deny message (e.g. plan feedback from "Request Changes")
+    }
+  | {
+      type: "session.setPermissionMode";
+      sessionId: string;
+      mode: PermissionMode;
     }
   | { type: "config.read" }
   | { type: "config.write"; file: "settings" | "claudemd"; content: string }
@@ -91,6 +98,17 @@ export type ServerMessage =
       type: "session.permissionRequest";
       sessionId: string;
       request: PermissionRequest;
+    }
+  | {
+      type: "session.permissionModeChanged";
+      sessionId: string;
+      mode: PermissionMode;
+    }
+  | {
+      type: "session.planContent";
+      sessionId: string;
+      content: string;
+      filePath: string;
     }
   | {
       type: "config.data";

@@ -5,7 +5,7 @@ import { loadSSHHosts } from "./ssh-config-loader";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
-import type { MachineConfig, PermissionRequest } from "../shared/types";
+import type { MachineConfig, PermissionMode, PermissionRequest } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 
 export class WebSocketHandler {
@@ -179,7 +179,12 @@ export class WebSocketHandler {
       }
 
       case "session.permissionResponse": {
-        this.sessionManager.resolvePermission(msg.requestId, msg.allow);
+        this.sessionManager.resolvePermission(msg.requestId, msg.allow, msg.answers, msg.message);
+        break;
+      }
+
+      case "session.setPermissionMode": {
+        this.sessionManager.setPermissionMode(msg.sessionId, msg.mode);
         break;
       }
 
@@ -283,6 +288,14 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:permissionRequest", (sessionId: string, request: PermissionRequest) => {
       this.broadcast({ type: "session.permissionRequest", sessionId, request });
+    });
+
+    this.sessionManager.on("session:permissionModeChanged", (sessionId: string, mode: PermissionMode) => {
+      this.broadcast({ type: "session.permissionModeChanged", sessionId, mode });
+    });
+
+    this.sessionManager.on("session:planContent", (sessionId: string, content: string, filePath: string) => {
+      this.broadcast({ type: "session.planContent", sessionId, content, filePath });
     });
   }
 

@@ -33,6 +33,9 @@ import {
   CheckCircle2,
   ShieldCheck,
   ShieldX,
+  ClipboardList,
+  Play,
+  RotateCcw,
 } from "lucide-react";
 import { useState, useCallback, useMemo } from "react";
 import { useStore } from "@/store";
@@ -43,9 +46,9 @@ const SendPromptContext = createContext<
   ((prompt: string) => void) | undefined
 >(undefined);
 
-// Context for sending permission responses (Allow/Deny)
+// Context for sending permission responses (Allow/Deny, with optional answers/message)
 const PermissionResponseContext = createContext<
-  ((requestId: string, allow: boolean) => void) | undefined
+  ((requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void) | undefined
 >(undefined);
 
 // Whether the current tool blocks should be interactive
@@ -105,20 +108,28 @@ interface QuestionData {
   }>;
 }
 
-function QuestionCard({ data }: { data: QuestionData }) {
+function QuestionCard({ data, resolvedSelections, isResolved, selectionsRef }: {
+  data: QuestionData;
+  resolvedSelections?: Map<number, string | string[]>;
+  isResolved?: boolean;
+  selectionsRef?: React.MutableRefObject<Map<number, string | string[]>>;
+}) {
   const sendPrompt = useContext(SendPromptContext);
   const interactive = useContext(ToolInteractiveContext);
   // selections: questionIndex → selected label(s) or "__other__"
   const [selections, setSelections] = useState<
     Map<number, string | string[]>
-  >(new Map());
+  >(() => resolvedSelections ? new Map(resolvedSelections) : new Map());
   const [otherTexts, setOtherTexts] = useState<Map<number, string>>(
     new Map()
   );
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(!!isResolved);
 
   // Effective read-only: not interactive or already submitted
   const readOnly = !interactive || submitted;
+
+  // Sync selections to ref for parent to capture at submit time
+  if (selectionsRef) selectionsRef.current = selections;
 
   const handleSelect = (
     qIdx: number,
@@ -183,7 +194,7 @@ function QuestionCard({ data }: { data: QuestionData }) {
     return sel === "__other__";
   };
 
-  const hasAnySelection = data.questions.some((_, i) => {
+  const hasAllSelections = data.questions.every((_, i) => {
     const sel = selections.get(i);
     if (!sel) return false;
     if (sel === "__other__") return !!otherTexts.get(i)?.trim();
@@ -197,7 +208,7 @@ function QuestionCard({ data }: { data: QuestionData }) {
   });
 
   const handleSubmit = () => {
-    if (!sendPrompt || readOnly || !hasAnySelection) return;
+    if (!sendPrompt || readOnly || !hasAllSelections) return;
 
     const answers: string[] = [];
     data.questions.forEach((q, i) => {
@@ -283,10 +294,12 @@ function QuestionCard({ data }: { data: QuestionData }) {
                   <button
                     key={j}
                     onClick={() => handleSelect(qIdx, opt.label, q.multiSelect)}
-                    disabled={readOnly}
+                    disabled={readOnly || submitted}
                     className={`w-full flex items-start gap-2.5 px-3 py-2 rounded-lg border text-left transition-all ${
                       submitted && selected
                         ? "border-emerald-500/30 bg-emerald-500/10"
+                        : submitted
+                        ? "border-white/[0.03] bg-white/[0.01] cursor-default opacity-60"
                         : readOnly
                         ? "border-white/[0.03] bg-white/[0.01] cursor-default opacity-60"
                         : selected
@@ -296,23 +309,25 @@ function QuestionCard({ data }: { data: QuestionData }) {
                   >
                     {q.multiSelect ? (
                       selected ? (
-                        <CheckSquare className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                        <CheckSquare className={`w-4 h-4 mt-0.5 flex-shrink-0 ${submitted ? "text-emerald-400" : "text-amber-400"}`} />
                       ) : (
                         <Square className="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" />
                       )
                     ) : (
                       <CircleDot
                         className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
-                          selected ? "text-amber-400" : "text-gray-600"
+                          submitted && selected ? "text-emerald-400" : selected ? "text-amber-400" : "text-gray-600"
                         }`}
                       />
                     )}
                     <div className="min-w-0">
-                      <span className={`text-sm font-medium ${readOnly ? "text-gray-500" : selected ? "text-gray-100" : "text-gray-300"}`}>
+                      <span className={`text-sm font-medium ${
+                        submitted && selected ? "text-emerald-200" : readOnly || submitted ? "text-gray-500" : selected ? "text-gray-100" : "text-gray-300"
+                      }`}>
                         {opt.label}
                       </span>
                       {opt.description && (
-                        <span className={`text-sm ml-1.5 ${readOnly ? "text-gray-600" : "text-gray-500"}`}>
+                        <span className={`text-sm ml-1.5 ${readOnly || submitted ? "text-gray-600" : "text-gray-500"}`}>
                           — {opt.description}
                         </span>
                       )}
@@ -321,8 +336,8 @@ function QuestionCard({ data }: { data: QuestionData }) {
                 );
               })}
 
-              {/* Other (free text) option — hidden when readOnly */}
-              {!readOnly && (
+              {/* Other (free text) option — hidden when readOnly or submitted */}
+              {!readOnly && !submitted && (
                 <>
                   <button
                     onClick={() => handleSelectOther(qIdx, q.multiSelect)}
@@ -361,7 +376,7 @@ function QuestionCard({ data }: { data: QuestionData }) {
                           })
                         }
                         onKeyDown={(e) => {
-                          if (e.key === "Enter" && hasAnySelection) handleSubmit();
+                          if (e.key === "Enter" && hasAllSelections) handleSubmit();
                         }}
                         className="w-full px-3 py-1.5 rounded-md bg-white/[0.05] border border-amber-500/20 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/40 font-mono"
                       />
@@ -373,11 +388,11 @@ function QuestionCard({ data }: { data: QuestionData }) {
           )}
 
           {/* Submit button — only when interactive and not yet submitted */}
-          {qIdx === data.questions.length - 1 && !readOnly && (
+          {qIdx === data.questions.length - 1 && !readOnly && !submitted && (
             <div className="px-4 pb-3 pt-1">
               <button
                 onClick={handleSubmit}
-                disabled={!hasAnySelection || !sendPrompt}
+                disabled={!hasAllSelections || !sendPrompt}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-sm font-medium text-amber-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <Send className="w-3.5 h-3.5" />
@@ -566,6 +581,214 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
   );
 }
 
+function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "allow" | "deny" | string } }) {
+  const sendPermission = useContext(PermissionResponseContext);
+  const interactive = useContext(ToolInteractiveContext);
+
+  const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
+  const respondPermission = useStore((s) => s.respondPermission);
+  const activeSessionId = useStore((s) => s.activeSessionId);
+  const hasPlanContent = useStore((s) => activeSessionId ? s.planContent.has(activeSessionId) : false);
+  const planPanelOpen = useStore((s) => activeSessionId ? s.planPanelOpen.get(activeSessionId) ?? false : false);
+  const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
+  const responded = data.resolved || storeDecision || null;
+
+  const readOnly = !interactive || responded !== null;
+  const [feedbackMode, setFeedbackMode] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  const handleApprove = () => {
+    if (readOnly || !sendPermission || !data.requestId) return;
+    sendPermission(data.requestId, true);
+    respondPermission(data.requestId, "allow");
+  };
+
+  const handleIterate = () => {
+    if (readOnly) return;
+    setFeedbackMode(true);
+  };
+
+  const handleSendFeedback = () => {
+    if (!feedback.trim() || !sendPermission || !data.requestId) return;
+    // Deny ExitPlanMode with feedback as the deny message.
+    // Claude sees this message in the tool result and uses it to revise the plan.
+    sendPermission(data.requestId, false, undefined, feedback.trim());
+    respondPermission(data.requestId, "deny");
+    setFeedbackMode(false);
+  };
+
+  const colorScheme = responded === "allow"
+    ? { border: "border-emerald-500/30", bg: "bg-emerald-500/[0.04]", headerBg: "bg-emerald-500/[0.06]", headerBorder: "border-emerald-500/15" }
+    : responded === "deny"
+    ? { border: "border-blue-500/30", bg: "bg-blue-500/[0.04]", headerBg: "bg-blue-500/[0.06]", headerBorder: "border-blue-500/15" }
+    : { border: "border-violet-500/30", bg: "bg-violet-500/[0.04]", headerBg: "bg-violet-500/[0.06]", headerBorder: "border-violet-500/15" };
+
+  return (
+    <div className={`not-prose my-3 rounded-xl border overflow-hidden transition-colors ${colorScheme.border} ${colorScheme.bg}`}>
+      {/* Header */}
+      <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${colorScheme.headerBg} ${colorScheme.headerBorder}`}>
+        <ClipboardList className={`w-4 h-4 flex-shrink-0 ${
+          responded === "allow" ? "text-emerald-400" :
+          responded === "deny" ? "text-blue-400" :
+          "text-violet-400 animate-pulse"
+        }`} />
+        <span className={`text-xs font-semibold uppercase tracking-wide ${
+          responded === "allow" ? "text-emerald-300" :
+          responded === "deny" ? "text-blue-300" :
+          "text-violet-300"
+        }`}>
+          {responded === "allow" ? "Plan Approved" : responded === "deny" ? "Iterating on Plan" : "Plan Ready for Review"}
+        </span>
+      </div>
+
+      {/* Description */}
+      <div className="px-4 py-3">
+        <p className={`text-sm ${readOnly ? "text-gray-500" : "text-gray-300"}`}>
+          {responded === "allow"
+            ? "Plan approved. Proceeding with implementation."
+            : responded === "deny"
+            ? "Feedback sent. Claude will revise the plan."
+            : "Claude has written a plan. Review the plan above, then choose how to proceed."}
+        </p>
+      </div>
+
+      {/* Action buttons */}
+      {!readOnly && !feedbackMode && (
+        <div className="flex gap-2 px-4 pb-3 pt-1">
+          <button
+            onClick={handleApprove}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-medium text-emerald-200 transition-colors"
+          >
+            <Play className="w-3.5 h-3.5" />
+            Approve &amp; Implement
+          </button>
+          <button
+            onClick={handleIterate}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-sm font-medium text-blue-200 transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Request Changes
+          </button>
+          {hasPlanContent && activeSessionId && (
+            <button
+              onClick={() => setPlanPanelOpen(activeSessionId, !planPanelOpen)}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                planPanelOpen
+                  ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
+                  : "bg-white/[0.05] border-white/10 text-gray-400 hover:bg-white/[0.1] hover:text-gray-200"
+              }`}
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              View Plan
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* View Plan button when already responded */}
+      {readOnly && hasPlanContent && activeSessionId && (
+        <div className="flex gap-2 px-4 pb-3 pt-1">
+          <button
+            onClick={() => setPlanPanelOpen(activeSessionId, !planPanelOpen)}
+            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+              planPanelOpen
+                ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
+                : "bg-white/[0.05] border-white/10 text-gray-400 hover:bg-white/[0.1] hover:text-gray-200"
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5" />
+            {planPanelOpen ? "Hide Plan" : "View Plan"}
+          </button>
+        </div>
+      )}
+
+      {/* Feedback input */}
+      {!readOnly && feedbackMode && (
+        <div className="px-4 pb-3 pt-1 space-y-2">
+          <input
+            type="text"
+            placeholder="Describe what to change in the plan..."
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && feedback.trim()) handleSendFeedback(); }}
+            autoFocus
+            className="w-full px-3 py-2 rounded-md bg-white/[0.05] border border-blue-500/20 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/40 font-mono"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleSendFeedback}
+              disabled={!feedback.trim()}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-sm font-medium text-blue-200 transition-colors disabled:opacity-30"
+            >
+              <Send className="w-3.5 h-3.5" />
+              Send Feedback
+            </button>
+            <button
+              onClick={() => setFeedbackMode(false)}
+              className="px-4 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-sm text-gray-400 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Wraps QuestionCard for AskUserQuestion permission requests.
+ * Overrides sendPrompt so that the user's answers are delivered through the
+ * permission response's `updatedInput.answers` field — this is how Claude Code's
+ * --permission-prompt-tool expects AskUserQuestion answers to be collected.
+ */
+function PermissionQuestionCard({ data }: { data: { requestId?: string; input?: Record<string, unknown>; resolved?: string } }) {
+  const sendPermission = useContext(PermissionResponseContext);
+  const respondPermission = useStore((s) => s.respondPermission);
+  const setPermissionAnswers = useStore((s) => s.setPermissionAnswers);
+  const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
+  const storedSelections = useStore((s) => data.requestId ? s.permissionAnswers.get(data.requestId) : undefined);
+  const questions = ((data.input as unknown as QuestionData)?.questions) || [];
+  const isResolved = !!(data.resolved || storeDecision);
+
+  // Ref to capture selections from QuestionCard before submit
+  const selectionsRef = useRef<Map<number, string | string[]>>(new Map());
+
+  const handleAnswer = useCallback((answerText: string) => {
+    if (!sendPermission || !data.requestId) return;
+
+    // Build structured answers object from the formatted text.
+    // QuestionCard formats: single question → "label", multiple → "header: label\nheader: label"
+    const answers: Record<string, string> = {};
+    if (questions.length <= 1) {
+      answers["0"] = answerText;
+    } else {
+      const lines = answerText.split("\n");
+      lines.forEach((line, idx) => {
+        const colonIdx = line.indexOf(": ");
+        answers[String(idx)] = colonIdx >= 0 ? line.slice(colonIdx + 2) : line;
+      });
+    }
+
+    // Persist selections in store so they survive remounts
+    setPermissionAnswers(data.requestId, selectionsRef.current);
+
+    sendPermission(data.requestId, true, answers);
+    respondPermission(data.requestId, "allow");
+  }, [sendPermission, data.requestId, respondPermission, setPermissionAnswers, questions.length]);
+
+  return (
+    <SendPromptContext.Provider value={handleAnswer}>
+      <QuestionCard
+        data={data.input as unknown as QuestionData}
+        resolvedSelections={storedSelections}
+        isResolved={isResolved}
+        selectionsRef={selectionsRef}
+      />
+    </SendPromptContext.Provider>
+  );
+}
+
 function PermissionDeniedCard({ data }: { data: { tool?: string; error?: string } }) {
   return (
     <div className="not-prose my-3 rounded-lg border border-red-500/30 bg-red-500/[0.06] overflow-hidden">
@@ -600,9 +823,16 @@ function ToolBlock({ toolType, data }: { toolType: string; data: unknown }) {
     case "task":
       return <TaskCard data={data as { description?: string }} />;
     case "permission-request": {
-      const prData = data as { requestId?: string; toolName?: string; input?: Record<string, unknown> };
-      // AskUserQuestion has its own QuestionCard UI — skip the permission card
-      if (prData.toolName === "AskUserQuestion") return null;
+      const prData = data as { requestId?: string; toolName?: string; input?: Record<string, unknown>; resolved?: "allow" | "deny" };
+      // AskUserQuestion: render as QuestionCard using the permission request input.
+      // When user submits their answer (via sendPrompt), the server auto-resolves
+      // the pending permission, so Claude unblocks and the answer is queued.
+      if (prData.toolName === "AskUserQuestion" && prData.input?.questions) {
+        return <PermissionQuestionCard data={prData} />;
+      }
+      if (prData.toolName === "ExitPlanMode") {
+        return <PlanApprovalCard data={prData} />;
+      }
       return <PermissionRequestCard data={prData} />;
     }
     case "permission-denied":
@@ -748,7 +978,7 @@ interface StreamOutputProps {
   messages: ConversationMessage[];
   streamingText: string;
   onSendPrompt?: (prompt: string) => void;
-  onPermissionResponse?: (requestId: string, allow: boolean) => void;
+  onPermissionResponse?: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
 }
 
 export function StreamOutput({

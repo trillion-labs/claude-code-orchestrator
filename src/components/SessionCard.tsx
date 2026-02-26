@@ -62,7 +62,7 @@ export function SessionCard({
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left p-3 rounded-lg border transition-colors relative ${
+      className={`w-full text-left p-3 rounded-lg border transition-colors relative overflow-hidden ${
         isActive
           ? "bg-accent border-accent-foreground/20"
           : hasAttention
@@ -98,9 +98,9 @@ export function SessionCard({
             />
           ) : (
             <span
-              className="font-medium text-sm truncate"
+              className="font-medium text-sm truncate min-w-0"
               onDoubleClick={handleDoubleClick}
-              title="Double-click to rename"
+              title={displayName || session.machineName}
             >
               {displayName || session.machineName}
             </span>
@@ -121,7 +121,7 @@ export function SessionCard({
         </div>
       )}
 
-      <div className="text-xs text-muted-foreground truncate font-mono">
+      <div className="text-xs text-muted-foreground truncate font-mono" title={session.workDir}>
         {session.workDir}
       </div>
       <div className="flex items-center justify-between mt-1.5 text-xs text-muted-foreground">

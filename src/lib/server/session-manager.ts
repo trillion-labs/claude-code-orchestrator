@@ -10,6 +10,7 @@ import { SSHConnectionManager } from "./ssh-manager";
 import { StreamParser } from "./stream-parser";
 import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest } from "../shared/types";
 import { PERMISSION_MODES } from "../shared/types";
+import { resolvePermissionByMode } from "./permission-utils";
 
 interface PermissionResolver {
   resolve: (result: { behavior: string; updatedInput?: Record<string, unknown>; message?: string }) => void;
@@ -25,6 +26,7 @@ interface ManagedSession {
   mcpConfigPath?: string; // Temp MCP config file path
   claudeConfigDir?: string; // Custom CLAUDE_CONFIG_DIR (e.g. from direnv)
   originalCwd?: string; // Original working directory the session was created in
+  planFilePath?: string; // Last Write/Edit target in .claude/plans/ (for plan panel)
   promptQueue: string[];
   isProcessingPrompt: boolean;
   currentAssistantMessage: string;
@@ -135,42 +137,35 @@ export class SessionManager extends EventEmitter {
       "--verbose",
     ];
 
-    // Inject permission mode CLI args
-    const modeConfig = PERMISSION_MODES[permissionMode];
-    if (modeConfig.cliArgs.length > 0) {
-      args.push(...modeConfig.cliArgs);
-    }
-
-    // Set up MCP permission prompt tool for non-bypass modes
-    if (permissionMode !== "bypass-permissions") {
-      try {
-        if (machine.type === "local") {
-          const mcpConfigPath = await this.writeMcpConfig(sessionId);
-          managed.mcpConfigPath = mcpConfigPath;
+    // Always set up MCP permission prompt tool — permission mode is resolved
+    // dynamically in handlePermissionRequest() via resolvePermissionByMode()
+    try {
+      if (machine.type === "local") {
+        const mcpConfigPath = await this.writeMcpConfig(sessionId);
+        managed.mcpConfigPath = mcpConfigPath;
+        args.push(
+          "--permission-prompt-tool", "mcp__perm__check_permission",
+          "--mcp-config", mcpConfigPath,
+        );
+      } else {
+        // Remote: set up reverse port forward + remote MCP server (with timeout)
+        const remoteConfig = await Promise.race([
+          this.setupRemoteMcpPermission(sessionId, machine),
+          new Promise<null>((resolve) => setTimeout(() => {
+            console.warn(`[Session ${sessionId}] Remote MCP setup timed out after 10s`);
+            resolve(null);
+          }, 10000)),
+        ]);
+        if (remoteConfig) {
+          managed.mcpConfigPath = remoteConfig; // Remote path for cleanup
           args.push(
             "--permission-prompt-tool", "mcp__perm__check_permission",
-            "--mcp-config", mcpConfigPath,
+            "--mcp-config", remoteConfig,
           );
-        } else {
-          // Remote: set up reverse port forward + remote MCP server (with timeout)
-          const remoteConfig = await Promise.race([
-            this.setupRemoteMcpPermission(sessionId, machine),
-            new Promise<null>((resolve) => setTimeout(() => {
-              console.warn(`[Session ${sessionId}] Remote MCP setup timed out after 10s`);
-              resolve(null);
-            }, 10000)),
-          ]);
-          if (remoteConfig) {
-            managed.mcpConfigPath = remoteConfig; // Remote path for cleanup
-            args.push(
-              "--permission-prompt-tool", "mcp__perm__check_permission",
-              "--mcp-config", remoteConfig,
-            );
-          }
         }
-      } catch (err) {
-        console.warn(`[Session ${sessionId}] Could not set up MCP permission tool:`, (err as Error).message);
       }
+    } catch (err) {
+      console.warn(`[Session ${sessionId}] Could not set up MCP permission tool:`, (err as Error).message);
     }
 
     if (resumeSessionId) {
@@ -186,6 +181,23 @@ export class SessionManager extends EventEmitter {
           await this.loadSessionHistory(managed, resumeSessionId);
         } else {
           await this.loadRemoteSessionHistory(managed, machine, resumeSessionId);
+        }
+      }
+
+      // Restore plan panel if history contained a plan file Write/Edit
+      if (managed.planFilePath) {
+        try {
+          let planContent: string;
+          if (machine.type === "local") {
+            planContent = await readFile(managed.planFilePath, "utf-8");
+          } else {
+            planContent = await this.execRemoteRead(machine, `cat "${managed.planFilePath}"`);
+          }
+          if (planContent.trim()) {
+            this.emit("session:planContent", sessionId, planContent, managed.planFilePath);
+          }
+        } catch {
+          // Plan file no longer exists or unreadable — skip silently
         }
       }
 
@@ -302,6 +314,16 @@ export class SessionManager extends EventEmitter {
               if (newContent) newContent += "\n\n";
               const inputStr = block.input ? JSON.stringify(block.input) : "";
               newContent += this.renderToolUse(block.name, inputStr);
+
+              // Track plan file path from Write/Edit tool_use blocks
+              // In plan mode, Claude may write to .claude/plans/ or elsewhere (e.g. plan.md at root)
+              // Track the last written file as the plan file path
+              if ((block.name === "Write" || block.name === "Edit") && managed.permissionMode === "plan") {
+                const fp = block.input?.file_path ? String(block.input.file_path) : "";
+                if (fp) {
+                  managed.planFilePath = fp;
+                }
+              }
             }
           }
 
@@ -380,6 +402,14 @@ export class SessionManager extends EventEmitter {
     }
   }
 
+  private isPlanFilePath(filePath: string): boolean {
+    // .claude/plans/ directory
+    if (/[/\\]\.claude[/\\]plans[/\\]/.test(filePath)) return true;
+    // plan.md at project root (Claude sometimes writes here)
+    if (/[/\\]plan\.md$|^plan\.md$/.test(filePath)) return true;
+    return false;
+  }
+
   private renderToolUse(toolName: string, inputJsonStr: string): string {
     let input: Record<string, unknown> = {};
     try {
@@ -393,7 +423,11 @@ export class SessionManager extends EventEmitter {
     // Tool calls that get dedicated card UIs
     switch (toolName) {
       case "AskUserQuestion":
-        return `\n\`\`\`tool-ask-user-question\n${JSON.stringify(input)}\n\`\`\`\n`;
+      case "ExitPlanMode":
+        // These are rendered from the tool-permission-request block
+        // (MCP is always active, so they always go through the permission flow).
+        // Suppress here to avoid duplicate cards.
+        return "";
       case "Bash":
         return `\n\`\`\`tool-bash\n${JSON.stringify({ command: input.command, description: input.description })}\n\`\`\`\n`;
       case "Read":
@@ -569,6 +603,39 @@ for line in sys.stdin:
       return { behavior: "deny", message: "Session not found" };
     }
 
+    // Auto-resolve based on current permission mode
+    const autoResult = resolvePermissionByMode(managed.permissionMode, toolName, input);
+    if (autoResult) {
+      // Track plan file path when Write/Edit is auto-allowed in plan mode
+      if (autoResult.behavior === "allow" && managed.permissionMode === "plan" && (toolName === "Write" || toolName === "Edit")) {
+        const fp = typeof input.file_path === "string" ? input.file_path : "";
+        if (fp) {
+          managed.planFilePath = fp;
+        }
+      }
+      return autoResult;
+    }
+
+    // ExitPlanMode: read the plan file and send content to the client before showing the approval card
+    if (toolName === "ExitPlanMode" && managed.planFilePath) {
+      try {
+        let planContent: string;
+        if (managed.machine.type === "local") {
+          planContent = await readFile(managed.planFilePath, "utf-8");
+        } else {
+          planContent = await this.execRemoteRead(
+            managed.machine,
+            `cat "${managed.planFilePath}"`,
+          );
+        }
+        if (planContent.trim()) {
+          this.emit("session:planContent", sessionId, planContent, managed.planFilePath);
+        }
+      } catch (err) {
+        console.warn(`[Session ${sessionId}] Could not read plan file:`, (err as Error).message);
+      }
+    }
+
     const requestId = uuidv4();
     const request: PermissionRequest = { requestId, sessionId, toolName, input };
 
@@ -593,7 +660,7 @@ for line in sys.stdin:
   /**
    * Called when the user responds to a permission request via WebSocket.
    */
-  resolvePermission(requestId: string, allow: boolean): void {
+  resolvePermission(requestId: string, allow: boolean, answers?: Record<string, string>, message?: string): void {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return;
 
@@ -622,10 +689,32 @@ for line in sys.stdin:
     }
 
     if (allow) {
-      pending.resolve({ behavior: "allow", updatedInput: pending.request.input });
+      // When ExitPlanMode is approved, transition out of plan mode
+      // so Claude can proceed with implementation using write tools.
+      if (pending.request.toolName === "ExitPlanMode" && managed && managed.permissionMode === "plan") {
+        this.setPermissionMode(pending.request.sessionId, "default");
+      }
+
+      const updatedInput = answers
+        ? { ...pending.request.input, answers }
+        : pending.request.input;
+      pending.resolve({ behavior: "allow", updatedInput });
     } else {
-      pending.resolve({ behavior: "deny", message: "Denied by user in web UI" });
+      pending.resolve({ behavior: "deny", message: message || "Denied by user in web UI" });
     }
+  }
+
+  /**
+   * Dynamically change the permission mode for a running session.
+   * The new mode takes effect for subsequent permission requests.
+   */
+  setPermissionMode(sessionId: string, mode: PermissionMode): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return;
+
+    managed.permissionMode = mode;
+    managed.session.permissionMode = mode;
+    this.emit("session:permissionModeChanged", sessionId, mode);
   }
 
   terminateSession(sessionId: string): void {
@@ -812,6 +901,14 @@ done
               } else if (block.type === "tool_use") {
                 const inputStr = block.input ? JSON.stringify(block.input) : "";
                 parts.push(this.renderToolUse(block.name, inputStr));
+
+                // Track plan file path from Write/Edit in history for resume plan recovery
+                if (block.name === "Write" || block.name === "Edit") {
+                  const fp = block.input?.file_path;
+                  if (typeof fp === "string" && this.isPlanFilePath(fp)) {
+                    managed.planFilePath = fp;
+                  }
+                }
               }
             }
             text = parts.join("\n");
