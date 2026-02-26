@@ -1,12 +1,17 @@
 "use client";
 
+import { useState, useRef, useCallback, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ClipboardList, X } from "lucide-react";
+import { ClipboardList, X, GripVertical } from "lucide-react";
 import type { ComponentProps } from "react";
+
+const MIN_WIDTH = 320;
+const MAX_WIDTH = 800;
+const DEFAULT_WIDTH = 480;
 
 const planMarkdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
   code({ className, children }) {
@@ -79,8 +84,61 @@ interface PlanPanelProps {
 }
 
 export function PlanPanel({ content, onClose }: PlanPanelProps) {
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const isResizing = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isResizing.current = true;
+      startX.current = e.clientX;
+      startWidth.current = width;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [width]
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current) return;
+      // Drag left → increase width (panel is on right side)
+      const delta = startX.current - e.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth.current + delta));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (!isResizing.current) return;
+      isResizing.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   return (
-    <div className="w-[480px] min-w-[380px] border-l bg-background flex flex-col h-full overflow-hidden">
+    <div
+      className="border-l bg-background flex flex-col h-full overflow-hidden relative"
+      style={{ width, minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }}
+    >
+      {/* Resize handle */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-violet-500/30 active:bg-violet-500/50 transition-colors z-10 group flex items-center"
+        onMouseDown={handleMouseDown}
+      >
+        <GripVertical className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors -ml-0.5" />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
         <div className="flex items-center gap-2">
@@ -95,7 +153,7 @@ export function PlanPanel({ content, onClose }: PlanPanelProps) {
         </button>
       </div>
 
-      {/* Plan Content */}
+      {/* Plan Content — ScrollArea provides independent y-scroll */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="px-4 py-4 overflow-x-hidden prose prose-sm dark:prose-invert max-w-none prose-p:leading-7 prose-li:leading-7 prose-headings:text-gray-100 prose-p:text-gray-300 prose-li:text-gray-300 prose-strong:text-gray-100 prose-a:text-blue-400">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={planMarkdownComponents}>

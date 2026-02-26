@@ -1,36 +1,231 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Claude Code Orchestrator
+
+A web-based dashboard for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions across local and remote machines. Run, monitor, and interact with parallel Claude coding sessions from a single unified interface.
+
+![Claude Code Orchestrator](docs/screenshot.png)
+
+## Features
+
+### Multi-Session Management
+- Launch multiple Claude Code sessions simultaneously
+- Real-time streaming output with syntax-highlighted code blocks
+- Session status tracking (starting, idle, busy, error, terminated)
+- Per-session cost tracking
+- Rename sessions with inline double-click editing
+
+### Multi-Machine Support
+- **Local execution** — run Claude directly on your machine
+- **SSH remote execution** — run Claude on remote servers via SSH
+- Auto-discovery of SSH hosts from `~/.ssh/config`
+- SSH connection pooling for performance
+- Configurable machine definitions in `machines.json`
+
+### Permission Modes
+Four permission levels with dynamic runtime switching:
+
+| Mode | Description |
+|------|-------------|
+| **Default** | Asks for approval on every tool use |
+| **Plan** | Read-only — allows analysis tools only (Grep, Read, WebSearch, etc.) |
+| **Accept Edits** | Auto-approves file edits and safe commands (npm, node, etc.) |
+| **No Restrictions** | Skips all permission checks |
+
+### Plan Panel
+- Side panel rendering Claude's plan in rich Markdown (GFM tables, syntax highlighting)
+- **Resizable** — drag the left edge to adjust width (320px–800px)
+- Independent vertical scrolling
+- Automatically restored on session resume
+
+### Git Worktrees
+- Create isolated git worktrees per session
+- Automatic branch creation (`claude/<name>`)
+- Branch tracking displayed on session cards
+- Support for both local and remote worktrees
+
+### Session Discovery & Resume
+- Scan for existing Claude sessions on any machine
+- Resume sessions with full chat history restoration
+- Plan panel recovery on resume via JSONL history analysis
+- Session metadata: first message preview, message count, last activity
+
+### Attention System
+- Visual pulse indicator on session cards when user action is needed
+- Permission request and question prompts surfaced in the UI
+- Automatically cleared when addressed
+
+## Tech Stack
+
+- **Frontend** — [Next.js 16](https://nextjs.org) · [React 19](https://react.dev) · [TypeScript 5](https://www.typescriptlang.org)
+- **UI** — [Tailwind CSS 4](https://tailwindcss.com) · [shadcn/ui](https://ui.shadcn.com) · [Radix UI](https://www.radix-ui.com) · [Lucide Icons](https://lucide.dev)
+- **State** — [Zustand](https://zustand.docs.pmnd.rs)
+- **Real-time** — [WebSocket (ws)](https://github.com/websockets/ws)
+- **SSH** — [ssh2](https://github.com/mscdex/ssh2) · [ssh-config](https://github.com/nickolasburr/ssh-config)
+- **Markdown** — [react-markdown](https://github.com/remarkjs/react-markdown) · [remark-gfm](https://github.com/remarkjs/remark-gfm) · [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter)
+- **Validation** — [Zod 4](https://zod.dev)
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- **Node.js** 20+
+- **Claude Code CLI** installed and authenticated ([installation guide](https://docs.anthropic.com/en/docs/claude-code))
+- (Optional) SSH access to remote machines with Claude Code installed
+
+### Installation
+
+```bash
+git clone https://github.com/trillion-labs/claude-code-orchestrator.git
+cd claude-code-orchestrator
+npm install
+```
+
+### Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This starts both the custom WebSocket server and the Next.js dev server with hot reload. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+### Environment Variables
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Server port |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Create a `.env.local` file to override defaults:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```env
+PORT=3000
+```
 
-## Deploy on Vercel
+## Configuration
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Machine Configuration
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Edit `machines.json` to define available machines:
+
+```json
+{
+  "machines": [
+    {
+      "id": "local",
+      "name": "Local Machine",
+      "type": "local",
+      "defaultWorkDir": "~"
+    },
+    {
+      "id": "my-server",
+      "name": "Dev Server",
+      "type": "ssh",
+      "host": "dev.example.com",
+      "username": "deploy",
+      "defaultWorkDir": "/home/deploy/projects"
+    }
+  ]
+}
+```
+
+SSH machines from `~/.ssh/config` are also auto-discovered and available alongside explicitly configured machines.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Browser (React + Zustand)                           │
+│  ┌─────────────┐ ┌──────────┐ ┌───────────────────┐ │
+│  │  Dashboard   │ │ Session  │ │   Plan Panel      │ │
+│  │  + Sidebar   │ │ View     │ │   (resizable)     │ │
+│  └──────┬──────┘ └─────┬────┘ └───────────────────┘ │
+│         │              │                              │
+│         └──────┬───────┘                              │
+│                │ WebSocket                            │
+└────────────────┼─────────────────────────────────────┘
+                 │
+┌────────────────┼─────────────────────────────────────┐
+│  Server (Node.js)                                     │
+│  ┌─────────────┴──────────────┐                       │
+│  │  WebSocket Handler         │                       │
+│  │  (typed protocol msgs)     │                       │
+│  └─────────────┬──────────────┘                       │
+│  ┌─────────────┴──────────────┐                       │
+│  │  Session Manager           │                       │
+│  │  ┌──────────┐ ┌──────────┐ │                       │
+│  │  │  Local   │ │   SSH    │ │                       │
+│  │  │ Adapter  │ │ Adapter  │ │                       │
+│  │  └────┬─────┘ └────┬─────┘ │                       │
+│  └───────┼─────────────┼──────┘                       │
+│          │             │                              │
+│     child_process   ssh2 channel                      │
+│          │             │                              │
+│      claude CLI    claude CLI                         │
+│      (local)       (remote)                           │
+└──────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+| Layer | File | Responsibility |
+|-------|------|---------------|
+| Entry | `server.ts` | HTTP + WebSocket server, Next.js integration |
+| Transport | `src/lib/server/ws-handler.ts` | Typed WebSocket message routing |
+| Core | `src/lib/server/session-manager.ts` | Session lifecycle, history loading, plan recovery |
+| Adapters | `src/lib/server/adapters/` | Local & SSH process execution |
+| Protocol | `src/lib/shared/protocol.ts` | Client ↔ Server message types |
+| State | `src/store/index.ts` | Zustand store (sessions, messages, plans, etc.) |
+| UI | `src/components/` | Dashboard, SessionView, PlanPanel, SessionCard, etc. |
+
+## Project Structure
+
+```
+├── server.ts                 # Entry point: HTTP + WS server
+├── machines.json             # Machine configuration
+├── src/
+│   ├── app/                  # Next.js app directory
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   └── globals.css
+│   ├── components/           # React components
+│   │   ├── Dashboard.tsx     # Main layout with sidebar
+│   │   ├── SessionView.tsx   # Active session view
+│   │   ├── SessionCard.tsx   # Sidebar session card
+│   │   ├── PlanPanel.tsx     # Resizable plan side panel
+│   │   ├── StreamOutput.tsx  # Message stream renderer
+│   │   ├── PromptInput.tsx   # Chat input
+│   │   ├── MachineSelector.tsx # Machine & path selector
+│   │   ├── StatusBadge.tsx   # Session status indicator
+│   │   ├── SettingsDialog.tsx # Global/session settings
+│   │   └── ui/              # shadcn/ui base components
+│   ├── hooks/
+│   │   └── useWebSocket.ts   # WebSocket connection hook
+│   ├── lib/
+│   │   ├── server/
+│   │   │   ├── session-manager.ts
+│   │   │   ├── ws-handler.ts
+│   │   │   ├── ssh-manager.ts
+│   │   │   ├── stream-parser.ts
+│   │   │   ├── permission-utils.ts
+│   │   │   ├── ssh-config-loader.ts
+│   │   │   └── adapters/
+│   │   │       ├── base.ts
+│   │   │       ├── local-adapter.ts
+│   │   │       └── ssh-adapter.ts
+│   │   └── shared/
+│   │       ├── types.ts      # Shared type definitions
+│   │       └── protocol.ts   # WebSocket message protocol
+│   └── store/
+│       └── index.ts          # Zustand global store
+└── scripts/
+    └── permission-mcp-server.mjs  # MCP permission tool
+```
+
+## License
+
+MIT

@@ -60,23 +60,24 @@ export function SessionCard({
   };
 
   return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left p-3 rounded-lg border transition-colors relative overflow-hidden ${
-        isActive
-          ? "bg-accent border-accent-foreground/20"
-          : hasAttention
-            ? "border-amber-500/40 hover:bg-accent/50"
-            : "border-border hover:bg-accent/50"
-      }`}
-    >
-      {/* Attention pulse dot */}
+    <div className="relative">
+      {/* Attention pulse dot — outside button to avoid overflow-hidden clipping */}
       {hasAttention && (
-        <span className="absolute -top-1 -right-1 flex h-3 w-3">
+        <span className="absolute -top-1 -right-1 flex h-3 w-3 z-10">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
           <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
         </span>
       )}
+      <button
+        onClick={onClick}
+        className={`w-full text-left p-3 rounded-lg border transition-colors overflow-hidden ${
+          isActive
+            ? "bg-accent border-accent-foreground/20"
+            : hasAttention
+              ? "border-amber-500/40 hover:bg-accent/50"
+              : "border-border hover:bg-accent/50"
+        }`}
+      >
 
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -137,6 +138,7 @@ export function SessionCard({
         )}
       </div>
     </button>
+    </div>
   );
 }
 
