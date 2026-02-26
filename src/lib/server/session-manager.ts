@@ -27,6 +27,7 @@ interface ManagedSession {
   claudeConfigDir?: string; // Custom CLAUDE_CONFIG_DIR (e.g. from direnv)
   originalCwd?: string; // Original working directory the session was created in
   planFilePath?: string; // Last Write/Edit target in .claude/plans/ (for plan panel)
+  interrupted?: boolean; // Set when user interrupts — causes re-spawn on next prompt
   promptQueue: string[];
   isProcessingPrompt: boolean;
   currentAssistantMessage: string;
@@ -190,7 +191,17 @@ export class SessionManager extends EventEmitter {
 
     adapter.on("close", (code: number | null) => {
       console.log(`[Session ${sessionId}] process exited with code ${code}`);
-      if (session.status !== "terminated") {
+      if (session.status === "terminated") return;
+
+      if (managed.interrupted) {
+        // Interrupted by user — return to idle so they can send new prompts
+        managed.interrupted = false;
+        managed.isProcessingPrompt = false;
+        session.status = "idle";
+        session.error = undefined;
+        console.log(`[Session ${sessionId}] Interrupted — returning to idle (will re-spawn on next prompt)`);
+        this.emit("session:status", sessionId, "idle");
+      } else {
         session.status = "error";
         const stderrMsg = stderrBuffer.trim();
         session.error = stderrMsg
@@ -698,13 +709,19 @@ except:
     this.processPrompt(managed, prompt);
   }
 
-  private processPrompt(managed: ManagedSession, prompt: string) {
+  private async processPrompt(managed: ManagedSession, prompt: string) {
     managed.isProcessingPrompt = true;
     managed.currentAssistantMessage = "";
     managed.hasStreamedText = false;
     managed.session.status = "busy";
     managed.session.lastActivity = Date.now();
     this.emit("session:status", managed.session.id, "busy");
+
+    // If the process was killed (e.g. after interrupt), re-spawn with --resume
+    if (!managed.adapter.isRunning) {
+      console.log(`[Session ${managed.session.id}] Process not running — re-spawning with --resume ${managed.session.claudeSessionId}`);
+      await this.respawnClaude(managed);
+    }
 
     // Send the prompt as stream-json
     const message = JSON.stringify({
@@ -1175,8 +1192,44 @@ for line in sys.stdin:
     const managed = this.sessions.get(sessionId);
     if (!managed || managed.session.status !== "busy") return;
     console.log(`[Session ${sessionId}] Interrupting (SIGINT)`);
+    managed.interrupted = true;
     managed.adapter.interrupt();
-    // Don't delete session — Claude CLI will handle SIGINT and return to idle
+  }
+
+  /**
+   * Re-spawn the Claude process after an interrupt.
+   * Uses --resume with the existing claudeSessionId to continue the conversation.
+   */
+  private async respawnClaude(managed: ManagedSession): Promise<void> {
+    const { session } = managed;
+    const args = [
+      "-p",
+      "--input-format", "stream-json",
+      "--output-format", "stream-json",
+      "--verbose",
+    ];
+
+    // Re-use existing MCP config if available
+    if (managed.mcpConfigPath) {
+      args.push(
+        "--permission-prompt-tool", "mcp__perm__check_permission",
+        "--mcp-config", managed.mcpConfigPath,
+      );
+    }
+
+    // Resume the existing Claude session
+    args.push("--resume", session.claudeSessionId);
+
+    const spawnEnv: Record<string, string> = {};
+    if (managed.claudeConfigDir) {
+      spawnEnv.CLAUDE_CONFIG_DIR = managed.claudeConfigDir;
+    }
+    const spawnCwd = session.worktree
+      ? session.worktree.worktreePath
+      : managed.originalCwd || session.workDir;
+
+    console.log(`[Session ${session.id}] Re-spawning claude with cwd=${spawnCwd}, args=${args.join(" ")}`);
+    await managed.adapter.spawn("claude", args, { cwd: spawnCwd, env: spawnEnv });
   }
 
   terminateSession(sessionId: string): void {
