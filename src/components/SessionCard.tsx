@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { StatusBadge } from "./StatusBadge";
 import type { Session } from "@/lib/shared/types";
-import { Monitor, Server } from "lucide-react";
+import { Monitor, Server, GitBranch } from "lucide-react";
 
 interface SessionCardProps {
   session: Session;
@@ -124,6 +124,12 @@ export function SessionCard({
       <div className="text-xs text-muted-foreground truncate font-mono" title={session.workDir}>
         {session.workDir}
       </div>
+      {session.worktree && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+          <GitBranch className="w-3 h-3" />
+          <span className="font-mono truncate">{session.worktree.branch}</span>
+        </div>
+      )}
       <div className="flex items-center justify-between mt-1.5 text-xs text-muted-foreground">
         <span>{timeSinceActivity}</span>
         {session.totalCostUsd > 0 && (

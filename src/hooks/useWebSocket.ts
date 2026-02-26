@@ -11,10 +11,18 @@ const WS_URL = typeof window !== "undefined"
 const RECONNECT_DELAY = 2000;
 const MAX_RECONNECT_DELAY = 30000;
 
+export interface PathListResult {
+  entries: Array<{ name: string; isDir: boolean }>;
+  resolvedPath: string;
+  prefix?: string;
+  error?: string;
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelayRef = useRef(RECONNECT_DELAY);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pathListCallbacksRef = useRef<Map<string, (result: PathListResult) => void>>(new Map());
 
   const {
     addSession,
@@ -30,6 +38,7 @@ export function useWebSocket() {
     setGlobalConfig,
     setSessionConfig,
     setPlanContent,
+    setWorktrees,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -85,6 +94,19 @@ export function useWebSocket() {
           setDiscoveredSessions(msg.machineId, msg.sessions);
           break;
 
+        case "worktrees.list":
+          setWorktrees(msg.machineId, msg.worktrees);
+          break;
+
+        case "path.list": {
+          const cb = pathListCallbacksRef.current.get(msg.requestId);
+          if (cb) {
+            cb({ entries: msg.entries, resolvedPath: msg.resolvedPath, prefix: msg.prefix, error: msg.error });
+            pathListCallbacksRef.current.delete(msg.requestId);
+          }
+          break;
+        }
+
         case "config.data":
           setGlobalConfig(msg.settings, msg.claudemd);
           break;
@@ -122,7 +144,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees]
   );
 
   const connect = useCallback(() => {
@@ -167,6 +189,26 @@ export function useWebSocket() {
     }
   }, []);
 
+  const requestPathList = useCallback(
+    (machineId: string, path: string): Promise<PathListResult> => {
+      return new Promise((resolve) => {
+        const requestId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          pathListCallbacksRef.current.delete(requestId);
+          resolve({ entries: [], resolvedPath: path, error: "Request timed out" });
+        }, 5000);
+
+        pathListCallbacksRef.current.set(requestId, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
+
+        send({ type: "path.list", machineId, path, requestId });
+      });
+    },
+    [send],
+  );
+
   useEffect(() => {
     connect();
 
@@ -178,5 +220,5 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  return { send };
+  return { send, requestPathList };
 }

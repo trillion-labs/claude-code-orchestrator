@@ -8,7 +8,7 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
@@ -78,6 +78,13 @@ export function SessionView({
               )}
               <FolderOpen className="w-3 h-3" />
               <span className="font-mono">{session.workDir}</span>
+              {session.worktree && (
+                <>
+                  <span className="mx-0.5">·</span>
+                  <GitBranch className="w-3 h-3" />
+                  <span className="font-mono">{session.worktree.branch}</span>
+                </>
+              )}
             </div>
           </div>
           <StatusBadge status={session.status} />

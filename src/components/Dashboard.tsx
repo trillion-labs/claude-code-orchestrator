@@ -13,7 +13,7 @@ import { Terminal, Settings } from "lucide-react";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
-  const { send } = useWebSocket();
+  const { send, requestPathList } = useWebSocket();
   const {
     sessions,
     activeSession,
@@ -23,14 +23,25 @@ export function Dashboard() {
     machines,
     discoveredSessions,
     pendingAttention,
+    worktrees,
     setActiveSession,
     setSessionName,
     removeAttention,
     getSessionDisplayName,
   } = useSessionStore();
 
-  const handleCreateSession = (machineId: string, workDir: string, resumeSessionId?: string, permissionMode?: PermissionMode) => {
-    send({ type: "session.create", machineId, workDir, resumeSessionId, permissionMode });
+  const handleCreateSession = (
+    machineId: string,
+    workDir: string,
+    resumeSessionId?: string,
+    permissionMode?: PermissionMode,
+    worktree?: { enabled: boolean; name: string; existingPath?: string },
+  ) => {
+    send({ type: "session.create", machineId, workDir, resumeSessionId, permissionMode, worktree });
+  };
+
+  const handleListWorktrees = (machineId: string, workDir: string) => {
+    send({ type: "worktrees.list", machineId, workDir });
   };
 
   const handleDiscoverSessions = (machineId: string, workDir?: string) => {
@@ -91,8 +102,11 @@ export function Dashboard() {
           <MachineSelector
             machines={machines}
             discoveredSessions={discoveredSessions}
+            worktrees={worktrees}
             onCreateSession={handleCreateSession}
             onDiscoverSessions={handleDiscoverSessions}
+            onListWorktrees={handleListWorktrees}
+            requestPathList={requestPathList}
           />
         </div>
 

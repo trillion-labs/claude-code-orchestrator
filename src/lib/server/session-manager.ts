@@ -8,7 +8,7 @@ import { LocalAdapter } from "./adapters/local-adapter";
 import { SSHAdapter } from "./adapters/ssh-adapter";
 import { SSHConnectionManager } from "./ssh-manager";
 import { StreamParser } from "./stream-parser";
-import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest } from "../shared/types";
+import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, WorktreeInfo } from "../shared/types";
 import { PERMISSION_MODES } from "../shared/types";
 import { resolvePermissionByMode } from "./permission-utils";
 
@@ -47,7 +47,7 @@ export class SessionManager extends EventEmitter {
     this.orchestratorPort = orchestratorPort;
   }
 
-  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default"): Promise<Session> {
+  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }): Promise<Session> {
     const sessionId = uuidv4();
     const claudeSessionId = resumeSessionId || uuidv4();
 
@@ -85,6 +85,77 @@ export class SessionManager extends EventEmitter {
     };
 
     this.sessions.set(sessionId, managed);
+
+    // Handle worktree (new sessions only)
+    if (worktree?.enabled && !resumeSessionId) {
+      try {
+        if (machine.type === "local") {
+          // ── Local worktree ──
+          if (worktree.existingPath) {
+            // Use existing worktree — just set workDir and worktree info
+            const { execSync } = await import("child_process");
+            const expandedWorkDir = workDir.replace(/^~/, process.env.HOME || "/root");
+            const repoRoot = execSync("git rev-parse --show-toplevel", {
+              cwd: expandedWorkDir,
+              encoding: "utf-8",
+            }).trim();
+            // Detect branch from the existing worktree
+            let branch = `claude/${worktree.name}`;
+            try {
+              branch = execSync("git rev-parse --abbrev-ref HEAD", {
+                cwd: worktree.existingPath,
+                encoding: "utf-8",
+              }).trim();
+            } catch { /* fallback to claude/<name> */ }
+            session.workDir = worktree.existingPath;
+            session.worktree = {
+              name: worktree.name,
+              worktreePath: worktree.existingPath,
+              branch,
+              baseDir: repoRoot,
+            };
+          } else {
+            // Create new worktree
+            const worktreeInfo = await this.setupWorktree(workDir, worktree.name);
+            session.workDir = worktreeInfo.worktreePath;
+            session.worktree = worktreeInfo;
+          }
+        } else {
+          // ── Remote (SSH) worktree ──
+          if (worktree.existingPath) {
+            // Use existing remote worktree — detect branch + repo root via SSH
+            const detectScript = `cd "${worktree.existingPath}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "claude/${worktree.name}" ; echo "---SEPARATOR---" ; cd "${workDir}" && git rev-parse --show-toplevel 2>/dev/null || echo "${workDir}"`;
+            const detectChannel = await this.sshManager.execFresh(machine, detectScript);
+            const detectOutput = await new Promise<string>((resolve) => {
+              let out = "";
+              detectChannel.on("data", (data: Buffer) => { out += data.toString(); });
+              detectChannel.on("close", () => resolve(out.trim()));
+              detectChannel.on("error", () => resolve(""));
+            });
+            const parts = detectOutput.split("---SEPARATOR---").map(s => s.trim());
+            const branch = parts[0] || `claude/${worktree.name}`;
+            const repoRoot = parts[1] || workDir;
+            session.workDir = worktree.existingPath;
+            session.worktree = {
+              name: worktree.name,
+              worktreePath: worktree.existingPath,
+              branch,
+              baseDir: repoRoot,
+            };
+          } else {
+            // Create new remote worktree
+            const worktreeInfo = await this.setupRemoteWorktree(machine, workDir, worktree.name);
+            session.workDir = worktreeInfo.worktreePath;
+            session.worktree = worktreeInfo;
+          }
+        }
+      } catch (err) {
+        session.status = "error";
+        session.error = (err as Error).message;
+        this.emit("session:status", sessionId, session.status, session.error);
+        return session;
+      }
+    }
 
     // Wire up parser events
     parser.on("message", (msg: ClaudeStreamMessage) => {
@@ -206,8 +277,10 @@ export class SessionManager extends EventEmitter {
       if (managed.claudeConfigDir) {
         spawnEnv.CLAUDE_CONFIG_DIR = managed.claudeConfigDir;
       }
-      // Use original cwd for resume (claude --resume looks up session by cwd-based project dir)
-      const spawnCwd = (resumeSessionId && managed.originalCwd) || workDir;
+      // Use worktree path if created, original cwd for resume, or workDir as fallback
+      const spawnCwd = session.worktree
+        ? session.worktree.worktreePath
+        : (resumeSessionId && managed.originalCwd) || workDir;
       console.log(`[Session ${sessionId}] Spawning claude with cwd=${spawnCwd}, args=${args.join(" ")}`);
       await adapter.spawn("claude", args, { cwd: spawnCwd, env: spawnEnv });
       session.status = "idle";
@@ -219,6 +292,387 @@ export class SessionManager extends EventEmitter {
     }
 
     return session;
+  }
+
+  private async setupWorktree(workDir: string, name: string): Promise<WorktreeInfo> {
+    const { execSync } = await import("child_process");
+    const { mkdirSync } = await import("fs");
+    const expandedWorkDir = workDir.replace(/^~/, process.env.HOME || "/root");
+
+    // 1. Validate this is a git repository
+    try {
+      execSync("git rev-parse --is-inside-work-tree", {
+        cwd: expandedWorkDir,
+        stdio: "pipe",
+      });
+    } catch {
+      throw new Error(
+        `"${workDir}" is not a git repository. Worktree creation requires a git repo.`
+      );
+    }
+
+    // 2. Get the git repo root
+    const repoRoot = execSync("git rev-parse --show-toplevel", {
+      cwd: expandedWorkDir,
+      encoding: "utf-8",
+    }).trim();
+
+    const worktreePath = join(repoRoot, ".claude", "worktrees", name);
+    const branch = `claude/${name}`;
+
+    // 3. Check if worktree already exists at that path
+    try {
+      const existingWorktrees = execSync("git worktree list --porcelain", {
+        cwd: repoRoot,
+        encoding: "utf-8",
+      });
+      if (existingWorktrees.includes(worktreePath)) {
+        throw new Error(`Worktree "${name}" already exists at ${worktreePath}`);
+      }
+    } catch (err) {
+      if ((err as Error).message.includes("already exists")) throw err;
+    }
+
+    // 4. Check if branch already exists
+    try {
+      execSync(`git rev-parse --verify "refs/heads/${branch}"`, {
+        cwd: repoRoot,
+        stdio: "pipe",
+      });
+      throw new Error(
+        `Branch "${branch}" already exists. Choose a different worktree name.`
+      );
+    } catch (err) {
+      if ((err as Error).message.includes("already exists")) throw err;
+      // Expected: branch doesn't exist yet
+    }
+
+    // 5. Create directory and worktree
+    mkdirSync(join(repoRoot, ".claude", "worktrees"), { recursive: true });
+
+    try {
+      execSync(`git worktree add "${worktreePath}" -b "${branch}"`, {
+        cwd: repoRoot,
+        stdio: "pipe",
+      });
+    } catch (err) {
+      throw new Error(`Failed to create worktree: ${(err as Error).message}`);
+    }
+
+    console.log(`[Worktree] Created worktree "${name}" at ${worktreePath} on branch ${branch}`);
+    return { name, worktreePath, branch, baseDir: repoRoot };
+  }
+
+  private async setupRemoteWorktree(
+    machine: MachineConfig,
+    workDir: string,
+    name: string,
+  ): Promise<WorktreeInfo> {
+    const escapedWorkDir = workDir.replace(/"/g, '\\"');
+    const escapedName = name.replace(/"/g, '\\"');
+
+    const script = `python3 -c '
+import os, json, subprocess as sp, sys
+
+work_dir = os.path.expanduser("${escapedWorkDir}")
+name = "${escapedName}"
+branch = f"claude/{name}"
+
+def run(cmd, cwd):
+    return sp.check_output(cmd, shell=True, cwd=cwd, stderr=sp.PIPE).decode().strip()
+
+try:
+    run("git rev-parse --is-inside-work-tree", work_dir)
+    repo_root = run("git rev-parse --show-toplevel", work_dir)
+    wt_path = os.path.join(repo_root, ".claude", "worktrees", name)
+
+    existing = run("git worktree list --porcelain", repo_root)
+    if wt_path in existing:
+        print(json.dumps({"error": f"Worktree \\"{name}\\" already exists at {wt_path}"}))
+        sys.exit(0)
+
+    try:
+        run(f"git rev-parse --verify \\"refs/heads/{branch}\\"", repo_root)
+        print(json.dumps({"error": f"Branch \\"{branch}\\" already exists. Choose a different worktree name."}))
+        sys.exit(0)
+    except:
+        pass
+
+    os.makedirs(os.path.join(repo_root, ".claude", "worktrees"), exist_ok=True)
+    run(f"git worktree add \\"{wt_path}\\" -b \\"{branch}\\"", repo_root)
+    print(json.dumps({"name": name, "worktreePath": wt_path, "branch": branch, "baseDir": repo_root}))
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+'`;
+
+    const channel = await this.sshManager.execFresh(machine, script);
+    const output = await new Promise<string>((resolve) => {
+      let out = "";
+      channel.on("data", (data: Buffer) => { out += data.toString(); });
+      channel.on("close", () => resolve(out.trim()));
+      channel.on("error", () => resolve(""));
+    });
+
+    if (!output) {
+      throw new Error("No response from remote machine during worktree creation");
+    }
+
+    let result: Record<string, string>;
+    try {
+      result = JSON.parse(output);
+    } catch {
+      throw new Error(`Invalid response from remote: ${output.slice(0, 200)}`);
+    }
+
+    if (result.error) {
+      throw new Error(result.error);
+    }
+
+    console.log(`[Worktree] Created remote worktree "${name}" at ${result.worktreePath} on branch ${result.branch}`);
+    return {
+      name: result.name,
+      worktreePath: result.worktreePath,
+      branch: result.branch,
+      baseDir: result.baseDir,
+    };
+  }
+
+  // ── Directory Listing for Path Autocomplete ──
+
+  async listDirectory(
+    machine: MachineConfig,
+    dirPath: string,
+    limit = 50,
+  ): Promise<{ entries: Array<{ name: string; isDir: boolean }>; resolvedPath: string; prefix?: string; error?: string }> {
+    return machine.type === "local"
+      ? this.listLocalDirectory(dirPath, limit)
+      : this.listRemoteDirectory(machine, dirPath, limit);
+  }
+
+  private async listLocalDirectory(
+    dirPath: string,
+    limit: number,
+  ): Promise<{ entries: Array<{ name: string; isDir: boolean }>; resolvedPath: string; prefix?: string; error?: string }> {
+    const { readdir: readdirFs } = await import("fs/promises");
+    const { resolve, dirname, basename } = await import("path");
+
+    const resolvedPath = resolve(dirPath.replace(/^~/, process.env.HOME || "/root"));
+
+    try {
+      const items = await readdirFs(resolvedPath, { withFileTypes: true });
+
+      const dirs: Array<{ name: string; isDir: boolean }> = [];
+      const files: Array<{ name: string; isDir: boolean }> = [];
+
+      for (const item of items) {
+        // Hide dotfiles by default
+        if (item.name.startsWith(".")) continue;
+        if (item.isDirectory()) {
+          dirs.push({ name: item.name, isDir: true });
+        } else {
+          files.push({ name: item.name, isDir: false });
+        }
+      }
+
+      // Sort alphabetically: dirs first, then files
+      dirs.sort((a, b) => a.name.localeCompare(b.name));
+      files.sort((a, b) => a.name.localeCompare(b.name));
+
+      const entries: Array<{ name: string; isDir: boolean }> = [];
+
+      // Add ".." unless at root
+      if (resolvedPath !== "/") {
+        entries.push({ name: "..", isDir: true });
+      }
+
+      entries.push(...dirs, ...files);
+
+      return { entries: entries.slice(0, limit), resolvedPath };
+    } catch {
+      // ★ Prefix fallback: path is not a directory — try parent + prefix filter
+      const parent = dirname(resolvedPath);
+      const prefix = basename(resolvedPath);
+
+      try {
+        const items = await readdirFs(parent, { withFileTypes: true });
+        const prefixLower = prefix.toLowerCase();
+
+        const dirs: Array<{ name: string; isDir: boolean }> = [];
+        const files: Array<{ name: string; isDir: boolean }> = [];
+
+        for (const item of items) {
+          if (item.name.startsWith(".")) continue;
+          if (!item.name.toLowerCase().startsWith(prefixLower)) continue;
+          if (item.isDirectory()) {
+            dirs.push({ name: item.name, isDir: true });
+          } else {
+            files.push({ name: item.name, isDir: false });
+          }
+        }
+
+        dirs.sort((a, b) => a.name.localeCompare(b.name));
+        files.sort((a, b) => a.name.localeCompare(b.name));
+
+        // No ".." in prefix mode
+        const entries = [...dirs, ...files];
+        return { entries: entries.slice(0, limit), resolvedPath: parent, prefix };
+      } catch (innerErr) {
+        return { entries: [], resolvedPath, error: (innerErr as Error).message };
+      }
+    }
+  }
+
+  private async listRemoteDirectory(
+    machine: MachineConfig,
+    dirPath: string,
+    limit: number,
+  ): Promise<{ entries: Array<{ name: string; isDir: boolean }>; resolvedPath: string; prefix?: string; error?: string }> {
+    try {
+      const script = `python3 -c '
+import os, json, sys
+p = os.path.expanduser("""${dirPath.replace(/"/g, '\\"')}""")
+p = os.path.abspath(p)
+
+def list_dir(d, prefix=None, lim=${limit}):
+    items = os.listdir(d)
+    dirs = []
+    files = []
+    pfx = prefix.lower() if prefix else None
+    for name in sorted(items):
+        if name.startswith("."):
+            continue
+        if pfx and not name.lower().startswith(pfx):
+            continue
+        full = os.path.join(d, name)
+        if os.path.isdir(full):
+            dirs.append({"name": name, "isDir": True})
+        else:
+            files.append({"name": name, "isDir": False})
+    entries = []
+    if not prefix and d != "/":
+        entries.append({"name": "..", "isDir": True})
+    entries.extend(dirs[:lim])
+    entries.extend(files[:lim])
+    return entries[:lim]
+
+try:
+    if os.path.isdir(p):
+        entries = list_dir(p)
+        print(json.dumps({"entries": entries, "resolvedPath": p}))
+    else:
+        parent = os.path.dirname(p)
+        prefix = os.path.basename(p)
+        entries = list_dir(parent, prefix)
+        print(json.dumps({"entries": entries, "resolvedPath": parent, "prefix": prefix}))
+except Exception as e:
+    print(json.dumps({"entries": [], "resolvedPath": p, "error": str(e)}))
+'`;
+
+      const channel = await this.sshManager.execFresh(machine, script);
+      const output = await new Promise<string>((resolve) => {
+        let out = "";
+        channel.on("data", (data: Buffer) => { out += data.toString(); });
+        channel.on("close", () => resolve(out.trim()));
+        channel.on("error", () => resolve(""));
+      });
+
+      if (!output) {
+        return { entries: [], resolvedPath: dirPath, error: "No response from remote" };
+      }
+
+      return JSON.parse(output);
+    } catch (err) {
+      return { entries: [], resolvedPath: dirPath, error: (err as Error).message };
+    }
+  }
+
+  async listLocalWorktrees(workDir: string): Promise<Array<{ name: string; path: string; branch: string }>> {
+    const { execSync } = await import("child_process");
+    const expandedWorkDir = workDir.replace(/^~/, process.env.HOME || "/root");
+
+    try {
+      const repoRoot = execSync("git rev-parse --show-toplevel", {
+        cwd: expandedWorkDir,
+        encoding: "utf-8",
+      }).trim();
+
+      const output = execSync("git worktree list --porcelain", {
+        cwd: repoRoot,
+        encoding: "utf-8",
+      });
+
+      // Parse porcelain output: blocks separated by blank lines
+      const worktrees: Array<{ name: string; path: string; branch: string }> = [];
+      const blocks = output.split("\n\n").filter(Boolean);
+
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        const wtPath = lines.find((l) => l.startsWith("worktree "))?.slice(9);
+        const branchLine = lines.find((l) => l.startsWith("branch "));
+        const branch = branchLine?.slice(7).replace("refs/heads/", "") || "";
+        if (!wtPath) continue;
+
+        // Only list .claude/worktrees/ pattern
+        const match = wtPath.match(/\.claude\/worktrees\/([^/]+)$/);
+        if (match) {
+          worktrees.push({ name: match[1], path: wtPath, branch });
+        }
+      }
+
+      return worktrees;
+    } catch {
+      return []; // Not a git repo or no worktrees
+    }
+  }
+
+  async listRemoteWorktrees(
+    machine: MachineConfig,
+    workDir: string,
+  ): Promise<Array<{ name: string; path: string; branch: string }>> {
+    const escapedWorkDir = workDir.replace(/"/g, '\\"');
+
+    const script = `python3 -c '
+import os, json, subprocess as sp, re
+
+work_dir = os.path.expanduser("${escapedWorkDir}")
+try:
+    repo_root = sp.check_output("git rev-parse --show-toplevel",
+        shell=True, cwd=work_dir, stderr=sp.PIPE).decode().strip()
+    output = sp.check_output("git worktree list --porcelain",
+        shell=True, cwd=repo_root, stderr=sp.PIPE).decode()
+    result = []
+    for block in output.split("\\n\\n"):
+        lines = block.strip().split("\\n")
+        wt_path = ""
+        branch = ""
+        for l in lines:
+            if l.startswith("worktree "):
+                wt_path = l[9:]
+            elif l.startswith("branch "):
+                branch = l[7:].replace("refs/heads/", "")
+        if not wt_path:
+            continue
+        m = re.search(r"\\.claude/worktrees/([^/]+)$", wt_path)
+        if m:
+            result.append({"name": m.group(1), "path": wt_path, "branch": branch})
+    print(json.dumps(result))
+except:
+    print("[]")
+'`;
+
+    try {
+      const channel = await this.sshManager.execFresh(machine, script);
+      const output = await new Promise<string>((resolve) => {
+        let out = "";
+        channel.on("data", (data: Buffer) => { out += data.toString(); });
+        channel.on("close", () => resolve(out.trim()));
+        channel.on("error", () => resolve("[]"));
+      });
+
+      return JSON.parse(output || "[]");
+    } catch {
+      return [];
+    }
   }
 
   async sendPrompt(sessionId: string, prompt: string): Promise<void> {
@@ -994,12 +1448,21 @@ done
           // e.g. "-Users-suyeongan-dev" -> "/Users/suyeongan/dev"
           const projectPath = project.replace(/-/g, "/").replace(/^\//, "");
 
+          // Detect worktree name from RAW project dir name
+          // Claude encodes paths: "/" → "-" and "." → "-"
+          // e.g. "/repo/.claude/worktrees/amazing-khayyam" → "-repo--claude-worktrees-amazing-khayyam"
+          // Pattern: "--claude-worktrees-" (double dash from "/.claude/")
+          let worktreeName: string | undefined;
+          const wtMatch = project.match(/-claude-worktrees-(.+)$/);
+          if (wtMatch) worktreeName = wtMatch[1];
+
           results.push({
             sessionId,
             project: projectPath,
             lastActivity: fileStat.mtimeMs,
             messageCount,
             summary,
+            worktreeName,
           });
         }
       }
@@ -1067,7 +1530,9 @@ def scan_base(base):
                                 break
                         except:
                             pass
-                print(f"SESSION|{sid}|{proj}|{cwd}|{mtime}|{size_kb}|{summary}")
+                wt_match = re.search(r"-claude-worktrees-(.+)$", proj)
+                wt_name = wt_match.group(1) if wt_match else ""
+                print(f"SESSION|{sid}|{proj}|{cwd}|{mtime}|{size_kb}|{wt_name}|{summary}")
             except Exception as e:
                 print(f"ERROR|{proj}|{fn}|{e}", file=sys.stderr)
 
@@ -1097,8 +1562,8 @@ if work:
           const sessions: ClaudeSessionInfo[] = [];
           for (const line of output.split("\n")) {
             if (!line.startsWith("SESSION|")) continue;
-            // Format: SESSION|sid|proj|cwd|mtime|sizeKb|summary
-            const [, sessionId, projDir, cwd, mtime, sizeKb, ...summaryParts] = line.split("|");
+            // Format: SESSION|sid|proj|cwd|mtime|sizeKb|wtName|summary
+            const [, sessionId, projDir, cwd, mtime, sizeKb, wtName, ...summaryParts] = line.split("|");
             const summary = summaryParts.join("|"); // summary may contain |
 
             // Derive display path: prefer cwd from JSONL, fall back to project dir name
@@ -1124,6 +1589,7 @@ if work:
               lastActivity: parseInt(mtime, 10) * 1000,
               messageCount: parseInt(sizeKb, 10) || 0, // Now stores size in KB
               summary: summary || undefined,
+              worktreeName: wtName || undefined,
             });
           }
           resolve(sessions.sort((a, b) => b.lastActivity - a.lastActivity));

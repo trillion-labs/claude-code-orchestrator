@@ -27,6 +27,8 @@ interface SessionState {
   // Plan panel
   planContent: Map<string, string>; // sessionId → plan markdown
   planPanelOpen: Map<string, boolean>; // sessionId → panel open state
+  // Existing worktrees per machine (from worktrees.list)
+  worktrees: Map<string, Array<{ name: string; path: string; branch: string }>>
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -72,6 +74,8 @@ interface SessionState {
   setPlanContent: (sessionId: string, content: string) => void;
   setPlanPanelOpen: (sessionId: string, open: boolean) => void;
   clearPlanContent: (sessionId: string) => void;
+  // Worktrees
+  setWorktrees: (machineId: string, worktrees: Array<{ name: string; path: string; branch: string }>) => void;
 }
 
 export const useStore = create<SessionState>((set) => ({
@@ -90,6 +94,7 @@ export const useStore = create<SessionState>((set) => ({
   sessionConfig: new Map(),
   planContent: new Map(),
   planPanelOpen: new Map(),
+  worktrees: new Map(),
 
   setSessions: (sessions) =>
     set(() => {
@@ -289,5 +294,12 @@ export const useStore = create<SessionState>((set) => ({
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
       return { planContent, planPanelOpen };
+    }),
+
+  setWorktrees: (machineId, worktrees) =>
+    set((state) => {
+      const wt = new Map(state.worktrees);
+      wt.set(machineId, worktrees);
+      return { worktrees: wt };
     }),
 }));

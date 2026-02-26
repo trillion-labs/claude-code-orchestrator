@@ -53,6 +53,15 @@ export const PERMISSION_MODES: Record<PermissionMode, PermissionModeConfig> = {
   },
 };
 
+// ── Worktree Info ──
+
+export interface WorktreeInfo {
+  name: string;           // e.g. "amazing-khayyam"
+  worktreePath: string;   // e.g. "/Users/x/repo/.claude/worktrees/amazing-khayyam"
+  branch: string;         // e.g. "claude/amazing-khayyam"
+  baseDir: string;        // Original git repo root
+}
+
 // ── Session Types ──
 
 export type SessionStatus = "starting" | "idle" | "busy" | "error" | "terminated";
@@ -69,6 +78,7 @@ export interface Session {
   lastActivity: number;
   permissionMode: PermissionMode;
   error?: string;
+  worktree?: WorktreeInfo;
 }
 
 // ── Claude Stream JSON Types ──
@@ -184,6 +194,7 @@ export interface ClaudeSessionInfo {
   lastActivity: number;
   messageCount: number;
   summary?: string; // First user message as summary
+  worktreeName?: string; // Detected from ".claude/worktrees/<name>" in project path
 }
 
 // ── Permission Request (for interactive approval) ──

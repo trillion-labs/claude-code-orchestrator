@@ -9,6 +9,7 @@ export type ClientMessage =
       workDir: string;
       resumeSessionId?: string; // Claude session ID to resume
       permissionMode?: PermissionMode;
+      worktree?: { enabled: boolean; name: string; existingPath?: string };
     }
   | {
       type: "session.discover";
@@ -46,7 +47,9 @@ export type ClientMessage =
   | { type: "config.read" }
   | { type: "config.write"; file: "settings" | "claudemd"; content: string }
   | { type: "session.config.read"; sessionId: string }
-  | { type: "session.config.write"; sessionId: string; file: "settings" | "claudemd"; content: string };
+  | { type: "session.config.write"; sessionId: string; file: "settings" | "claudemd"; content: string }
+  | { type: "worktrees.list"; machineId: string; workDir: string }
+  | { type: "path.list"; machineId: string; path: string; requestId: string };
 
 // ── Server → Client Messages ──
 
@@ -138,6 +141,20 @@ export type ServerMessage =
       type: "session.config.error";
       sessionId: string;
       error: string;
+    }
+  | {
+      type: "worktrees.list";
+      machineId: string;
+      worktrees: Array<{ name: string; path: string; branch: string }>;
+    }
+  | {
+      type: "path.list";
+      machineId: string;
+      requestId: string;
+      entries: Array<{ name: string; isDir: boolean }>;
+      resolvedPath: string;
+      prefix?: string;
+      error?: string;
     }
   | {
       type: "error";

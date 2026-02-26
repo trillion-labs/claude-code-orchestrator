@@ -125,7 +125,7 @@ export class WebSocketHandler {
           return;
         }
         try {
-          const session = await this.sessionManager.createSession(machine, msg.workDir, msg.resumeSessionId, msg.permissionMode);
+          const session = await this.sessionManager.createSession(machine, msg.workDir, msg.resumeSessionId, msg.permissionMode, msg.worktree);
           this.send(ws, { type: "session.created", session });
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
@@ -243,6 +243,57 @@ export class WebSocketHandler {
             sessionId: msg.sessionId,
             error: (err as Error).message,
           });
+        }
+        break;
+      }
+
+      case "path.list": {
+        const pathMachine = this.machines.find((m) => m.id === msg.machineId);
+        if (!pathMachine) {
+          this.send(ws, {
+            type: "path.list",
+            machineId: msg.machineId,
+            requestId: msg.requestId,
+            entries: [],
+            resolvedPath: msg.path,
+            error: `Machine ${msg.machineId} not found`,
+          });
+          return;
+        }
+        try {
+          const result = await this.sessionManager.listDirectory(pathMachine, msg.path);
+          this.send(ws, {
+            type: "path.list",
+            machineId: msg.machineId,
+            requestId: msg.requestId,
+            ...result,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "path.list",
+            machineId: msg.machineId,
+            requestId: msg.requestId,
+            entries: [],
+            resolvedPath: msg.path,
+            error: (err as Error).message,
+          });
+        }
+        break;
+      }
+
+      case "worktrees.list": {
+        const wtMachine = this.machines.find((m) => m.id === msg.machineId);
+        if (!wtMachine) {
+          this.send(ws, { type: "error", error: `Machine ${msg.machineId} not found` });
+          return;
+        }
+        try {
+          const worktrees = wtMachine.type === "local"
+            ? await this.sessionManager.listLocalWorktrees(msg.workDir)
+            : await this.sessionManager.listRemoteWorktrees(wtMachine, msg.workDir);
+          this.send(ws, { type: "worktrees.list", machineId: msg.machineId, worktrees });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
         }
         break;
       }
