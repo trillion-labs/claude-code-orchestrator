@@ -1171,6 +1171,14 @@ for line in sys.stdin:
     this.emit("session:permissionModeChanged", sessionId, mode);
   }
 
+  interruptSession(sessionId: string): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed || managed.session.status !== "busy") return;
+    console.log(`[Session ${sessionId}] Interrupting (SIGINT)`);
+    managed.adapter.interrupt();
+    // Don't delete session — Claude CLI will handle SIGINT and return to idle
+  }
+
   terminateSession(sessionId: string): void {
     const managed = this.sessions.get(sessionId);
     if (!managed) return;

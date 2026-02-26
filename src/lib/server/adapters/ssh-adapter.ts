@@ -60,6 +60,12 @@ export class SSHAdapter extends ProcessAdapter {
     }
   }
 
+  interrupt(): void {
+    if (this.channel) {
+      this.channel.signal("INT");
+    }
+  }
+
   kill(): void {
     if (this.channel) {
       this.channel.signal("TERM");

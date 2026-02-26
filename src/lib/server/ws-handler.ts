@@ -161,6 +161,11 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.interrupt": {
+        this.sessionManager.interruptSession(msg.sessionId);
+        break;
+      }
+
       case "session.terminate": {
         this.sessionManager.terminateSession(msg.sessionId);
         this.broadcast({ type: "session.terminated", sessionId: msg.sessionId });
