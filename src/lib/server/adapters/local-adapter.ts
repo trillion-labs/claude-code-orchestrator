@@ -37,6 +37,12 @@ export class LocalAdapter extends ProcessAdapter {
     }
   }
 
+  interrupt(): void {
+    if (this.process && !this.process.killed) {
+      this.process.kill("SIGINT");
+    }
+  }
+
   kill(): void {
     if (this.process) {
       this.process.kill("SIGTERM");

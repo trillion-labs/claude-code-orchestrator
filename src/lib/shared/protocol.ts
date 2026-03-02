@@ -22,6 +22,10 @@ export type ClientMessage =
       prompt: string;
     }
   | {
+      type: "session.interrupt";
+      sessionId: string;
+    }
+  | {
       type: "session.terminate";
       sessionId: string;
     }

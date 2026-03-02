@@ -3,14 +3,15 @@
 import { useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { SendHorizontal } from "lucide-react";
+import { SendHorizontal, Square } from "lucide-react";
 
 interface PromptInputProps {
   onSend: (prompt: string) => void;
+  onCancel?: () => void;
   disabled?: boolean;
 }
 
-export function PromptInput({ onSend, disabled }: PromptInputProps) {
+export function PromptInput({ onSend, onCancel, disabled }: PromptInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -43,14 +44,25 @@ export function PromptInput({ onSend, disabled }: PromptInputProps) {
           className="min-h-[60px] max-h-[200px] resize-none font-mono text-sm"
           rows={2}
         />
-        <Button
-          onClick={handleSend}
-          disabled={disabled || !value.trim()}
-          size="icon"
-          className="h-auto min-w-10"
-        >
-          <SendHorizontal className="w-4 h-4" />
-        </Button>
+        {disabled && onCancel ? (
+          <Button
+            onClick={onCancel}
+            variant="outline"
+            size="icon"
+            className="h-auto min-w-10 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          >
+            <Square className="w-3.5 h-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            onClick={handleSend}
+            disabled={disabled || !value.trim()}
+            size="icon"
+            className="h-auto min-w-10"
+          >
+            <SendHorizontal className="w-4 h-4" />
+          </Button>
+        )}
       </div>
     </div>
   );
