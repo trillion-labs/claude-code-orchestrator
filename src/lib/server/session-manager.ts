@@ -770,11 +770,11 @@ except:
               newContent += this.renderToolUse(block.name, inputStr);
 
               // Track plan file path from Write/Edit tool_use blocks
-              // In plan mode, Claude may write to .claude/plans/ or elsewhere (e.g. plan.md at root)
-              // Track the last written file as the plan file path
-              if ((block.name === "Write" || block.name === "Edit") && managed.permissionMode === "plan") {
+              // Two cases: (1) orchestrator permission mode is "plan", or
+              // (2) Claude Code entered plan mode on its own and writes to .claude/plans/
+              if (block.name === "Write" || block.name === "Edit") {
                 const fp = block.input?.file_path ? String(block.input.file_path) : "";
-                if (fp) {
+                if (fp && (managed.permissionMode === "plan" || this.isPlanFilePath(fp))) {
                   managed.planFilePath = fp;
                 }
               }
