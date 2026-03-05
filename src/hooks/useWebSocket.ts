@@ -35,6 +35,7 @@ export function useWebSocket() {
     appendStreamDelta,
     setDiscoveredSessions,
     addAttention,
+    clearAttention,
     setGlobalConfig,
     setSessionConfig,
     setPlanContent,
@@ -85,6 +86,11 @@ export function useWebSocket() {
             msg.totalCostUsd,
             msg.error
           );
+          // Clear attention when session is no longer busy
+          // (expired permission requests are no longer actionable)
+          if (msg.status !== "busy") {
+            clearAttention(msg.sessionId);
+          }
           break;
 
         case "session.terminated":
