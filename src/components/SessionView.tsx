@@ -8,11 +8,12 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, Image } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
 import { PlanPanel } from "./PlanPanel";
+import { OutputPreviewPanel } from "./OutputPreviewPanel";
 import { useStore } from "@/store";
 import type { ClientMessage } from "@/lib/shared/protocol";
 
@@ -45,6 +46,11 @@ export function SessionView({
   const planContent = useStore((s) => s.planContent.get(session.id));
   const planPanelOpen = useStore((s) => s.planPanelOpen.get(session.id) ?? false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
+
+  const outputPreviews = useStore((s) => s.outputPreviews.get(session.id));
+  const outputPanelOpen = useStore((s) => s.outputPanelOpen.get(session.id) ?? false);
+  const setOutputPanelOpen = useStore((s) => s.setOutputPanelOpen);
+  const clearOutputPreviews = useStore((s) => s.clearOutputPreviews);
 
   const handleSessionSettingsOpen = (open: boolean) => {
     setSessionSettingsOpen(open);
@@ -154,6 +160,16 @@ export function SessionView({
               <ClipboardList className="w-4 h-4" />
             </Button>
           )}
+          {outputPreviews && outputPreviews.length > 0 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setOutputPanelOpen(session.id, !outputPanelOpen)}
+              className={`h-8 w-8 transition-colors ${outputPanelOpen ? "text-cyan-400 hover:text-cyan-300" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <Image className="w-4 h-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -203,6 +219,15 @@ export function SessionView({
           <PlanPanel
             content={planContent}
             onClose={() => setPlanPanelOpen(session.id, false)}
+          />
+        )}
+
+        {/* Output preview panel */}
+        {outputPreviews && outputPreviews.length > 0 && outputPanelOpen && (
+          <OutputPreviewPanel
+            items={outputPreviews}
+            onClose={() => setOutputPanelOpen(session.id, false)}
+            onClear={() => clearOutputPreviews(session.id)}
           />
         )}
       </div>

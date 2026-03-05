@@ -6,7 +6,7 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import type { MachineConfig, PermissionMode, PermissionRequest } from "../shared/types";
-import type { ClientMessage, ServerMessage } from "../shared/protocol";
+import type { ClientMessage, ServerMessage, OutputPreviewItem } from "../shared/protocol";
 
 export class WebSocketHandler {
   private sessionManager: SessionManager;
@@ -347,6 +347,10 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:planContent", (sessionId: string, content: string, filePath: string) => {
       this.broadcast({ type: "session.planContent", sessionId, content, filePath });
+    });
+
+    this.sessionManager.on("session:outputPreview", (sessionId: string, item: OutputPreviewItem) => {
+      this.broadcast({ type: "session.outputPreview", sessionId, item });
     });
   }
 

@@ -11,6 +11,7 @@ import { StreamParser } from "./stream-parser";
 import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, WorktreeInfo } from "../shared/types";
 import { PERMISSION_MODES } from "../shared/types";
 import { resolvePermissionByMode } from "./permission-utils";
+import type { OutputPreviewItem } from "../shared/protocol";
 
 interface PermissionResolver {
   resolve: (result: { behavior: string; updatedInput?: Record<string, unknown>; message?: string }) => void;
@@ -789,6 +790,23 @@ except:
             managed.currentAssistantMessage += newContent;
             this.emit("session:stream", sessionId, newContent);
           }
+
+          // Agentic Harness: detect visual file paths in assistant text + Write tool targets
+          const visualPaths: string[] = [];
+          for (const block of msg.message.content) {
+            if (block.type === "text") {
+              visualPaths.push(...this.extractVisualFilePaths(block.text));
+            } else if (block.type === "tool_use" && block.name === "Write") {
+              const fp = block.input?.file_path ? String(block.input.file_path) : "";
+              if (fp && SessionManager.VISUAL_EXTENSIONS.test(fp)) {
+                visualPaths.push(fp);
+              }
+            }
+          }
+          // Read each detected file and emit as output preview (async, fire-and-forget)
+          for (const fp of visualPaths) {
+            this.emitOutputPreview(sessionId, managed, fp);
+          }
         }
         break;
 
@@ -862,6 +880,80 @@ except:
     // plan.md at project root (Claude sometimes writes here)
     if (/[/\\]plan\.md$|^plan\.md$/.test(filePath)) return true;
     return false;
+  }
+
+  // ── Output Preview (Agentic Harness) ──
+
+  private static VISUAL_EXTENSIONS = /\.(png|jpe?g|gif|svg|webp|html?)$/i;
+
+  /**
+   * Extract visual file paths from assistant text.
+   * Matches absolute paths (/...) and relative paths (word/...) ending with visual extensions.
+   */
+  private extractVisualFilePaths(text: string): string[] {
+    const pathRegex = /(?:\/[\w.\-/]+|[\w.\-]+\/[\w.\-/]+)\.(png|jpe?g|gif|svg|webp|html?)\b/gi;
+    const matches = text.match(pathRegex) || [];
+    return [...new Set(matches)];
+  }
+
+  /**
+   * Read a visual file and emit it as an output preview via WebSocket.
+   * Failures are silently ignored (the file may not exist yet or be inaccessible).
+   */
+  private async emitOutputPreview(
+    sessionId: string,
+    managed: ManagedSession,
+    filePath: string,
+  ): Promise<void> {
+    try {
+      const ext = filePath.split(".").pop()?.toLowerCase() || "";
+      const isHtml = /^html?$/.test(ext);
+      const mimeType = isHtml
+        ? "text/html"
+        : `image/${ext === "jpg" ? "jpeg" : ext}`;
+
+      let data: string;
+      if (managed.machine.type === "local") {
+        const absPath = filePath.startsWith("/")
+          ? filePath
+          : join(managed.session.workDir.replace(/^~/, homedir()), filePath);
+        if (isHtml) {
+          data = await readFile(absPath, "utf-8");
+        } else {
+          const buf = await readFile(absPath);
+          data = buf.toString("base64");
+        }
+      } else {
+        // SSH: fetch via exec
+        if (isHtml) {
+          data = await this.execRemoteRead(managed.machine, `cat "${filePath}"`);
+        } else {
+          data = await this.execRemoteRead(
+            managed.machine,
+            `base64 < "${filePath}"`,
+          );
+          data = data.replace(/\s/g, ""); // strip newlines from base64
+        }
+      }
+
+      if (!data) return;
+
+      const item: OutputPreviewItem = {
+        id: uuidv4(),
+        type: isHtml ? "html" : "image",
+        mimeType,
+        data,
+        filePath,
+        timestamp: Date.now(),
+      };
+
+      this.emit("session:outputPreview", sessionId, item);
+    } catch (err) {
+      console.warn(
+        `[Session ${sessionId}] Could not read output ${filePath}:`,
+        (err as Error).message,
+      );
+    }
   }
 
   private renderToolUse(toolName: string, inputJsonStr: string): string {

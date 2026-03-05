@@ -1,5 +1,16 @@
 import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest } from "./types";
 
+// ── Output Preview Types ──
+
+export interface OutputPreviewItem {
+  id: string;
+  type: "image" | "html";
+  mimeType: string;       // "image/png", "text/html" 등
+  data: string;           // base64 (이미지) 또는 HTML 문자열
+  filePath: string;       // 원본 파일 경로 (레이블용)
+  timestamp: number;
+}
+
 // ── Client → Server Messages ──
 
 export type ClientMessage =
@@ -112,6 +123,11 @@ export type ServerMessage =
       sessionId: string;
       content: string;
       filePath: string;
+    }
+  | {
+      type: "session.outputPreview";
+      sessionId: string;
+      item: OutputPreviewItem;
     }
   | {
       type: "config.data";

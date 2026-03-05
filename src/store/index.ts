@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode } from "@/lib/shared/types";
+import type { OutputPreviewItem } from "@/lib/shared/protocol";
 
 interface SessionState {
   sessions: Map<string, Session>;
@@ -27,6 +28,9 @@ interface SessionState {
   // Plan panel
   planContent: Map<string, string>; // sessionId → plan markdown
   planPanelOpen: Map<string, boolean>; // sessionId → panel open state
+  // Output preview panel
+  outputPreviews: Map<string, OutputPreviewItem[]>; // sessionId → items
+  outputPanelOpen: Map<string, boolean>; // sessionId → panel open state
   // Existing worktrees per machine (from worktrees.list)
   worktrees: Map<string, Array<{ name: string; path: string; branch: string }>>
 
@@ -74,6 +78,10 @@ interface SessionState {
   setPlanContent: (sessionId: string, content: string) => void;
   setPlanPanelOpen: (sessionId: string, open: boolean) => void;
   clearPlanContent: (sessionId: string) => void;
+  // Output preview panel
+  addOutputPreview: (sessionId: string, item: OutputPreviewItem) => void;
+  setOutputPanelOpen: (sessionId: string, open: boolean) => void;
+  clearOutputPreviews: (sessionId: string) => void;
   // Worktrees
   setWorktrees: (machineId: string, worktrees: Array<{ name: string; path: string; branch: string }>) => void;
 }
@@ -94,6 +102,8 @@ export const useStore = create<SessionState>((set) => ({
   sessionConfig: new Map(),
   planContent: new Map(),
   planPanelOpen: new Map(),
+  outputPreviews: new Map(),
+  outputPanelOpen: new Map(),
   worktrees: new Map(),
 
   setSessions: (sessions) =>
@@ -154,6 +164,10 @@ export const useStore = create<SessionState>((set) => ({
       planContent.delete(sessionId);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
+      const outputPreviews = new Map(state.outputPreviews);
+      outputPreviews.delete(sessionId);
+      const outputPanelOpen = new Map(state.outputPanelOpen);
+      outputPanelOpen.delete(sessionId);
       return {
         sessions,
         messages,
@@ -163,6 +177,8 @@ export const useStore = create<SessionState>((set) => ({
         sessionConfig,
         planContent,
         planPanelOpen,
+        outputPreviews,
+        outputPanelOpen,
         activeSessionId:
           state.activeSessionId === sessionId ? null : state.activeSessionId,
       };
@@ -294,6 +310,32 @@ export const useStore = create<SessionState>((set) => ({
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
       return { planContent, planPanelOpen };
+    }),
+
+  addOutputPreview: (sessionId, item) =>
+    set((state) => {
+      const outputPreviews = new Map(state.outputPreviews);
+      const existing = outputPreviews.get(sessionId) || [];
+      outputPreviews.set(sessionId, [...existing, item]);
+      const outputPanelOpen = new Map(state.outputPanelOpen);
+      outputPanelOpen.set(sessionId, true); // Auto-open panel when preview arrives
+      return { outputPreviews, outputPanelOpen };
+    }),
+
+  setOutputPanelOpen: (sessionId, open) =>
+    set((state) => {
+      const outputPanelOpen = new Map(state.outputPanelOpen);
+      outputPanelOpen.set(sessionId, open);
+      return { outputPanelOpen };
+    }),
+
+  clearOutputPreviews: (sessionId) =>
+    set((state) => {
+      const outputPreviews = new Map(state.outputPreviews);
+      outputPreviews.delete(sessionId);
+      const outputPanelOpen = new Map(state.outputPanelOpen);
+      outputPanelOpen.delete(sessionId);
+      return { outputPreviews, outputPanelOpen };
     }),
 
   setWorktrees: (machineId, worktrees) =>

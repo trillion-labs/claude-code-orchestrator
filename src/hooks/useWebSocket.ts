@@ -39,6 +39,7 @@ export function useWebSocket() {
     setGlobalConfig,
     setSessionConfig,
     setPlanContent,
+    addOutputPreview,
     setWorktrees,
   } = useStore();
 
@@ -129,6 +130,10 @@ export function useWebSocket() {
           setPlanContent(msg.sessionId, msg.content);
           break;
 
+        case "session.outputPreview":
+          addOutputPreview(msg.sessionId, msg.item);
+          break;
+
         case "session.config.data":
           setSessionConfig(msg.sessionId, msg.settings, msg.claudemd);
           break;
@@ -150,7 +155,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, addOutputPreview, setWorktrees]
   );
 
   const connect = useCallback(() => {
