@@ -13,16 +13,30 @@
 - **dev**: 개발 기준 브랜치. 직접 작업/push 금지. feature/fix 브랜치에서 PR merge로만 업데이트.
 - **feature/fix 브랜치**: 항상 `dev`에서 branch out. 작업 완료 후 `dev`로 PR.
 
+### Workspace Layout
+
+작업 디렉토리는 항상 `main` 브랜치를 유지한다. `dev`는 고정 worktree로 운영.
+
+| Path | Branch | Purpose |
+|------|--------|---------|
+| `/` (project root) | `main` | 기본 작업 디렉토리. 항상 main 유지. |
+| `.claude/worktrees/dev` | `dev` | dev 전용 고정 worktree. 삭제하지 말 것. |
+| `.claude/worktrees/<name>` | `feat/*`, `fix/*` | 임시 feature/fix worktree. PR 완료 후 정리. |
+
+- **절대 project root에서 `git checkout dev` 하지 말 것.** dev 작업은 `.claude/worktrees/dev`에서 수행.
+- dev worktree에서 서버 실행: `npm run dev:preview` (port 9000)
+- main에서 서버 실행: `npm run dev:main` (port 8888)
+
 ### Git Workflow
 
 Every feature or fix MUST follow this workflow:
 
-1. **Branch off dev** — `git checkout dev && git checkout -b feat/<name>`
-   (or use worktree: `git worktree add .claude/worktrees/<name> -b feat/<name> dev`)
-2. **Implement** — work inside the feature branch
+1. **Branch off dev** — `cd .claude/worktrees/dev && git checkout -b feat/<name>`
+   (or create worktree: `git worktree add .claude/worktrees/<name> -b feat/<name> dev`)
+2. **Implement** — work inside the feature branch/worktree
 3. **Commit & push** — commit with clear message, push the feature branch
 4. **Create PR → dev** — `gh pr create --base dev` with summary and test plan
-5. **Return to dev** — switch back after PR is created
+5. **Return to main** — switch back to project root (always on main)
 
 ### Branch Naming
 - Features: `feat/<short-description>`
