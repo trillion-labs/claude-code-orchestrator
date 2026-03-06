@@ -1,8 +1,9 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import type { Project, Task, KanbanColumn } from "../shared/types";
 
-const DATA_DIR = join(process.cwd(), "data");
+const DATA_DIR = join(homedir(), ".claude-orchestrator");
 const PROJECTS_FILE = join(DATA_DIR, "projects.json");
 const TASKS_DIR = join(DATA_DIR, "tasks");
 
