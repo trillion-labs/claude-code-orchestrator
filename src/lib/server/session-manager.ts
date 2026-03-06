@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
-import { readdir, readFile, stat, writeFile, unlink } from "fs/promises";
+import { readdir, readFile, stat, writeFile, unlink, copyFile } from "fs/promises";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { ProcessAdapter } from "./adapters/process-adapter";
@@ -925,7 +925,10 @@ except:
   // ── MCP Permission Prompt Tool ──
 
   private async writeMcpConfig(sessionId: string): Promise<string> {
-    const mcpServerPath = join(process.cwd(), "scripts", "permission-mcp-server.mjs");
+    const srcPath = join(process.cwd(), "scripts", "permission-mcp-server.mjs");
+    // Copy MCP server script to /tmp to avoid issues with .claude/ worktree paths
+    const mcpServerPath = join(tmpdir(), `claude-orch-${sessionId}.mcp.mjs`);
+    await copyFile(srcPath, mcpServerPath);
     const configPath = join(tmpdir(), `claude-orch-${sessionId}.mcp.json`);
     const config = {
       mcpServers: {
@@ -947,6 +950,8 @@ except:
     if (!managed.mcpConfigPath) return;
     if (managed.machine.type === "local") {
       try { await unlink(managed.mcpConfigPath); } catch { /* ignore */ }
+      // Also clean up copied MCP server script
+      try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".mcp.mjs")); } catch { /* ignore */ }
     } else {
       // Remote: clean up remote temp files
       try {

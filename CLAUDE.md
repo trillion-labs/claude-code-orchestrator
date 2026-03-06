@@ -26,6 +26,7 @@
 - **절대 project root에서 `git checkout dev` 하지 말 것.** dev 작업은 `.claude/worktrees/dev`에서 수행.
 - dev worktree에서 서버 실행: `npm run dev:preview` (port 9000)
 - main에서 서버 실행: `npm run dev:main` (port 8888)
+- **worktree 서버 실행 시 반드시 `preview_start`를 사용할 것.** Bash로 직접 띄우면 Claude Code 환경변수(`CLAUDECODE` 등)가 상속되어 MCP permission 서버가 작동하지 않음. `.claude/launch.json`에 설정 추가 후 `preview_start`로 실행.
 
 ### Git Workflow
 

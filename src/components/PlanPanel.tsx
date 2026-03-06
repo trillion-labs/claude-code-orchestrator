@@ -10,7 +10,7 @@ import { ClipboardList, X, GripVertical } from "lucide-react";
 import type { ComponentProps } from "react";
 
 const MIN_WIDTH = 320;
-const MAX_WIDTH = 800;
+const MAX_WIDTH_FALLBACK = 800;
 const DEFAULT_WIDTH = 480;
 
 const planMarkdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
@@ -106,7 +106,8 @@ export function PlanPanel({ content, onClose }: PlanPanelProps) {
       if (!isResizing.current) return;
       // Drag left → increase width (panel is on right side)
       const delta = startX.current - e.clientX;
-      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth.current + delta));
+      const maxWidth = typeof window !== "undefined" ? Math.floor(window.innerWidth * 0.7) : MAX_WIDTH_FALLBACK;
+      const newWidth = Math.min(maxWidth, Math.max(MIN_WIDTH, startWidth.current + delta));
       setWidth(newWidth);
     };
 
@@ -129,7 +130,7 @@ export function PlanPanel({ content, onClose }: PlanPanelProps) {
   return (
     <div
       className="border-l bg-background flex flex-col h-full overflow-hidden relative"
-      style={{ width, minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }}
+      style={{ width, minWidth: MIN_WIDTH, maxWidth: "70vw" }}
     >
       {/* Resize handle */}
       <div
