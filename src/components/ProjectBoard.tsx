@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -22,7 +22,7 @@ import { TaskDetail } from "./TaskDetail";
 import { KANBAN_COLUMNS } from "@/lib/shared/types";
 import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
-import { Server, FolderOpen } from "lucide-react";
+import { Server, FolderOpen, GripVertical } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
@@ -35,6 +35,29 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const { messages, streamingText, sessions } = useStore();
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [detailWidth, setDetailWidth] = useState(380);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const delta = resizeRef.current.startX - e.clientX;
+      const maxWidth = Math.floor(window.innerWidth * 0.7);
+      const newWidth = Math.min(maxWidth, Math.max(320, resizeRef.current.startWidth + delta));
+      setDetailWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      resizeRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -195,7 +218,20 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
 
         {/* Task detail panel */}
         {selectedTask && (
-          <div className="w-[380px] flex-shrink-0">
+          <div className="flex-shrink-0 flex" style={{ width: detailWidth }}>
+            {/* Resize handle */}
+            <div
+              className="w-1.5 flex-shrink-0 cursor-col-resize flex items-center justify-center hover:bg-violet-500/20 active:bg-violet-500/30 transition-colors group"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                resizeRef.current = { startX: e.clientX, startWidth: detailWidth };
+                document.body.style.cursor = "col-resize";
+                document.body.style.userSelect = "none";
+              }}
+            >
+              <GripVertical className="w-3 h-3 text-muted-foreground/30 group-hover:text-violet-400 transition-colors" />
+            </div>
+            <div className="flex-1 min-w-0">
             <TaskDetail
               task={selectedTask}
               session={selectedSession}
@@ -218,6 +254,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                 }
               }}
             />
+            </div>
           </div>
         )}
       </div>

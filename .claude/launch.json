@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:preview"],
       "port": 9000
+    },
+    {
+      "name": "test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["-u", "CLAUDECODE", "npm", "run", "dev:test"],
+      "port": 3333
     }
   ]
 }
