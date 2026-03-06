@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "main",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:main"],
+      "port": 8888
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:preview"],
+      "port": 9000
+    }
+  ]
+}
