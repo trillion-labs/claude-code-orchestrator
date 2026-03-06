@@ -3,13 +3,17 @@
 import { useState } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useSessionStore } from "@/hooks/useSessionStore";
+import { useProjectStore } from "@/hooks/useProjectStore";
 import { SessionCard } from "./SessionCard";
 import { SessionView } from "./SessionView";
 import { MachineSelector } from "./MachineSelector";
 import { SettingsDialog } from "./SettingsDialog";
+import { ProjectSidebar } from "./ProjectSidebar";
+import { ProjectCreateDialog } from "./ProjectCreateDialog";
+import { ProjectBoard } from "./ProjectBoard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Terminal, Settings } from "lucide-react";
+import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
@@ -29,6 +33,12 @@ export function Dashboard() {
     removeAttention,
     getSessionDisplayName,
   } = useSessionStore();
+
+  const {
+    activeProject,
+    viewMode,
+    setViewMode,
+  } = useProjectStore();
 
   const handleCreateSession = (
     machineId: string,
@@ -78,9 +88,15 @@ export function Dashboard() {
     ? getSessionDisplayName(activeSessionId)
     : undefined;
 
+  // Cross-view navigation: from kanban to session view
+  const handleViewSession = (sessionId: string) => {
+    setViewMode("sessions");
+    setActiveSession(sessionId);
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Left Panel - Session List */}
+      {/* Left Panel - Sidebar */}
       <div className="w-72 border-r flex flex-col overflow-hidden">
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
@@ -93,74 +109,141 @@ export function Dashboard() {
               <Settings className="w-4 h-4" />
             </button>
           </div>
+
+          {/* View mode toggle */}
+          <div className="flex gap-1 p-1 bg-muted rounded-lg mb-3">
+            <button
+              onClick={() => setViewMode("sessions")}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 px-3 rounded-md transition-colors ${
+                viewMode === "sessions"
+                  ? "bg-background shadow-sm font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Terminal className="w-3 h-3" />
+              Sessions
+            </button>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-1.5 px-3 rounded-md transition-colors ${
+                viewMode === "kanban"
+                  ? "bg-background shadow-sm font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <LayoutGrid className="w-3 h-3" />
+              Projects
+            </button>
+          </div>
+
           <SettingsDialog
             open={settingsOpen}
             onOpenChange={handleSettingsOpen}
             send={send}
             mode="global"
           />
-          <MachineSelector
-            machines={machines}
-            discoveredSessions={discoveredSessions}
-            worktrees={worktrees}
-            onCreateSession={handleCreateSession}
-            onDiscoverSessions={handleDiscoverSessions}
-            onListWorktrees={handleListWorktrees}
-            requestPathList={requestPathList}
-          />
+
+          {/* Conditional action button */}
+          {viewMode === "sessions" ? (
+            <MachineSelector
+              machines={machines}
+              discoveredSessions={discoveredSessions}
+              worktrees={worktrees}
+              onCreateSession={handleCreateSession}
+              onDiscoverSessions={handleDiscoverSessions}
+              onListWorktrees={handleListWorktrees}
+              requestPathList={requestPathList}
+            />
+          ) : (
+            <ProjectCreateDialog
+              machines={machines}
+              requestPathList={requestPathList}
+              onCreateProject={(name, machineId, workDir, permissionMode) => {
+                send({ type: "project.create", name, machineId, workDir, permissionMode });
+              }}
+            />
+          )}
         </div>
 
-        <ScrollArea className="flex-1 min-w-0" data-sidebar-scroll>
-          <div className="p-2 space-y-1">
-            {sessions.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                No active sessions
-              </p>
-            ) : (
-              sessions.map((session) => {
-                const attentionSet = pendingAttention.get(session.id);
-                return (
-                  <SessionCard
-                    key={session.id}
-                    session={session}
-                    isActive={session.id === activeSessionId}
-                    onClick={() => setActiveSession(session.id)}
-                    attentionCount={attentionSet ? attentionSet.size : 0}
-                    displayName={getSessionDisplayName(session.id)}
-                    onRename={(name) => setSessionName(session.id, name)}
-                  />
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
+        {/* Sidebar content */}
+        {viewMode === "sessions" ? (
+          <>
+            <ScrollArea className="flex-1 min-w-0" data-sidebar-scroll>
+              <div className="p-2 space-y-1">
+                {sessions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    No active sessions
+                  </p>
+                ) : (
+                  sessions.map((session) => {
+                    const attentionSet = pendingAttention.get(session.id);
+                    return (
+                      <SessionCard
+                        key={session.id}
+                        session={session}
+                        isActive={session.id === activeSessionId}
+                        onClick={() => setActiveSession(session.id)}
+                        attentionCount={attentionSet ? attentionSet.size : 0}
+                        displayName={getSessionDisplayName(session.id)}
+                        onRename={(name) => setSessionName(session.id, name)}
+                      />
+                    );
+                  })
+                )}
+              </div>
+            </ScrollArea>
 
-        <Separator />
-        <div className="p-3 text-xs text-muted-foreground text-center">
-          {sessions.length} session{sessions.length !== 1 ? "s" : ""} active
-        </div>
-      </div>
-
-      {/* Right Panel - Session Detail */}
-      <div className="flex-1 flex flex-col">
-        {activeSession ? (
-          <SessionView
-            session={activeSession}
-            messages={activeMessages}
-            streamingText={activeStreamingText}
-            displayName={activeDisplayName}
-            onSendPrompt={handleSendPrompt}
-            onPermissionResponse={handlePermissionResponse}
-            onTerminate={handleTerminate}
+            <Separator />
+            <div className="p-3 text-xs text-muted-foreground text-center">
+              {sessions.length} session{sessions.length !== 1 ? "s" : ""} active
+            </div>
+          </>
+        ) : (
+          <ProjectSidebar
             send={send}
           />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <div className="text-center">
-              <Terminal className="w-12 h-12 mx-auto mb-3 opacity-20" />
-              <p className="text-sm">Select a session or create a new one</p>
+        )}
+      </div>
+
+      {/* Right Panel - Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {viewMode === "sessions" ? (
+          // Sessions view (unchanged)
+          activeSession ? (
+            <SessionView
+              session={activeSession}
+              messages={activeMessages}
+              streamingText={activeStreamingText}
+              displayName={activeDisplayName}
+              onSendPrompt={handleSendPrompt}
+              onPermissionResponse={handlePermissionResponse}
+              onTerminate={handleTerminate}
+              send={send}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <Terminal className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p className="text-sm">Select a session or create a new one</p>
+              </div>
             </div>
-          </div>
+          )
+        ) : (
+          // Kanban view
+          activeProject ? (
+            <ProjectBoard
+              project={activeProject}
+              send={send}
+              onViewSession={handleViewSession}
+            />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <FolderOpen className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p className="text-sm">Select a project or create a new one</p>
+              </div>
+            </div>
+          )
         )}
       </div>
     </div>

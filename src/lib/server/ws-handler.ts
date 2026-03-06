@@ -1,6 +1,8 @@
 import type { WebSocket } from "ws";
 import type { IncomingMessage, ServerResponse } from "http";
 import { SessionManager } from "./session-manager";
+import { ProjectStore } from "./project-store";
+import { ProjectManager } from "./project-manager";
 import { loadSSHHosts } from "./ssh-config-loader";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
@@ -10,11 +12,15 @@ import type { ClientMessage, ServerMessage } from "../shared/protocol";
 
 export class WebSocketHandler {
   private sessionManager: SessionManager;
+  private projectStore: ProjectStore;
+  private projectManager: ProjectManager;
   private clients = new Set<WebSocket>();
   private machines: MachineConfig[] = [];
 
   constructor(port = 3000) {
     this.sessionManager = new SessionManager(port);
+    this.projectStore = new ProjectStore();
+    this.projectManager = new ProjectManager(this.projectStore, this.sessionManager);
     this.setupSessionEvents();
   }
 
@@ -44,6 +50,9 @@ export class WebSocketHandler {
     }
 
     console.log(`[WS] Loaded ${this.machines.length} machines`);
+
+    // Initialize project store (load from disk)
+    await this.projectManager.initialize();
   }
 
   handleConnection(ws: WebSocket) {
@@ -320,6 +329,123 @@ export class WebSocketHandler {
         }
         break;
       }
+
+      // ── Project CRUD ──
+
+      case "project.create": {
+        try {
+          const project = await this.projectManager.createProject(
+            msg.name, msg.machineId, msg.workDir, msg.permissionMode
+          );
+          this.broadcast({ type: "project.created", project });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "project.update": {
+        try {
+          const project = await this.projectManager.updateProject(msg.projectId, msg.updates);
+          this.broadcast({ type: "project.updated", project });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "project.delete": {
+        try {
+          await this.projectManager.deleteProject(msg.projectId);
+          this.broadcast({ type: "project.deleted", projectId: msg.projectId });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "project.list": {
+        const projects = this.projectManager.getAllProjects();
+        this.send(ws, { type: "project.list", projects });
+        break;
+      }
+
+      // ── Task CRUD ──
+
+      case "task.create": {
+        try {
+          const task = await this.projectManager.createTask(msg.projectId, msg.title, msg.description);
+          this.broadcast({ type: "task.created", task });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "task.update": {
+        try {
+          const task = await this.projectManager.updateTask(msg.projectId, msg.taskId, msg.updates);
+          this.broadcast({ type: "task.updated", task });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "task.delete": {
+        try {
+          await this.projectManager.deleteTask(msg.projectId, msg.taskId);
+          this.broadcast({ type: "task.deleted", projectId: msg.projectId, taskId: msg.taskId });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "task.move": {
+        try {
+          const task = await this.projectManager.moveTask(msg.projectId, msg.taskId, msg.column, msg.order);
+          this.broadcast({ type: "task.moved", task });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "task.reorder": {
+        try {
+          await this.projectManager.reorderTasks(msg.projectId, msg.column, msg.taskIds);
+          this.broadcast({ type: "task.reordered", projectId: msg.projectId, column: msg.column, taskIds: msg.taskIds });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "task.list": {
+        const tasks = this.projectManager.getProjectTasks(msg.projectId);
+        this.send(ws, { type: "task.list", projectId: msg.projectId, tasks });
+        break;
+      }
+
+      case "task.submit": {
+        try {
+          const submitMachine = this.machines.find((m) => {
+            const project = this.projectManager.getProject(msg.projectId);
+            return project && m.id === project.machineId;
+          });
+          if (!submitMachine) {
+            this.send(ws, { type: "error", error: "Machine not found for project" });
+            return;
+          }
+          const { task, session } = await this.projectManager.submitTask(msg.projectId, msg.taskId, submitMachine);
+          this.broadcast({ type: "task.submitted", task, session });
+          this.broadcast({ type: "session.created", session });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
     }
   }
 
@@ -340,6 +466,14 @@ export class WebSocketHandler {
         totalCostUsd,
         error,
       });
+
+      // Auto-move task to "in-review" when linked session completes
+      if (status === "idle" && !error) {
+        const updatedTask = this.projectManager.handleSessionCompleted(sessionId);
+        if (updatedTask) {
+          this.broadcast({ type: "task.sessionCompleted", task: updatedTask });
+        }
+      }
     });
 
     this.sessionManager.on("session:permissionRequest", (sessionId: string, request: PermissionRequest) => {

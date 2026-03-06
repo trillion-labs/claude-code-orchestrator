@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task } from "@/lib/shared/types";
 
 interface SessionState {
   sessions: Map<string, Session>;
@@ -29,6 +29,11 @@ interface SessionState {
   planPanelOpen: Map<string, boolean>; // sessionId → panel open state
   // Existing worktrees per machine (from worktrees.list)
   worktrees: Map<string, Array<{ name: string; path: string; branch: string }>>
+  // Projects & Kanban
+  projects: Map<string, Project>;
+  activeProjectId: string | null;
+  tasks: Map<string, Task[]>; // projectId → Task[]
+  viewMode: "sessions" | "kanban";
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -76,6 +81,17 @@ interface SessionState {
   clearPlanContent: (sessionId: string) => void;
   // Worktrees
   setWorktrees: (machineId: string, worktrees: Array<{ name: string; path: string; branch: string }>) => void;
+  // Projects & Kanban
+  setProjects: (projects: Project[]) => void;
+  addProject: (project: Project) => void;
+  updateProject: (project: Project) => void;
+  removeProject: (projectId: string) => void;
+  setActiveProject: (projectId: string | null) => void;
+  setTasks: (projectId: string, tasks: Task[]) => void;
+  addTask: (task: Task) => void;
+  updateTask: (task: Task) => void;
+  removeTask: (projectId: string, taskId: string) => void;
+  setViewMode: (mode: "sessions" | "kanban") => void;
 }
 
 export const useStore = create<SessionState>((set) => ({
@@ -95,6 +111,10 @@ export const useStore = create<SessionState>((set) => ({
   planContent: new Map(),
   planPanelOpen: new Map(),
   worktrees: new Map(),
+  projects: new Map(),
+  activeProjectId: null,
+  tasks: new Map(),
+  viewMode: "sessions" as const,
 
   setSessions: (sessions) =>
     set(() => {
@@ -302,4 +322,81 @@ export const useStore = create<SessionState>((set) => ({
       wt.set(machineId, worktrees);
       return { worktrees: wt };
     }),
+
+  // ── Projects & Kanban ──
+
+  setProjects: (projects) =>
+    set(() => {
+      const map = new Map<string, Project>();
+      for (const p of projects) map.set(p.id, p);
+      return { projects: map };
+    }),
+
+  addProject: (project) =>
+    set((state) => {
+      const projects = new Map(state.projects);
+      projects.set(project.id, project);
+      return { projects };
+    }),
+
+  updateProject: (project) =>
+    set((state) => {
+      const projects = new Map(state.projects);
+      projects.set(project.id, project);
+      return { projects };
+    }),
+
+  removeProject: (projectId) =>
+    set((state) => {
+      const projects = new Map(state.projects);
+      projects.delete(projectId);
+      const tasks = new Map(state.tasks);
+      tasks.delete(projectId);
+      return {
+        projects,
+        tasks,
+        activeProjectId: state.activeProjectId === projectId ? null : state.activeProjectId,
+      };
+    }),
+
+  setActiveProject: (projectId) => set({ activeProjectId: projectId }),
+
+  setTasks: (projectId, taskList) =>
+    set((state) => {
+      const tasks = new Map(state.tasks);
+      tasks.set(projectId, taskList);
+      return { tasks };
+    }),
+
+  addTask: (task) =>
+    set((state) => {
+      const tasks = new Map(state.tasks);
+      const existing = tasks.get(task.projectId) || [];
+      tasks.set(task.projectId, [...existing, task]);
+      return { tasks };
+    }),
+
+  updateTask: (task) =>
+    set((state) => {
+      const tasks = new Map(state.tasks);
+      const existing = tasks.get(task.projectId) || [];
+      tasks.set(
+        task.projectId,
+        existing.map((t) => (t.id === task.id ? task : t))
+      );
+      return { tasks };
+    }),
+
+  removeTask: (projectId, taskId) =>
+    set((state) => {
+      const tasks = new Map(state.tasks);
+      const existing = tasks.get(projectId) || [];
+      tasks.set(
+        projectId,
+        existing.filter((t) => t.id !== taskId)
+      );
+      return { tasks };
+    }),
+
+  setViewMode: (mode) => set({ viewMode: mode }),
 }));

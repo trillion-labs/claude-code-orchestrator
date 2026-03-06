@@ -53,6 +53,40 @@ export const PERMISSION_MODES: Record<PermissionMode, PermissionModeConfig> = {
   },
 };
 
+// ── Kanban Types ──
+
+export type KanbanColumn = "todo" | "in-progress" | "in-review" | "done";
+
+export const KANBAN_COLUMNS: { id: KanbanColumn; label: string }[] = [
+  { id: "todo",        label: "Todo" },
+  { id: "in-progress", label: "In Progress" },
+  { id: "in-review",   label: "In Review" },
+  { id: "done",        label: "Done" },
+];
+
+export interface Task {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  column: KanbanColumn;
+  order: number;
+  sessionId?: string;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  machineId: string;
+  workDir: string;
+  permissionMode: PermissionMode;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ── Worktree Info ──
 
 export interface WorktreeInfo {
@@ -79,6 +113,8 @@ export interface Session {
   permissionMode: PermissionMode;
   error?: string;
   worktree?: WorktreeInfo;
+  projectId?: string;
+  taskId?: string;
 }
 
 // ── Claude Stream JSON Types ──

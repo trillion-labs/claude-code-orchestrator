@@ -39,6 +39,15 @@ export function useWebSocket() {
     setSessionConfig,
     setPlanContent,
     setWorktrees,
+    // Projects & Kanban
+    setProjects,
+    addProject,
+    updateProject,
+    removeProject,
+    setTasks,
+    addTask,
+    updateTask,
+    removeTask,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -142,9 +151,60 @@ export function useWebSocket() {
         case "error":
           console.error("Server error:", msg.error);
           break;
+
+        // ── Project & Task messages ──
+
+        case "project.created":
+          addProject(msg.project);
+          break;
+
+        case "project.updated":
+          updateProject(msg.project);
+          break;
+
+        case "project.deleted":
+          removeProject(msg.projectId);
+          break;
+
+        case "project.list":
+          setProjects(msg.projects);
+          break;
+
+        case "task.created":
+          addTask(msg.task);
+          break;
+
+        case "task.updated":
+          updateTask(msg.task);
+          break;
+
+        case "task.deleted":
+          removeTask(msg.projectId, msg.taskId);
+          break;
+
+        case "task.moved":
+          updateTask(msg.task);
+          break;
+
+        case "task.reordered":
+          // Re-fetch tasks for the project to get correct order
+          break;
+
+        case "task.list":
+          setTasks(msg.projectId, msg.tasks);
+          break;
+
+        case "task.submitted":
+          updateTask(msg.task);
+          addSession(msg.session);
+          break;
+
+        case "task.sessionCompleted":
+          updateTask(msg.task);
+          break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask]
   );
 
   const connect = useCallback(() => {
@@ -159,6 +219,7 @@ export function useWebSocket() {
       // Request current state
       ws.send(JSON.stringify({ type: "session.list" }));
       ws.send(JSON.stringify({ type: "machines.list" }));
+      ws.send(JSON.stringify({ type: "project.list" }));
     };
 
     ws.onmessage = handleMessage;

@@ -48,7 +48,7 @@ export class SessionManager extends EventEmitter {
     this.orchestratorPort = orchestratorPort;
   }
 
-  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }): Promise<Session> {
+  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }, projectId?: string, taskId?: string): Promise<Session> {
     const sessionId = uuidv4();
     const claudeSessionId = resumeSessionId || uuidv4();
 
@@ -63,6 +63,8 @@ export class SessionManager extends EventEmitter {
       totalCostUsd: 0,
       lastActivity: Date.now(),
       permissionMode,
+      ...(projectId && { projectId }),
+      ...(taskId && { taskId }),
     };
 
     // Create the appropriate adapter

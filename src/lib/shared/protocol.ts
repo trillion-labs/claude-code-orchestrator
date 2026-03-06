@@ -1,4 +1,4 @@
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest } from "./types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn } from "./types";
 
 // ── Client → Server Messages ──
 
@@ -53,7 +53,20 @@ export type ClientMessage =
   | { type: "session.config.read"; sessionId: string }
   | { type: "session.config.write"; sessionId: string; file: "settings" | "claudemd"; content: string }
   | { type: "worktrees.list"; machineId: string; workDir: string }
-  | { type: "path.list"; machineId: string; path: string; requestId: string };
+  | { type: "path.list"; machineId: string; path: string; requestId: string }
+  // ── Project CRUD ──
+  | { type: "project.create"; name: string; machineId: string; workDir: string; permissionMode: PermissionMode }
+  | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode } }
+  | { type: "project.delete"; projectId: string }
+  | { type: "project.list" }
+  // ── Task CRUD ──
+  | { type: "task.create"; projectId: string; title: string; description: string }
+  | { type: "task.update"; projectId: string; taskId: string; updates: { title?: string; description?: string } }
+  | { type: "task.delete"; projectId: string; taskId: string }
+  | { type: "task.move"; projectId: string; taskId: string; column: KanbanColumn; order: number }
+  | { type: "task.reorder"; projectId: string; column: KanbanColumn; taskIds: string[] }
+  | { type: "task.submit"; projectId: string; taskId: string }
+  | { type: "task.list"; projectId: string };
 
 // ── Server → Client Messages ──
 
@@ -163,4 +176,18 @@ export type ServerMessage =
   | {
       type: "error";
       error: string;
-    };
+    }
+  // ── Project responses ──
+  | { type: "project.created"; project: Project }
+  | { type: "project.updated"; project: Project }
+  | { type: "project.deleted"; projectId: string }
+  | { type: "project.list"; projects: Project[] }
+  // ── Task responses ──
+  | { type: "task.created"; task: Task }
+  | { type: "task.updated"; task: Task }
+  | { type: "task.deleted"; projectId: string; taskId: string }
+  | { type: "task.moved"; task: Task }
+  | { type: "task.reordered"; projectId: string; column: KanbanColumn; taskIds: string[] }
+  | { type: "task.list"; projectId: string; tasks: Task[] }
+  | { type: "task.submitted"; task: Task; session: Session }
+  | { type: "task.sessionCompleted"; task: Task };
