@@ -91,6 +91,7 @@ interface SessionState {
   addTask: (task: Task) => void;
   updateTask: (task: Task) => void;
   removeTask: (projectId: string, taskId: string) => void;
+  updateSessionLink: (sessionId: string, projectId: string, taskId: string) => void;
   setViewMode: (mode: "sessions" | "kanban") => void;
 }
 
@@ -396,6 +397,16 @@ export const useStore = create<SessionState>((set) => ({
         existing.filter((t) => t.id !== taskId)
       );
       return { tasks };
+    }),
+
+  updateSessionLink: (sessionId, projectId, taskId) =>
+    set((state) => {
+      const sessions = new Map(state.sessions);
+      const session = sessions.get(sessionId);
+      if (session) {
+        sessions.set(sessionId, { ...session, projectId, taskId });
+      }
+      return { sessions };
     }),
 
   setViewMode: (mode) => set({ viewMode: mode }),

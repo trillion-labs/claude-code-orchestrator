@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { X, ExternalLink, Play, Pencil, Check } from "lucide-react";
+import { X, ExternalLink, Play, Pencil, Check, Link } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
+import { SessionPickerDialog } from "./SessionPickerDialog";
 import type { Task, Session, ConversationMessage } from "@/lib/shared/types";
 
 interface TaskDetailProps {
@@ -17,6 +18,7 @@ interface TaskDetailProps {
   onClose: () => void;
   onUpdate: (updates: { title?: string; description?: string }) => void;
   onSubmit: () => void;
+  onLinkSession: (sessionId: string) => void;
   onViewSession: () => void;
   onPermissionResponse: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
 }
@@ -29,6 +31,7 @@ export function TaskDetail({
   onClose,
   onUpdate,
   onSubmit,
+  onLinkSession,
   onViewSession,
   onPermissionResponse,
 }: TaskDetailProps) {
@@ -158,16 +161,28 @@ export function TaskDetail({
             ) : (
               <>
                 <span className="text-xs text-muted-foreground">No session linked</span>
-                {task.column === "todo" && (
-                  <Button
-                    size="sm"
-                    className="ml-auto gap-1"
-                    onClick={onSubmit}
-                  >
-                    <Play className="w-3 h-3" />
-                    Submit
-                  </Button>
-                )}
+                <div className="ml-auto flex items-center gap-1.5">
+                  <SessionPickerDialog
+                    title="Link Session to Task"
+                    onSelectSession={onLinkSession}
+                    trigger={
+                      <Button variant="outline" size="sm" className="gap-1">
+                        <Link className="w-3 h-3" />
+                        Link Session
+                      </Button>
+                    }
+                  />
+                  {task.column === "todo" && (
+                    <Button
+                      size="sm"
+                      className="gap-1"
+                      onClick={onSubmit}
+                    >
+                      <Play className="w-3 h-3" />
+                      Submit
+                    </Button>
+                  )}
+                </div>
               </>
             )}
           </div>

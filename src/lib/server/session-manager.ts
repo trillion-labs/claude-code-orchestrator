@@ -1267,6 +1267,31 @@ for line in sys.stdin:
     return Array.from(this.sessions.values()).map((m) => m.session);
   }
 
+  /**
+   * Link an existing session to a project/task (bidirectional).
+   */
+  linkSessionToProject(sessionId: string, projectId: string, taskId: string): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) throw new Error(`Session ${sessionId} not found`);
+    managed.session.projectId = projectId;
+    managed.session.taskId = taskId;
+  }
+
+  /**
+   * Extract a display name from the session's first user message.
+   * Returns the first 80 chars of the first user message, or a fallback.
+   */
+  getSessionDisplayName(sessionId: string): string {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return "Imported session";
+    const firstUser = managed.messages.find((m) => m.role === "user");
+    if (firstUser?.content) {
+      const text = firstUser.content.replace(/\n/g, " ").trim();
+      return text.length > 80 ? text.slice(0, 77) + "..." : text;
+    }
+    return "Imported session";
+  }
+
   private async loadSessionHistory(managed: ManagedSession, claudeSessionId: string): Promise<void> {
     const claudeDir = join(homedir(), ".claude", "projects");
 
