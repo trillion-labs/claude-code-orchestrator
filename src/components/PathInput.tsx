@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
-import { ChevronUp, Folder, File } from "lucide-react";
+import { ChevronUp, Folder, File, Check } from "lucide-react";
 import type { PathListResult } from "@/hooks/useWebSocket";
 
 interface PathInputProps {
@@ -12,6 +12,7 @@ interface PathInputProps {
   requestPathList: (machineId: string, path: string) => Promise<PathListResult>;
   placeholder?: string;
   className?: string;
+  onConfirm?: () => void;
 }
 
 export function PathInput({
@@ -21,12 +22,14 @@ export function PathInput({
   requestPathList,
   placeholder = "~/projects/my-app",
   className = "",
+  onConfirm,
 }: PathInputProps) {
   const [entries, setEntries] = useState<Array<{ name: string; isDir: boolean }>>([]);
   const [resolvedPath, setResolvedPath] = useState<string>("");
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [loading, setLoading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -72,6 +75,7 @@ export function PathInput({
 
   // Fetch on value change (debounced)
   useEffect(() => {
+    setConfirmed(false); // Reset confirmed state when value changes
     if (value && machineId) {
       debouncedFetch(value);
     } else {
@@ -117,6 +121,15 @@ export function PathInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Handle Enter when dropdown is closed - confirm the path
+      if (e.key === "Enter" && (!isOpen || entries.length === 0)) {
+        e.preventDefault();
+        setIsOpen(false);
+        setConfirmed(true);
+        onConfirm?.();
+        return;
+      }
+
       if (!isOpen || entries.length === 0) {
         // Open on arrow down even when closed
         if (e.key === "ArrowDown" && value && machineId) {
@@ -143,7 +156,22 @@ export function PathInput({
         case "Enter":
           e.preventDefault();
           if (highlightedIndex >= 0 && highlightedIndex < entries.length) {
-            handleSelect(entries[highlightedIndex]);
+            const entry = entries[highlightedIndex];
+            if (entry.isDir) {
+              handleSelect(entry);
+            } else {
+              // Selected a file - close dropdown and confirm
+              setIsOpen(false);
+              setHighlightedIndex(-1);
+              setConfirmed(true);
+              onConfirm?.();
+            }
+          } else {
+            // No item highlighted - confirm current path
+            setIsOpen(false);
+            setHighlightedIndex(-1);
+            setConfirmed(true);
+            onConfirm?.();
           }
           break;
         case "Tab":
@@ -162,7 +190,7 @@ export function PathInput({
           break;
       }
     },
-    [isOpen, entries, highlightedIndex, handleSelect, value, machineId, fetchEntries],
+    [isOpen, entries, highlightedIndex, handleSelect, value, machineId, fetchEntries, onConfirm],
   );
 
   // Close dropdown on outside click
@@ -214,19 +242,26 @@ export function PathInput({
 
   return (
     <div className="relative">
-      <Input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={() => {
-          if (value && machineId && entries.length > 0) setIsOpen(true);
-          else if (value && machineId) fetchEntries(value);
-        }}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        className={`font-mono text-sm ${className}`}
-        autoComplete="off"
-      />
+      <div className="relative">
+        <Input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => {
+            if (value && machineId && entries.length > 0) setIsOpen(true);
+            else if (value && machineId) fetchEntries(value);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className={`font-mono text-sm pr-8 ${confirmed ? "border-green-500 focus-visible:ring-green-500" : ""} ${className}`}
+          autoComplete="off"
+        />
+        {confirmed && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500">
+            <Check className="w-4 h-4" />
+          </div>
+        )}
+      </div>
 
       {isOpen && (entries.length > 0 || showResolvedPath) && (
         <div
