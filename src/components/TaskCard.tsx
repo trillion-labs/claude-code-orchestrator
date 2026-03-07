@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Clock, Play, ExternalLink, AlertCircle, RotateCcw } from "lucide-react";
+import { Clock, Play, ExternalLink, AlertCircle, RotateCcw, Trash2 } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import type { Task, Session } from "@/lib/shared/types";
 
@@ -12,6 +12,7 @@ interface TaskCardProps {
   onClick: () => void;
   onSubmit?: () => void;
   onViewSession?: () => void;
+  onDelete?: () => void;
 }
 
 function timeAgo(timestamp: number): string {
@@ -25,7 +26,7 @@ function timeAgo(timestamp: number): string {
   return `${days}d ago`;
 }
 
-export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: TaskCardProps) {
+export function TaskCard({ task, session, onClick, onSubmit, onViewSession, onDelete }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -59,10 +60,24 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: Ta
         ${hasError ? "border-red-500/30" : ""}
       `}
     >
-      {/* Title */}
-      <p className="text-sm font-medium leading-tight line-clamp-2">
-        {task.title}
-      </p>
+      {/* Title + Delete */}
+      <div className="flex items-start gap-1">
+        <p className="text-sm font-medium leading-tight line-clamp-2 flex-1">
+          {task.title}
+        </p>
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-red-400 transition-all flex-shrink-0"
+            title="Delete task"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
 
       {/* Description preview */}
       {task.description && (
