@@ -122,6 +122,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.update", projectId: project.id, taskId, updates });
   };
 
+  const handleDeleteTask = (task: Task) => {
+    send({ type: "task.delete", projectId: project.id, taskId: task.id });
+  };
+
   const selectedSession = selectedTask?.sessionId
     ? sessions.get(selectedTask.sessionId)
     : undefined;
@@ -174,6 +178,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   getSession={getTaskSession}
                   onTaskClick={(task) => setSelectedTask(task)}
                   onTaskSubmit={handleSubmitTask}
+                  onTaskDelete={handleDeleteTask}
                   onViewSession={onViewSession}
                 />
               ))}

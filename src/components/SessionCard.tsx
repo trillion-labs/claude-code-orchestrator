@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { StatusBadge } from "./StatusBadge";
 import type { Session } from "@/lib/shared/types";
-import { Monitor, Server, GitBranch } from "lucide-react";
+import { Monitor, Server, GitBranch, Trash2 } from "lucide-react";
 
 interface SessionCardProps {
   session: Session;
@@ -12,6 +12,7 @@ interface SessionCardProps {
   attentionCount: number;
   displayName?: string;
   onRename: (name: string) => void;
+  onDelete: () => void;
 }
 
 export function SessionCard({
@@ -21,6 +22,7 @@ export function SessionCard({
   attentionCount,
   displayName,
   onRename,
+  onDelete,
 }: SessionCardProps) {
   const isLocal = session.machineId === "local";
   const timeSinceActivity = formatTimeAgo(session.lastActivity);
@@ -59,8 +61,21 @@ export function SessionCard({
     }
   };
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete();
+  };
+
   return (
-    <div className="relative">
+    <div className="relative group">
+      {/* Delete button - appears on hover */}
+      <button
+        onClick={handleDelete}
+        className="absolute -top-2 -right-2 z-20 p-1 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/80"
+        title="Delete session"
+      >
+        <Trash2 className="w-3 h-3" />
+      </button>
       {/* Attention pulse dot — outside button to avoid overflow-hidden clipping */}
       {hasAttention && (
         <span className="absolute -top-1 -right-1 flex h-3 w-3 z-10">
