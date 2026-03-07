@@ -1292,20 +1292,34 @@ for line in sys.stdin:
   private async loadRemoteSessionHistory(managed: ManagedSession, machine: MachineConfig, claudeSessionId: string): Promise<void> {
     try {
       // Search for the session file in ~/.claude/projects AND workDir ancestors' .claude/projects
-      // This handles direnv setups where CLAUDE_CONFIG_DIR points to a custom location
+      // Also check for .envrc files that set CLAUDE_CONFIG_DIR (direnv setups)
       const workDir = managed.session.workDir || "~";
       const findScript = `
 p="${workDir}"
-# Search default location first
-find ~/.claude/projects -maxdepth 2 -name "${claudeSessionId}.jsonl" -not -path "*/subagents/*" 2>/dev/null | head -1
-# Walk up from workDir looking for .claude/projects
 p=$(cd "$p" 2>/dev/null && pwd || echo "")
+
+# Walk up from workDir looking for .envrc with CLAUDE_CONFIG_DIR or .claude/projects
 while [ -n "$p" ] && [ "$p" != "/" ]; do
+  # Check for .envrc with CLAUDE_CONFIG_DIR
+  if [ -f "$p/.envrc" ]; then
+    config_dir=$(grep "CLAUDE_CONFIG_DIR" "$p/.envrc" 2>/dev/null | sed 's/.*=//' | tr -d '"'"'"' ' | head -1)
+    if [ -n "$config_dir" ]; then
+      # Expand ~ and env vars
+      config_dir=$(eval echo "$config_dir")
+      if [ -d "$config_dir/projects" ]; then
+        find "$config_dir/projects" -maxdepth 2 -name "${claudeSessionId}.jsonl" -not -path "*/subagents/*" 2>/dev/null | head -1
+      fi
+    fi
+  fi
+  # Also check for local .claude/projects
   if [ -d "$p/.claude/projects" ]; then
     find "$p/.claude/projects" -maxdepth 2 -name "${claudeSessionId}.jsonl" -not -path "*/subagents/*" 2>/dev/null | head -1
   fi
   p=$(dirname "$p")
 done
+
+# Fallback: search default location
+find ~/.claude/projects -maxdepth 2 -name "${claudeSessionId}.jsonl" -not -path "*/subagents/*" 2>/dev/null | head -1
 `.trim();
 
       const findChannel = await this.sshManager.exec(machine, findScript);
@@ -1326,10 +1340,10 @@ done
 
       // Detect custom CLAUDE_CONFIG_DIR from the file path
       // e.g. /fsx/suyeong/.claude/projects/xxx/session.jsonl → /fsx/suyeong/.claude
-      const homeClaudePrefix = "/.claude/projects/";
-      const claudeIdx = filePath.indexOf(homeClaudePrefix);
-      if (claudeIdx >= 0) {
-        const configDir = filePath.slice(0, claudeIdx) + "/.claude";
+      // e.g. /home/user/path/.claude-config/projects/xxx/session.jsonl → /home/user/path/.claude-config
+      const projectsIdx = filePath.indexOf("/projects/");
+      if (projectsIdx >= 0) {
+        const configDir = filePath.slice(0, projectsIdx);
         const homeDir = await this.getRemoteHomeDir(machine);
         if (configDir !== `${homeDir}/.claude`) {
           managed.claudeConfigDir = configDir;
@@ -1467,8 +1481,16 @@ done
         if (workDir && workDir !== "~") {
           const expandedWork = workDir.replace(/^~/, homedir());
           const expectedDirName = expandedWork.replace(/\//g, "-");
-          // Also try matching with leading dash (Claude stores dirs as "-Users-foo-bar")
-          if (!project.startsWith(expectedDirName) && project !== expectedDirName && !project.startsWith(`-${expectedDirName.replace(/^\//, "")}`)) continue;
+          // Convert project dir name back to path: "-Users-foo-bar" -> "/Users/foo/bar"
+          const projectPath = "/" + project.replace(/^-/, "").replace(/-/g, "/");
+
+          // Match if:
+          // 1. Project path is the workDir or a parent of workDir (sessions from parent dirs)
+          // 2. Project path is a child of workDir (sessions from subdirs)
+          const isParentOrExact = expandedWork.startsWith(projectPath) || expandedWork === projectPath;
+          const isChild = projectPath.startsWith(expandedWork);
+
+          if (!isParentOrExact && !isChild) continue;
         }
 
         const projectDir = join(claudeDir, project);
@@ -1540,11 +1562,11 @@ done
   private async discoverRemoteSessions(machine: MachineConfig, workDir?: string): Promise<ClaudeSessionInfo[]> {
     try {
       // Run a script on the remote machine to list sessions
-      // Use find with maxdepth to avoid subagent directories, and basename -- to handle dash-prefixed names
-      // Use Python for reliable JSON parsing — avoids shell quoting nightmares over SSH
-      // Search ~/.claude/projects/ AND .claude/projects/ in workDir ancestors (for direnv setups)
+      // Use base64 encoding to avoid shell escaping nightmares over SSH
       const searchWorkDir = workDir ? workDir.replace(/^~/, "$HOME") : "";
-      const script = `python3 -c '
+
+      // Build Python script with the workDir variable substituted
+      const pythonScript = `
 import os, json, re, sys
 
 uuid_re = re.compile(r"^[0-9a-f]{8}-", re.IGNORECASE)
@@ -1599,24 +1621,50 @@ def scan_base(base):
             except Exception as e:
                 print(f"ERROR|{proj}|{fn}|{e}", file=sys.stderr)
 
-# 1) Always scan default ~/.claude/projects
-scan_base(os.path.expanduser("~/.claude/projects"))
-
-# 2) Walk up from workDir looking for .claude/projects (direnv / custom config)
+# Walk up from workDir looking for .envrc with CLAUDE_CONFIG_DIR or .claude/projects
 work = "${searchWorkDir}"
 if work:
-    work = os.path.expanduser(work)
+    work = os.path.expandvars(os.path.expanduser(work))
     p = os.path.abspath(work)
     checked = set()
+    scanned_configs = set()
     while p and p != "/" and len(checked) < 10:
         if p in checked:
             break
         checked.add(p)
+
+        # Check for .envrc with CLAUDE_CONFIG_DIR
+        envrc = os.path.join(p, ".envrc")
+        if os.path.isfile(envrc):
+            try:
+                with open(envrc) as f:
+                    for line in f:
+                        if "CLAUDE_CONFIG_DIR" in line and "=" in line:
+                            # Extract path from export CLAUDE_CONFIG_DIR=...
+                            val = line.split("=", 1)[1].strip()
+                            val = val.strip('"').strip("'")
+                            val = os.path.expanduser(os.path.expandvars(val))
+                            config_projects = os.path.join(val, "projects")
+                            if config_projects not in scanned_configs and os.path.isdir(config_projects):
+                                scanned_configs.add(config_projects)
+                                scan_base(config_projects)
+            except:
+                pass
+
+        # Also check for local .claude/projects
         candidate = os.path.join(p, ".claude", "projects")
-        if os.path.isdir(candidate) and candidate != os.path.expanduser("~/.claude/projects"):
+        if os.path.isdir(candidate):
             scan_base(candidate)
         p = os.path.dirname(p)
-'`;
+
+# Fallback: if no workDir specified or no sessions found, scan default
+if not work or len(seen) == 0:
+    scan_base(os.path.expanduser("~/.claude/projects"))
+`;
+
+      // Base64 encode the script to avoid all escaping issues
+      const base64Script = Buffer.from(pythonScript).toString("base64");
+      const script = `echo "${base64Script}" | base64 -d | python3`;
       const channel = await this.sshManager.exec(machine, script);
       return new Promise((resolve) => {
         let output = "";
@@ -1636,13 +1684,19 @@ if work:
 
             // Filter by workDir (skip filter for "~" which means "show all")
             if (workDir && workDir !== "~") {
-              // Normalize workDir: strip trailing slash
-              const normalizedWork = workDir.replace(/\/+$/, "");
+              // Normalize workDir: strip trailing slash and ~ prefix for matching
+              const normalizedWork = workDir.replace(/\/+$/, "").replace(/^~\/?/, "");
+              // Extract the last 2-3 meaningful path segments for flexible matching
+              // e.g., "vast/sangwon/opencode-lite" -> ["sangwon", "opencode-lite"]
+              const workParts = normalizedWork.split("/").filter(Boolean).slice(-2);
+              const workSuffix = workParts.join("/");
+
               // Match against: cwd (actual path), projDir (dash-encoded), projPath (decoded)
+              // Use suffix matching to handle symlinks and path differences
               const matches =
-                (cwd && cwd.includes(normalizedWork)) ||
-                projPath.includes(normalizedWork) ||
-                projDir.includes(normalizedWork.replace(/\//g, "-"));
+                (cwd && cwd.includes(workSuffix)) ||
+                projPath.includes(workSuffix) ||
+                projDir.includes(workSuffix.replace(/\//g, "-"));
               if (!matches) continue;
             }
 

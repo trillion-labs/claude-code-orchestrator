@@ -69,6 +69,15 @@ export function MachineSelector({
     }
   }, [worktreeMode, selectedMachine, workDir, onListWorktrees]);
 
+  // Auto-discover sessions when in resume mode and workDir changes
+  useEffect(() => {
+    if (mode === "resume" && selectedMachine && workDir) {
+      setDiscovering(true);
+      onDiscoverSessions(selectedMachine, workDir);
+      setTimeout(() => setDiscovering(false), 3000);
+    }
+  }, [mode, selectedMachine, workDir, onDiscoverSessions]);
+
   const handleCreate = () => {
     if (!selectedMachine) return;
     let worktreeOpts: { enabled: boolean; name: string; existingPath?: string } | undefined;

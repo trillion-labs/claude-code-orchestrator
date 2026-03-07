@@ -143,6 +143,7 @@ export class WebSocketHandler {
       }
 
       case "session.discover": {
+        console.log("[WS] session.discover - machine:", msg.machineId, "workDir:", msg.workDir);
         const discoverMachine = this.machines.find((m) => m.id === msg.machineId);
         if (!discoverMachine) {
           this.send(ws, { type: "error", error: `Machine ${msg.machineId} not found` });
@@ -150,6 +151,7 @@ export class WebSocketHandler {
         }
         try {
           const discovered = await this.sessionManager.discoverSessions(discoverMachine, msg.workDir);
+          console.log("[WS] Discovery result:", discovered.length, "sessions");
           this.send(ws, { type: "session.discovered", machineId: msg.machineId, sessions: discovered });
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
