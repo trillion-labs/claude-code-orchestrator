@@ -1771,13 +1771,23 @@ if work:
       await mkdirFs(join(workDir, ".claude"), { recursive: true });
       await writeFile(join(workDir, ".claude", fileName), content, "utf-8");
     } else {
-      // SSH: ensure directory exists, then write via SFTP
-      const mkdirCh = await this.sshManager.execFresh(machine, `mkdir -p "${dirPath}"`);
-      await new Promise<void>((resolve) => {
-        mkdirCh.on("close", () => resolve());
-        mkdirCh.on("error", () => resolve());
+      // SSH: use execFresh to write (avoids SFTP hanging on connections with forwardIn)
+      const filePath = `${dirPath}/${fileName}`;
+      const escaped = content.replace(/'/g, "'\\''");
+      const writeCmd = `mkdir -p "${dirPath}" && printf '%s' '${escaped}' > "${filePath}"`;
+      const writeCh = await this.sshManager.execFresh(machine, writeCmd);
+      await new Promise<void>((resolve, reject) => {
+        let stderr = "";
+        writeCh.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+        writeCh.on("close", (code: number | null) => {
+          if (code !== 0) {
+            reject(new Error(`Remote write failed (code ${code}): ${stderr}`));
+          } else {
+            resolve();
+          }
+        });
+        writeCh.on("error", (err: Error) => reject(err));
       });
-      await this.sshManager.writeRemoteFile(machine, `${dirPath}/${fileName}`, content);
     }
   }
 

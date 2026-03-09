@@ -27,6 +27,8 @@ export class SSHAdapter extends ProcessAdapter {
     if (options?.cwd) {
       parts.push(`cd ${options.cwd}`);
     }
+    // Load direnv .envrc if available (sets CLAUDE_CONFIG_DIR etc. on shared machines)
+    parts.push('eval "$(direnv export bash 2>/dev/null)"');
     parts.push(`${command} ${args.join(" ")}`);
     const fullCommand = parts.join(" && ");
 
