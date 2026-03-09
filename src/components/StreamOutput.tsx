@@ -54,6 +54,11 @@ const PermissionResponseContext = createContext<
 // Whether the current tool blocks should be interactive
 const ToolInteractiveContext = createContext(false);
 
+// Context for file preview — allows FileCard to trigger file preview
+const FilePreviewContext = createContext<
+  ((filePath: string) => void) | undefined
+>(undefined);
+
 // ── Content Segment Parser ──
 // Extracts ```tool-xxx blocks from markdown so they can be rendered
 // as interactive React components with preserved state.
@@ -429,14 +434,25 @@ function BashCard({ data }: { data: { command?: string; description?: string } }
 }
 
 function FileCard({ data }: { data: { action?: string; file_path?: string } }) {
+  const onFilePreview = useContext(FilePreviewContext);
+
+  const handleClick = () => {
+    if (data.file_path && onFilePreview) {
+      onFilePreview(data.file_path);
+    }
+  };
+
   return (
-    <div className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04]">
+    <button
+      onClick={handleClick}
+      className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] hover:bg-sky-500/[0.08] hover:border-sky-500/30 transition-colors cursor-pointer w-full text-left"
+    >
       <FileText className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
       <span className="text-xs text-sky-300 font-medium">{data.action}</span>
       <code className="text-xs font-mono text-gray-400 truncate">
         {data.file_path}
       </code>
-    </div>
+    </button>
   );
 }
 
@@ -979,6 +995,7 @@ interface StreamOutputProps {
   streamingText: string;
   onSendPrompt?: (prompt: string) => void;
   onPermissionResponse?: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
+  onFilePreview?: (filePath: string) => void;
 }
 
 export function StreamOutput({
@@ -986,6 +1003,7 @@ export function StreamOutput({
   streamingText,
   onSendPrompt,
   onPermissionResponse,
+  onFilePreview,
 }: StreamOutputProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -1013,6 +1031,7 @@ export function StreamOutput({
       : -1;
 
   return (
+    <FilePreviewContext.Provider value={onFilePreview}>
     <SendPromptContext.Provider value={onSendPrompt}>
       <PermissionResponseContext.Provider value={onPermissionResponse}>
         <ScrollArea className="flex-1 min-h-0 px-4 py-2">
@@ -1045,6 +1064,7 @@ export function StreamOutput({
         </ScrollArea>
       </PermissionResponseContext.Provider>
     </SendPromptContext.Provider>
+    </FilePreviewContext.Provider>
   );
 }
 

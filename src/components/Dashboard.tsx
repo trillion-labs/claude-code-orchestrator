@@ -19,7 +19,7 @@ import { useStore } from "@/store";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
-  const { send, requestPathList, requestMkdir } = useWebSocket();
+  const { send, requestPathList, requestMkdir, requestFileRead } = useWebSocket();
   const {
     sessions,
     activeSession,
@@ -229,6 +229,7 @@ export function Dashboard() {
               onPermissionResponse={handlePermissionResponse}
               onTerminate={handleTerminate}
               send={send}
+              requestFileRead={requestFileRead}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">

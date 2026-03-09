@@ -496,6 +496,81 @@ except Exception as e:
     }
   }
 
+  async readFileContent(
+    machine: MachineConfig,
+    filePath: string,
+    maxLines = 2000,
+  ): Promise<{ content: string; truncated: boolean; totalLines?: number; error?: string }> {
+    if (machine.type === "local") {
+      return this.readLocalFile(filePath, maxLines);
+    } else {
+      return this.readRemoteFile(machine, filePath, maxLines);
+    }
+  }
+
+  private async readLocalFile(
+    filePath: string,
+    maxLines: number,
+  ): Promise<{ content: string; truncated: boolean; totalLines?: number; error?: string }> {
+    try {
+      const { resolve } = await import("path");
+      const resolved = resolve(filePath.replace(/^~/, process.env.HOME || "/root"));
+      const raw = await readFile(resolved);
+
+      // Binary detection: check for null bytes in first 8KB
+      const sample = raw.subarray(0, 8192);
+      if (sample.includes(0)) {
+        return { content: "", truncated: false, error: "Binary file — preview not available" };
+      }
+
+      const text = raw.toString("utf-8");
+      const lines = text.split("\n");
+      const truncated = lines.length > maxLines;
+      const content = truncated ? lines.slice(0, maxLines).join("\n") : text;
+      return { content, truncated, totalLines: lines.length };
+    } catch (err) {
+      return { content: "", truncated: false, error: (err as Error).message };
+    }
+  }
+
+  private async readRemoteFile(
+    machine: MachineConfig,
+    filePath: string,
+    maxLines: number,
+  ): Promise<{ content: string; truncated: boolean; totalLines?: number; error?: string }> {
+    try {
+      // Get file content (head) and total line count in one command
+      const cmd = `head -n ${maxLines} "${filePath}" && echo "___EOF___" && wc -l < "${filePath}"`;
+      const ch = await this.sshManager.execFresh(machine, cmd);
+      return new Promise((resolve) => {
+        let stdout = "";
+        let stderr = "";
+        ch.on("data", (data: Buffer) => { stdout += data.toString(); });
+        ch.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+        ch.on("close", (code: number | null) => {
+          if (code !== 0) {
+            resolve({ content: "", truncated: false, error: stderr.trim() || `Failed to read file (code ${code})` });
+            return;
+          }
+          const eofIdx = stdout.lastIndexOf("___EOF___");
+          if (eofIdx === -1) {
+            resolve({ content: stdout, truncated: false });
+            return;
+          }
+          const content = stdout.substring(0, eofIdx).replace(/\n$/, "");
+          const totalLines = parseInt(stdout.substring(eofIdx + "___EOF___\n".length).trim(), 10) || undefined;
+          const truncated = totalLines !== undefined && totalLines > maxLines;
+          resolve({ content, truncated, totalLines });
+        });
+        ch.on("error", (err: Error) => {
+          resolve({ content: "", truncated: false, error: err.message });
+        });
+      });
+    } catch (err) {
+      return { content: "", truncated: false, error: (err as Error).message };
+    }
+  }
+
   private async listLocalDirectory(
     dirPath: string,
     limit: number,

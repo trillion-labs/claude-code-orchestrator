@@ -29,6 +29,9 @@ interface SessionState {
   // Plan panel
   planContent: Map<string, string>; // sessionId → plan markdown
   planPanelOpen: Map<string, boolean>; // sessionId → panel open state
+  // File preview panel
+  filePreview: Map<string, { filePath: string; content: string; language: string; truncated: boolean; loading: boolean; error?: string }>;
+  filePreviewOpen: Map<string, boolean>;
   // Existing worktrees per machine (from worktrees.list)
   worktrees: Map<string, Array<{ name: string; path: string; branch: string }>>
   // Projects & Kanban
@@ -85,6 +88,12 @@ interface SessionState {
   setPlanContent: (sessionId: string, content: string) => void;
   setPlanPanelOpen: (sessionId: string, open: boolean) => void;
   clearPlanContent: (sessionId: string) => void;
+  // File preview
+  setFilePreview: (sessionId: string, data: { filePath: string; content: string; language: string; truncated: boolean }) => void;
+  setFilePreviewLoading: (sessionId: string, filePath: string) => void;
+  setFilePreviewError: (sessionId: string, error: string) => void;
+  setFilePreviewOpen: (sessionId: string, open: boolean) => void;
+  clearFilePreview: (sessionId: string) => void;
   // Worktrees
   setWorktrees: (machineId: string, worktrees: Array<{ name: string; path: string; branch: string }>) => void;
   // Projects & Kanban
@@ -118,6 +127,8 @@ export const useStore = create<SessionState>((set) => ({
   sessionConfig: new Map(),
   planContent: new Map(),
   planPanelOpen: new Map(),
+  filePreview: new Map(),
+  filePreviewOpen: new Map(),
   worktrees: new Map(),
   projects: new Map(),
   activeProjectId: null,
@@ -200,6 +211,10 @@ export const useStore = create<SessionState>((set) => ({
       planContent.delete(sessionId);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
+      const filePreview = new Map(state.filePreview);
+      filePreview.delete(sessionId);
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.delete(sessionId);
       return {
         sessions,
         messages,
@@ -210,6 +225,8 @@ export const useStore = create<SessionState>((set) => ({
         sessionConfig,
         planContent,
         planPanelOpen,
+        filePreview,
+        filePreviewOpen,
         activeSessionId:
           state.activeSessionId === sessionId ? null : state.activeSessionId,
       };
@@ -354,7 +371,10 @@ export const useStore = create<SessionState>((set) => ({
       planContent.set(sessionId, content);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, true); // Auto-open panel when plan content arrives
-      return { planContent, planPanelOpen };
+      // Mutual exclusion: close file preview
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, false);
+      return { planContent, planPanelOpen, filePreviewOpen };
     }),
 
   setPlanPanelOpen: (sessionId, open) =>
@@ -371,6 +391,56 @@ export const useStore = create<SessionState>((set) => ({
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
       return { planContent, planPanelOpen };
+    }),
+
+  setFilePreview: (sessionId, data) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      filePreview.set(sessionId, { ...data, loading: false });
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, true);
+      // Mutual exclusion: close plan panel
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.set(sessionId, false);
+      return { filePreview, filePreviewOpen, planPanelOpen };
+    }),
+
+  setFilePreviewLoading: (sessionId, filePath) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      filePreview.set(sessionId, { filePath, content: "", language: "text", truncated: false, loading: true });
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, true);
+      // Mutual exclusion: close plan panel
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.set(sessionId, false);
+      return { filePreview, filePreviewOpen, planPanelOpen };
+    }),
+
+  setFilePreviewError: (sessionId, error) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      const existing = filePreview.get(sessionId);
+      if (existing) {
+        filePreview.set(sessionId, { ...existing, loading: false, error });
+      }
+      return { filePreview };
+    }),
+
+  setFilePreviewOpen: (sessionId, open) =>
+    set((state) => {
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, open);
+      return { filePreviewOpen };
+    }),
+
+  clearFilePreview: (sessionId) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      filePreview.delete(sessionId);
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.delete(sessionId);
+      return { filePreview, filePreviewOpen };
     }),
 
   setWorktrees: (machineId, worktrees) =>
