@@ -318,6 +318,37 @@ export class WebSocketHandler {
         break;
       }
 
+      case "path.mkdir": {
+        const mkdirMachine = this.machines.find((m) => m.id === msg.machineId);
+        if (!mkdirMachine) {
+          this.send(ws, {
+            type: "path.mkdir",
+            requestId: msg.requestId,
+            success: false,
+            resolvedPath: msg.path,
+            error: `Machine ${msg.machineId} not found`,
+          });
+          return;
+        }
+        try {
+          const result = await this.sessionManager.createDirectory(mkdirMachine, msg.path);
+          this.send(ws, {
+            type: "path.mkdir",
+            requestId: msg.requestId,
+            ...result,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "path.mkdir",
+            requestId: msg.requestId,
+            success: false,
+            resolvedPath: msg.path,
+            error: (err as Error).message,
+          });
+        }
+        break;
+      }
+
       case "worktrees.list": {
         const wtMachine = this.machines.find((m) => m.id === msg.machineId);
         if (!wtMachine) {

@@ -17,7 +17,7 @@ import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
-  const { send, requestPathList } = useWebSocket();
+  const { send, requestPathList, requestMkdir } = useWebSocket();
   const {
     sessions,
     activeSession,
@@ -158,6 +158,7 @@ export function Dashboard() {
             <ProjectCreateDialog
               machines={machines}
               requestPathList={requestPathList}
+              requestMkdir={requestMkdir}
               onCreateProject={(name, machineId, workDir, permissionMode) => {
                 send({ type: "project.create", name, machineId, workDir, permissionMode });
               }}

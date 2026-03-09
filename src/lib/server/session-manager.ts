@@ -462,6 +462,40 @@ except Exception as e:
       : this.listRemoteDirectory(machine, dirPath, limit);
   }
 
+  async createDirectory(
+    machine: MachineConfig,
+    dirPath: string,
+  ): Promise<{ success: boolean; resolvedPath: string; error?: string }> {
+    const expandedPath = dirPath.startsWith("~")
+      ? dirPath.replace(/^~/, homedir())
+      : dirPath;
+
+    if (machine.type === "local") {
+      const { mkdir: mkdirFs } = await import("fs/promises");
+      await mkdirFs(expandedPath, { recursive: true });
+      return { success: true, resolvedPath: expandedPath };
+    } else {
+      const mkdirCmd = `mkdir -p "${dirPath}" && cd "${dirPath}" && pwd`;
+      const ch = await this.sshManager.execFresh(machine, mkdirCmd);
+      return new Promise((resolve) => {
+        let stdout = "";
+        let stderr = "";
+        ch.on("data", (data: Buffer) => { stdout += data.toString(); });
+        ch.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+        ch.on("close", (code: number | null) => {
+          if (code !== 0) {
+            resolve({ success: false, resolvedPath: dirPath, error: stderr.trim() || `mkdir failed (code ${code})` });
+          } else {
+            resolve({ success: true, resolvedPath: stdout.trim() || dirPath });
+          }
+        });
+        ch.on("error", (err: Error) => {
+          resolve({ success: false, resolvedPath: dirPath, error: err.message });
+        });
+      });
+    }
+  }
+
   private async listLocalDirectory(
     dirPath: string,
     limit: number,
