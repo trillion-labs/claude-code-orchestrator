@@ -2,7 +2,6 @@
 
 import { useStore } from "@/store";
 import { ShieldAlert, Terminal as TerminalIcon, FileEdit, FilePlus, MessageSquareMore } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { PermissionRequest } from "@/lib/shared/types";
 
 interface PendingPermissionsProps {
@@ -28,7 +27,7 @@ function getToolSummary(req: PermissionRequest): string {
   const { toolName, input } = req;
   if (toolName === "Bash" && input.command) {
     const cmd = String(input.command);
-    return cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd;
+    return cmd.length > 40 ? cmd.slice(0, 37) + "..." : cmd;
   }
   if (toolName === "Write" && input.file_path) {
     const p = String(input.file_path);
@@ -76,7 +75,7 @@ export function PendingPermissions({ onNavigate }: PendingPermissionsProps) {
   };
 
   return (
-    <div className="border-t">
+    <div className="border-t overflow-hidden min-w-0 w-full">
       <div className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-500">
         <ShieldAlert className="w-3.5 h-3.5" />
         <span>Pending Permissions</span>
@@ -84,7 +83,7 @@ export function PendingPermissions({ onNavigate }: PendingPermissionsProps) {
           {allPending.length}
         </span>
       </div>
-      <ScrollArea className="max-h-48">
+      <div className="max-h-48 overflow-y-auto overflow-x-hidden">
         <div className="px-2 pb-2 space-y-1">
           {allPending.map(({ sessionId, request }) => (
             <button
@@ -104,7 +103,7 @@ export function PendingPermissions({ onNavigate }: PendingPermissionsProps) {
             </button>
           ))}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
