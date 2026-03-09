@@ -222,5 +222,7 @@ export type ServerMessage =
   | { type: "task.sessionCompleted"; task: Task }
   // ── Session-Project linking ──
   | { type: "session.projectChanged"; sessionId: string; projectId: string | null }
+  // ── Display name ──
+  | { type: "session.displayName"; sessionId: string; name: string }
   // ── Message history pagination ──
   | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean };

@@ -660,6 +660,10 @@ export class WebSocketHandler {
     this.sessionManager.on("session:projectChanged", (sessionId: string, projectId: string | null) => {
       this.broadcast({ type: "session.projectChanged", sessionId, projectId });
     });
+
+    this.sessionManager.on("session:displayName", (sessionId: string, name: string) => {
+      this.broadcast({ type: "session.displayName", sessionId, name });
+    });
   }
 
   private send(ws: WebSocket, msg: ServerMessage) {

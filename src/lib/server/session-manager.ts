@@ -271,6 +271,11 @@ export class SessionManager extends EventEmitter {
         }
       }
 
+      // Emit display name from first user message (for session card title)
+      if (managed.firstUserMessage) {
+        this.emit("session:displayName", sessionId, managed.firstUserMessage);
+      }
+
       // Restore plan panel if history contained a plan file Write/Edit
       if (managed.planFilePath) {
         try {
