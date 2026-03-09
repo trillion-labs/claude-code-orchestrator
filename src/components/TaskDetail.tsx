@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
+import { PromptInput } from "./PromptInput";
 import { SessionPickerDialog } from "./SessionPickerDialog";
 import type { Task, Session, ConversationMessage } from "@/lib/shared/types";
 
@@ -21,6 +22,8 @@ interface TaskDetailProps {
   onLinkSession: (sessionId: string) => void;
   onResume: () => void;
   onViewSession: () => void;
+  onSendPrompt: (prompt: string) => void;
+  onCancelPrompt?: () => void;
   onPermissionResponse: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
 }
 
@@ -35,6 +38,8 @@ export function TaskDetail({
   onLinkSession,
   onResume,
   onViewSession,
+  onSendPrompt,
+  onCancelPrompt,
   onPermissionResponse,
 }: TaskDetailProps) {
   const [editingTitle, setEditingTitle] = useState(false);
@@ -99,8 +104,8 @@ export function TaskDetail({
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Description & session info (shrinkable top section) */}
+      <div className="flex-shrink-0 overflow-y-auto max-h-[40%]">
         {/* Description */}
         <div className="p-4 border-b">
           <label className="text-xs font-medium text-muted-foreground mb-1 block">
@@ -208,23 +213,28 @@ export function TaskDetail({
             )}
           </div>
         </div>
-
-        {/* Session output (if linked) */}
-        {session && messages.length > 0 && (
-          <div className="flex-1 min-h-0">
-            <div className="p-3 border-b">
-              <span className="text-xs font-medium text-muted-foreground">Session Output</span>
-            </div>
-            <div className="h-[400px] overflow-y-auto">
-              <StreamOutput
-                messages={messages}
-                streamingText={streamingText}
-                onPermissionResponse={onPermissionResponse}
-              />
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Session output with input (takes remaining space) */}
+      {session && messages.length > 0 && (
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="p-3 border-b flex-shrink-0">
+            <span className="text-xs font-medium text-muted-foreground">Session Output</span>
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <StreamOutput
+              messages={messages}
+              streamingText={streamingText}
+              onPermissionResponse={onPermissionResponse}
+            />
+          </div>
+          <PromptInput
+            onSend={onSendPrompt}
+            onCancel={onCancelPrompt}
+            disabled={session.status === "busy"}
+          />
+        </div>
+      )}
     </div>
   );
 }
