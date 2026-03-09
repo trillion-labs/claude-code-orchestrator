@@ -220,6 +220,7 @@ export type ServerMessage =
   | { type: "task.sessionImported"; task: Task; session: Session }
   | { type: "task.sessionLinked"; task: Task; session: Session }
   | { type: "task.sessionCompleted"; task: Task }
+  | { type: "task.sessionBusy"; task: Task }
   // ── Session-Project linking ──
   | { type: "session.projectChanged"; sessionId: string; projectId: string | null }
   // ── Display name ──

@@ -339,4 +339,27 @@ export class ProjectManager {
     }
     return null;
   }
+
+  /**
+   * Called when a session becomes busy again (e.g. user sends follow-up message).
+   * Moves the linked task back to "in-progress" if it's currently "in-review".
+   */
+  handleSessionBusy(sessionId: string): Task | null {
+    for (const project of this.store.getAllProjects()) {
+      const tasks = this.store.getProjectTasks(project.id);
+      const task = tasks.find(
+        (t) => t.sessionId === sessionId && t.column === "in-review"
+      );
+      if (task) {
+        this.store.updateTask(project.id, task.id, {
+          column: "in-progress",
+          order: 0,
+        }).catch((err) => {
+          console.error(`[ProjectManager] Failed to move task ${task.id} back to in-progress:`, err);
+        });
+        return { ...task, column: "in-progress", updatedAt: Date.now() };
+      }
+    }
+    return null;
+  }
 }
