@@ -91,9 +91,24 @@ export class ProjectManager {
   async updateTask(
     projectId: string,
     taskId: string,
-    updates: { title?: string; description?: string },
+    updates: { title?: string; description?: string; sessionId?: string },
   ): Promise<Task> {
     await this.store.updateTask(projectId, taskId, updates);
+    const task = this.store.getTask(projectId, taskId);
+    if (!task) throw new Error(`Task ${taskId} not found`);
+    return task;
+  }
+
+  /**
+   * Fully unlink a session from a task — clears sessionId, claudeSessionId, lastMachineId.
+   * Used when user deliberately unlinks a project from a SessionCard.
+   */
+  async unlinkTaskSession(projectId: string, taskId: string): Promise<Task> {
+    await this.store.updateTask(projectId, taskId, {
+      sessionId: undefined,
+      claudeSessionId: undefined,
+      lastMachineId: undefined,
+    });
     const task = this.store.getTask(projectId, taskId);
     if (!task) throw new Error(`Task ${taskId} not found`);
     return task;

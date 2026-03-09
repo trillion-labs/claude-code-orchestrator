@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -35,9 +35,17 @@ interface ProjectBoardProps {
 export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps) {
   const { getTasksByColumn, getTaskSession } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
+  const tasks = useStore((s) => s.tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(380);
+
+  // Derive selectedTask from store so it stays in sync with updates
+  const selectedTask = useMemo(() => {
+    if (!selectedTaskId) return null;
+    const projectTasks = tasks.get(project.id) || [];
+    return projectTasks.find((t) => t.id === selectedTaskId) ?? null;
+  }, [selectedTaskId, tasks, project.id]);
   const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
@@ -219,7 +227,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   label={col.label}
                   tasks={getTasksByColumn(project.id, col.id)}
                   getSession={getTaskSession}
-                  onTaskClick={(task) => setSelectedTask(task)}
+                  onTaskClick={(task) => setSelectedTaskId(task.id)}
                   onTaskSubmit={handleSubmitTask}
                   onViewSession={onViewSession}
                 />
@@ -261,7 +269,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               session={selectedSession}
               messages={selectedMessages}
               streamingText={selectedStreamingText}
-              onClose={() => setSelectedTask(null)}
+              onClose={() => setSelectedTaskId(null)}
               onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
               onSubmit={() => handleSubmitTask(selectedTask)}
               onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}

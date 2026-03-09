@@ -7,6 +7,7 @@ import { useStore } from "@/store";
 import type { Session } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Monitor, Server, GitBranch, FolderOpen, X } from "lucide-react";
+import { TimeAgo } from "./TimeAgo";
 
 interface SessionCardProps {
   session: Session;
@@ -28,7 +29,6 @@ export function SessionCard({
   send,
 }: SessionCardProps) {
   const isLocal = session.machineId === "local";
-  const timeSinceActivity = formatTimeAgo(session.lastActivity);
   const hasAttention = !isActive && attentionCount > 0;
 
   const projects = useStore((s) => s.projects);
@@ -192,7 +192,7 @@ export function SessionCard({
       </Popover>
 
       <div className="flex items-center justify-between mt-1.5 text-xs text-muted-foreground">
-        <span>{timeSinceActivity}</span>
+        <TimeAgo timestamp={session.lastActivity} />
         {session.totalCostUsd > 0 && (
           <span className="font-mono">${session.totalCostUsd.toFixed(4)}</span>
         )}
@@ -202,12 +202,3 @@ export function SessionCard({
   );
 }
 
-function formatTimeAgo(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}

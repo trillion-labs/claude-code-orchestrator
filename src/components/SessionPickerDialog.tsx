@@ -4,24 +4,14 @@ import { useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { StatusBadge } from "./StatusBadge";
 import { useStore } from "@/store";
-import { Clock, DollarSign } from "lucide-react";
+import { DollarSign } from "lucide-react";
+import { TimeAgo } from "./TimeAgo";
 import type { Session } from "@/lib/shared/types";
 
 interface SessionPickerDialogProps {
   trigger: React.ReactNode;
   title: string;
   onSelectSession: (sessionId: string) => void;
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 export function SessionPickerDialog({ trigger, title, onSelectSession }: SessionPickerDialogProps) {
@@ -84,10 +74,7 @@ export function SessionPickerDialog({ trigger, title, onSelectSession }: Session
                         <DollarSign className="w-3 h-3" />
                         {session.totalCostUsd.toFixed(4)}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatRelativeTime(session.lastActivity)}
-                      </span>
+                      <TimeAgo timestamp={session.lastActivity} />
                     </div>
                   </button>
                 );

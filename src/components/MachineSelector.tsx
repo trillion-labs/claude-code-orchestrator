@@ -17,6 +17,7 @@ import type { MachineConfig, ClaudeSessionInfo, PermissionMode } from "@/lib/sha
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import { Plus, Monitor, Server, RotateCcw, Search, Shield, ShieldAlert, ShieldOff, GitBranch, RefreshCw, Check } from "lucide-react";
 import { generateWorktreeName } from "@/lib/shared/worktree-names";
+import { TimeAgo } from "./TimeAgo";
 
 type Mode = "new" | "resume";
 type WorktreeMode = "off" | "new" | "existing";
@@ -410,9 +411,7 @@ export function MachineSelector({
                           <span className="text-xs font-mono text-muted-foreground">
                             {s.sessionId.slice(0, 8)}...
                           </span>
-                          <span className="text-xs text-muted-foreground">
-                            {formatTimeAgo(s.lastActivity)}
-                          </span>
+                          <TimeAgo timestamp={s.lastActivity} className="text-xs text-muted-foreground" />
                         </div>
                         {s.summary && (
                           <p className="text-sm truncate">{s.summary}</p>
@@ -440,13 +439,3 @@ export function MachineSelector({
   );
 }
 
-function formatTimeAgo(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}

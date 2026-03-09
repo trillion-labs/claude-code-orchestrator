@@ -203,6 +203,24 @@ export class WebSocketHandler {
       }
 
       case "session.setProject": {
+        // When unlinking (projectId=null), also clear the task side
+        if (!msg.projectId) {
+          for (const project of this.projectManager.getAllProjects()) {
+            const tasks = this.projectManager.getProjectTasks(project.id);
+            const linkedTask = tasks.find((t) => t.sessionId === msg.sessionId);
+            if (linkedTask) {
+              // Clear all session references so task shows "No session linked"
+              this.projectManager.unlinkTaskSession(project.id, linkedTask.id)
+                .then((updatedTask) => {
+                  this.broadcast({ type: "task.updated", task: updatedTask });
+                })
+                .catch((err) => {
+                  console.error(`[WsHandler] Failed to unlink task ${linkedTask.id} from session:`, err);
+                });
+              break;
+            }
+          }
+        }
         this.sessionManager.setSessionProject(msg.sessionId, msg.projectId);
         break;
       }

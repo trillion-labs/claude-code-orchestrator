@@ -1203,6 +1203,7 @@ for line in sys.stdin:
       managed.session.projectId = projectId;
     } else {
       delete managed.session.projectId;
+      delete managed.session.taskId;
     }
     this.emit("session:projectChanged", sessionId, projectId);
   }
