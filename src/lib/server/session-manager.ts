@@ -32,9 +32,12 @@ interface ManagedSession {
   isProcessingPrompt: boolean;
   currentAssistantMessage: string;
   messages: ConversationMessage[];
+  firstUserMessage?: string; // Cached for display name
   // Whether text was streamed via content_block_delta for the current message
   hasStreamedText: boolean;
 }
+
+const MAX_RECENT_MESSAGES = 20; // Keep last 10 turns (user + assistant)
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
@@ -268,6 +271,11 @@ export class SessionManager extends EventEmitter {
         }
       }
 
+      // Emit display name from first user message (for session card title)
+      if (managed.firstUserMessage) {
+        this.emit("session:displayName", sessionId, managed.firstUserMessage);
+      }
+
       // Restore plan panel if history contained a plan file Write/Edit
       if (managed.planFilePath) {
         try {
@@ -460,6 +468,115 @@ except Exception as e:
     return machine.type === "local"
       ? this.listLocalDirectory(dirPath, limit)
       : this.listRemoteDirectory(machine, dirPath, limit);
+  }
+
+  async createDirectory(
+    machine: MachineConfig,
+    dirPath: string,
+  ): Promise<{ success: boolean; resolvedPath: string; error?: string }> {
+    const expandedPath = dirPath.startsWith("~")
+      ? dirPath.replace(/^~/, homedir())
+      : dirPath;
+
+    if (machine.type === "local") {
+      const { mkdir: mkdirFs } = await import("fs/promises");
+      await mkdirFs(expandedPath, { recursive: true });
+      return { success: true, resolvedPath: expandedPath };
+    } else {
+      const mkdirCmd = `mkdir -p "${dirPath}" && cd "${dirPath}" && pwd`;
+      const ch = await this.sshManager.execFresh(machine, mkdirCmd);
+      return new Promise((resolve) => {
+        let stdout = "";
+        let stderr = "";
+        ch.on("data", (data: Buffer) => { stdout += data.toString(); });
+        ch.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+        ch.on("close", (code: number | null) => {
+          if (code !== 0) {
+            resolve({ success: false, resolvedPath: dirPath, error: stderr.trim() || `mkdir failed (code ${code})` });
+          } else {
+            resolve({ success: true, resolvedPath: stdout.trim() || dirPath });
+          }
+        });
+        ch.on("error", (err: Error) => {
+          resolve({ success: false, resolvedPath: dirPath, error: err.message });
+        });
+      });
+    }
+  }
+
+  async readFileContent(
+    machine: MachineConfig,
+    filePath: string,
+    maxLines = 2000,
+  ): Promise<{ content: string; truncated: boolean; totalLines?: number; error?: string }> {
+    if (machine.type === "local") {
+      return this.readLocalFile(filePath, maxLines);
+    } else {
+      return this.readRemoteFile(machine, filePath, maxLines);
+    }
+  }
+
+  private async readLocalFile(
+    filePath: string,
+    maxLines: number,
+  ): Promise<{ content: string; truncated: boolean; totalLines?: number; error?: string }> {
+    try {
+      const { resolve } = await import("path");
+      const resolved = resolve(filePath.replace(/^~/, process.env.HOME || "/root"));
+      const raw = await readFile(resolved);
+
+      // Binary detection: check for null bytes in first 8KB
+      const sample = raw.subarray(0, 8192);
+      if (sample.includes(0)) {
+        return { content: "", truncated: false, error: "Binary file — preview not available" };
+      }
+
+      const text = raw.toString("utf-8");
+      const lines = text.split("\n");
+      const truncated = lines.length > maxLines;
+      const content = truncated ? lines.slice(0, maxLines).join("\n") : text;
+      return { content, truncated, totalLines: lines.length };
+    } catch (err) {
+      return { content: "", truncated: false, error: (err as Error).message };
+    }
+  }
+
+  private async readRemoteFile(
+    machine: MachineConfig,
+    filePath: string,
+    maxLines: number,
+  ): Promise<{ content: string; truncated: boolean; totalLines?: number; error?: string }> {
+    try {
+      // Get file content (head) and total line count in one command
+      const cmd = `head -n ${maxLines} "${filePath}" && echo "___EOF___" && wc -l < "${filePath}"`;
+      const ch = await this.sshManager.execFresh(machine, cmd);
+      return new Promise((resolve) => {
+        let stdout = "";
+        let stderr = "";
+        ch.on("data", (data: Buffer) => { stdout += data.toString(); });
+        ch.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+        ch.on("close", (code: number | null) => {
+          if (code !== 0) {
+            resolve({ content: "", truncated: false, error: stderr.trim() || `Failed to read file (code ${code})` });
+            return;
+          }
+          const eofIdx = stdout.lastIndexOf("___EOF___");
+          if (eofIdx === -1) {
+            resolve({ content: stdout, truncated: false });
+            return;
+          }
+          const content = stdout.substring(0, eofIdx).replace(/\n$/, "");
+          const totalLines = parseInt(stdout.substring(eofIdx + "___EOF___\n".length).trim(), 10) || undefined;
+          const truncated = totalLines !== undefined && totalLines > maxLines;
+          resolve({ content, truncated, totalLines });
+        });
+        ch.on("error", (err: Error) => {
+          resolve({ content: "", truncated: false, error: err.message });
+        });
+      });
+    } catch (err) {
+      return { content: "", truncated: false, error: (err as Error).message };
+    }
   }
 
   private async listLocalDirectory(
@@ -699,7 +816,9 @@ except:
       content: prompt,
       timestamp: Date.now(),
     };
+    if (!managed.firstUserMessage) managed.firstUserMessage = prompt;
     managed.messages.push(userMsg);
+    this.trimMessages(managed);
     this.emit("session:message", sessionId, userMsg);
 
     if (managed.isProcessingPrompt) {
@@ -857,6 +976,7 @@ except:
             durationMs: msg.duration_ms,
           };
           managed.messages.push(assistantMsg);
+          this.trimMessages(managed);
           this.emit("session:message", sessionId, assistantMsg);
         }
 
@@ -1302,9 +1422,10 @@ for line in sys.stdin:
   getSessionDisplayName(sessionId: string): string {
     const managed = this.sessions.get(sessionId);
     if (!managed) return "Imported session";
-    const firstUser = managed.messages.find((m) => m.role === "user");
-    if (firstUser?.content) {
-      const text = firstUser.content.replace(/\n/g, " ").trim();
+    const content = managed.firstUserMessage
+      || managed.messages.find((m) => m.role === "user")?.content;
+    if (content) {
+      const text = content.replace(/\n/g, " ").trim();
       return text.length > 80 ? text.slice(0, 77) + "..." : text;
     }
     return "Imported session";
@@ -1419,6 +1540,7 @@ done
 
   private parseSessionJsonl(managed: ManagedSession, content: string): void {
     const lines = content.split("\n").filter(Boolean);
+    const allMessages: ConversationMessage[] = [];
 
     for (const line of lines) {
       try {
@@ -1438,14 +1560,13 @@ done
               : "";
           if (!text) continue;
 
-          const userMsg: ConversationMessage = {
+          if (!managed.firstUserMessage) managed.firstUserMessage = text;
+          allMessages.push({
             id: uuidv4(),
             role: "user",
             content: text,
             timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-          };
-          managed.messages.push(userMsg);
-          this.emit("session:message", managed.session.id, userMsg);
+          });
         }
 
         if (msg.type === "assistant" && msg.message?.content) {
@@ -1475,17 +1596,147 @@ done
           }
           if (!text.trim()) continue;
 
-          const assistantMsg: ConversationMessage = {
+          allMessages.push({
             id: uuidv4(),
             role: "assistant",
             content: text,
             timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-          };
-          managed.messages.push(assistantMsg);
-          this.emit("session:message", managed.session.id, assistantMsg);
+          });
         }
       } catch { /* skip invalid lines */ }
     }
+
+    // Only keep and emit the most recent messages
+    const recent = allMessages.slice(-MAX_RECENT_MESSAGES);
+    managed.messages = recent;
+    for (const m of recent) {
+      this.emit("session:message", managed.session.id, m);
+    }
+  }
+
+  private trimMessages(managed: ManagedSession): void {
+    if (managed.messages.length > MAX_RECENT_MESSAGES) {
+      managed.messages = managed.messages.slice(-MAX_RECENT_MESSAGES);
+    }
+  }
+
+  /**
+   * Load older messages from .jsonl history for pagination.
+   * Returns messages with timestamp < `before`, up to `limit` items (newest first within the batch).
+   */
+  async loadMessageHistory(sessionId: string, before: number, limit = 20): Promise<{ messages: ConversationMessage[]; hasMore: boolean }> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return { messages: [], hasMore: false };
+
+    const allMessages = await this.parseFullHistory(managed);
+    // Filter messages older than `before`
+    const older = allMessages.filter((m) => m.timestamp < before);
+    const hasMore = older.length > limit;
+    // Return the most recent `limit` messages from the older set
+    const page = older.slice(-limit);
+    return { messages: page, hasMore };
+  }
+
+  /**
+   * Parse the full .jsonl history without storing it in memory.
+   * Returns all ConversationMessages from the session's history file.
+   */
+  private async parseFullHistory(managed: ManagedSession): Promise<ConversationMessage[]> {
+    const claudeSessionId = managed.session.claudeSessionId;
+    const messages: ConversationMessage[] = [];
+
+    const content = managed.machine.type === "local"
+      ? await this.readLocalJsonl(claudeSessionId)
+      : await this.readRemoteJsonl(managed.machine, claudeSessionId);
+
+    if (!content) return messages;
+
+    const lines = content.split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const msg = JSON.parse(line);
+
+        if (msg.type === "user" && msg.message?.content) {
+          const c = msg.message.content;
+          const text = typeof c === "string"
+            ? c
+            : Array.isArray(c)
+              ? c.filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n")
+              : "";
+          if (!text) continue;
+          messages.push({
+            id: uuidv4(),
+            role: "user",
+            content: text,
+            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+          });
+        }
+
+        if (msg.type === "assistant" && msg.message?.content) {
+          const c = msg.message.content;
+          let text = "";
+          if (typeof c === "string") {
+            text = c;
+          } else if (Array.isArray(c)) {
+            const parts: string[] = [];
+            for (const block of c) {
+              if (block.type === "text") {
+                parts.push(block.text);
+              } else if (block.type === "tool_use") {
+                const inputStr = block.input ? JSON.stringify(block.input) : "";
+                parts.push(this.renderToolUse(block.name, inputStr));
+              }
+            }
+            text = parts.join("\n");
+          }
+          if (!text.trim()) continue;
+          messages.push({
+            id: uuidv4(),
+            role: "assistant",
+            content: text,
+            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+          });
+        }
+      } catch { /* skip invalid lines */ }
+    }
+
+    return messages;
+  }
+
+  private async readLocalJsonl(claudeSessionId: string): Promise<string | null> {
+    const claudeDir = join(homedir(), ".claude", "projects");
+    try {
+      const projects = await readdir(claudeDir);
+      for (const project of projects) {
+        const filePath = join(claudeDir, project, `${claudeSessionId}.jsonl`);
+        try {
+          return await readFile(filePath, "utf-8");
+        } catch {
+          // Not in this project dir, try next
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  private async readRemoteJsonl(machine: MachineConfig, claudeSessionId: string): Promise<string | null> {
+    const script = `python3 -c "
+import os, glob
+home = os.path.expanduser('~')
+pattern = os.path.join(home, '.claude', 'projects', '*', '${claudeSessionId}.jsonl')
+files = glob.glob(pattern)
+if files:
+    with open(files[0]) as f:
+        print(f.read())
+"`;
+    try {
+      const channel = await this.sshManager.execFresh(machine, script);
+      return await new Promise<string>((resolve) => {
+        let out = "";
+        channel.on("data", (data: Buffer) => { out += data.toString(); });
+        channel.on("close", () => resolve(out || ""));
+      });
+    } catch { return null; }
   }
 
   async discoverSessions(machine: MachineConfig, workDir?: string): Promise<ClaudeSessionInfo[]> {

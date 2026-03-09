@@ -10,6 +10,23 @@ import { homedir } from "os";
 import type { MachineConfig, PermissionMode, PermissionRequest } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 
+const EXT_LANG_MAP: Record<string, string> = {
+  ts: "typescript", tsx: "tsx", js: "javascript", jsx: "jsx",
+  py: "python", rs: "rust", go: "go", java: "java", kt: "kotlin",
+  rb: "ruby", php: "php", swift: "swift", c: "c", cpp: "cpp", h: "c", hpp: "cpp",
+  cs: "csharp", json: "json", yaml: "yaml", yml: "yaml", toml: "toml",
+  xml: "xml", html: "html", css: "css", scss: "scss", less: "less",
+  md: "markdown", mdx: "markdown", sql: "sql",
+  sh: "bash", bash: "bash", zsh: "bash", fish: "bash",
+  dockerfile: "docker", makefile: "makefile",
+  graphql: "graphql", gql: "graphql", prisma: "prisma",
+  env: "bash", ini: "ini", conf: "ini", cfg: "ini",
+};
+
+function extToLanguage(ext: string): string {
+  return EXT_LANG_MAP[ext] || "text";
+}
+
 export class WebSocketHandler {
   private sessionManager: SessionManager;
   private projectStore: ProjectStore;
@@ -318,6 +335,79 @@ export class WebSocketHandler {
         break;
       }
 
+      case "path.mkdir": {
+        const mkdirMachine = this.machines.find((m) => m.id === msg.machineId);
+        if (!mkdirMachine) {
+          this.send(ws, {
+            type: "path.mkdir",
+            requestId: msg.requestId,
+            success: false,
+            resolvedPath: msg.path,
+            error: `Machine ${msg.machineId} not found`,
+          });
+          return;
+        }
+        try {
+          const result = await this.sessionManager.createDirectory(mkdirMachine, msg.path);
+          this.send(ws, {
+            type: "path.mkdir",
+            requestId: msg.requestId,
+            ...result,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "path.mkdir",
+            requestId: msg.requestId,
+            success: false,
+            resolvedPath: msg.path,
+            error: (err as Error).message,
+          });
+        }
+        break;
+      }
+
+      case "file.read": {
+        const frMachine = this.machines.find((m) => m.id === msg.machineId);
+        if (!frMachine) {
+          this.send(ws, {
+            type: "file.read",
+            requestId: msg.requestId,
+            content: "",
+            language: "text",
+            filePath: msg.filePath,
+            truncated: false,
+            error: `Machine ${msg.machineId} not found`,
+          });
+          return;
+        }
+        try {
+          const result = await this.sessionManager.readFileContent(frMachine, msg.filePath, msg.maxLines);
+          const ext = msg.filePath.split(".").pop()?.toLowerCase() || "";
+          const language = extToLanguage(ext);
+          this.send(ws, {
+            type: "file.read",
+            requestId: msg.requestId,
+            filePath: msg.filePath,
+            language,
+            content: result.content,
+            truncated: result.truncated,
+            totalLines: result.totalLines,
+            error: result.error,
+          });
+        } catch (err) {
+          this.send(ws, {
+            type: "file.read",
+            requestId: msg.requestId,
+            content: "",
+            language: "text",
+            filePath: msg.filePath,
+            truncated: false,
+            error: (err as Error).message,
+          });
+        }
+        break;
+      }
+
       case "worktrees.list": {
         const wtMachine = this.machines.find((m) => m.id === msg.machineId);
         if (!wtMachine) {
@@ -502,6 +592,18 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.history": {
+        try {
+          const { messages, hasMore } = await this.sessionManager.loadMessageHistory(
+            msg.sessionId, msg.before, msg.limit
+          );
+          this.send(ws, { type: "session.history", sessionId: msg.sessionId, messages, hasMore });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
       case "task.linkSession": {
         try {
           const { task, session } = await this.projectManager.linkSessionToTask(
@@ -557,6 +659,10 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:projectChanged", (sessionId: string, projectId: string | null) => {
       this.broadcast({ type: "session.projectChanged", sessionId, projectId });
+    });
+
+    this.sessionManager.on("session:displayName", (sessionId: string, name: string) => {
+      this.broadcast({ type: "session.displayName", sessionId, name });
     });
   }
 

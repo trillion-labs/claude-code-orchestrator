@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest } from "@/lib/shared/types";
 
 interface SessionState {
   sessions: Map<string, Session>;
@@ -7,6 +7,10 @@ interface SessionState {
   machines: MachineConfig[];
   // Per-session message history
   messages: Map<string, ConversationMessage[]>;
+  // Whether more history is available for a session (for pagination)
+  hasMoreMessages: Map<string, boolean>;
+  // Whether history is currently being loaded
+  loadingHistory: Map<string, boolean>;
   // Per-session streaming text
   streamingText: Map<string, string>;
   // Discovered sessions per machine
@@ -17,6 +21,8 @@ interface SessionState {
   permissionAnswers: Map<string, Map<number, string | string[]>>;
   // Pending attention indicators per session (e.g. "perm:reqId", "question")
   pendingAttention: Map<string, Set<string>>;
+  // Pending permission requests per session (for sidebar display)
+  pendingRequests: Map<string, PermissionRequest[]>;
   // Custom session names (user-set or auto-extracted from first message)
   sessionNames: Map<string, string>;
   // Global config
@@ -27,6 +33,9 @@ interface SessionState {
   // Plan panel
   planContent: Map<string, string>; // sessionId → plan markdown
   planPanelOpen: Map<string, boolean>; // sessionId → panel open state
+  // File preview panel
+  filePreview: Map<string, { filePath: string; content: string; language: string; truncated: boolean; loading: boolean; error?: string }>;
+  filePreviewOpen: Map<string, boolean>;
   // Existing worktrees per machine (from worktrees.list)
   worktrees: Map<string, Array<{ name: string; path: string; branch: string }>>
   // Projects & Kanban
@@ -52,6 +61,8 @@ interface SessionState {
 
   // Messages
   addMessage: (sessionId: string, message: ConversationMessage) => void;
+  prependMessages: (sessionId: string, messages: ConversationMessage[], hasMore: boolean) => void;
+  setLoadingHistory: (sessionId: string, loading: boolean) => void;
 
   // Streaming
   appendStreamDelta: (sessionId: string, delta: string) => void;
@@ -63,6 +74,9 @@ interface SessionState {
   // Permissions
   respondPermission: (requestId: string, decision: "allow" | "deny") => void;
   setPermissionAnswers: (requestId: string, selections: Map<number, string | string[]>) => void;
+  addPendingRequest: (sessionId: string, request: PermissionRequest) => void;
+  removePendingRequest: (sessionId: string, requestId: string) => void;
+  clearPendingRequests: (sessionId: string) => void;
 
   // Attention
   addAttention: (sessionId: string, key: string) => void;
@@ -80,6 +94,12 @@ interface SessionState {
   setPlanContent: (sessionId: string, content: string) => void;
   setPlanPanelOpen: (sessionId: string, open: boolean) => void;
   clearPlanContent: (sessionId: string) => void;
+  // File preview
+  setFilePreview: (sessionId: string, data: { filePath: string; content: string; language: string; truncated: boolean }) => void;
+  setFilePreviewLoading: (sessionId: string, filePath: string) => void;
+  setFilePreviewError: (sessionId: string, error: string) => void;
+  setFilePreviewOpen: (sessionId: string, open: boolean) => void;
+  clearFilePreview: (sessionId: string) => void;
   // Worktrees
   setWorktrees: (machineId: string, worktrees: Array<{ name: string; path: string; branch: string }>) => void;
   // Projects & Kanban
@@ -101,17 +121,22 @@ export const useStore = create<SessionState>((set) => ({
   activeSessionId: null,
   machines: [],
   messages: new Map(),
+  hasMoreMessages: new Map(),
+  loadingHistory: new Map(),
   streamingText: new Map(),
   discoveredSessions: new Map(),
   respondedPermissions: new Map(),
   permissionAnswers: new Map(),
   pendingAttention: new Map(),
+  pendingRequests: new Map(),
   sessionNames: new Map(),
   globalSettings: null,
   globalClaudeMd: null,
   sessionConfig: new Map(),
   planContent: new Map(),
   planPanelOpen: new Map(),
+  filePreview: new Map(),
+  filePreviewOpen: new Map(),
   worktrees: new Map(),
   projects: new Map(),
   activeProjectId: null,
@@ -180,10 +205,16 @@ export const useStore = create<SessionState>((set) => ({
       sessions.delete(sessionId);
       const messages = new Map(state.messages);
       messages.delete(sessionId);
+      const hasMoreMessages = new Map(state.hasMoreMessages);
+      hasMoreMessages.delete(sessionId);
+      const loadingHistory = new Map(state.loadingHistory);
+      loadingHistory.delete(sessionId);
       const streamingText = new Map(state.streamingText);
       streamingText.delete(sessionId);
       const pendingAttention = new Map(state.pendingAttention);
       pendingAttention.delete(sessionId);
+      const pendingRequests = new Map(state.pendingRequests);
+      pendingRequests.delete(sessionId);
       const sessionNames = new Map(state.sessionNames);
       sessionNames.delete(sessionId);
       const sessionConfig = new Map(state.sessionConfig);
@@ -192,15 +223,24 @@ export const useStore = create<SessionState>((set) => ({
       planContent.delete(sessionId);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
+      const filePreview = new Map(state.filePreview);
+      filePreview.delete(sessionId);
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.delete(sessionId);
       return {
         sessions,
         messages,
+        hasMoreMessages,
+        loadingHistory,
         streamingText,
         pendingAttention,
+        pendingRequests,
         sessionNames,
         sessionConfig,
         planContent,
         planPanelOpen,
+        filePreview,
+        filePreviewOpen,
         activeSessionId:
           state.activeSessionId === sessionId ? null : state.activeSessionId,
       };
@@ -222,6 +262,32 @@ export const useStore = create<SessionState>((set) => ({
         return { messages, streamingText };
       }
       return { messages };
+    }),
+
+  prependMessages: (sessionId, olderMessages, hasMore) =>
+    set((state) => {
+      const messages = new Map(state.messages);
+      const existing = messages.get(sessionId) || [];
+      // Deduplicate by timestamp (history messages may overlap with recent)
+      const existingTimestamps = new Set(existing.map((m) => m.timestamp));
+      const unique = olderMessages.filter((m) => !existingTimestamps.has(m.timestamp));
+      messages.set(sessionId, [...unique, ...existing]);
+      const hasMoreMessages = new Map(state.hasMoreMessages);
+      hasMoreMessages.set(sessionId, hasMore);
+      const loadingHistory = new Map(state.loadingHistory);
+      loadingHistory.delete(sessionId);
+      return { messages, hasMoreMessages, loadingHistory };
+    }),
+
+  setLoadingHistory: (sessionId, loading) =>
+    set((state) => {
+      const loadingHistory = new Map(state.loadingHistory);
+      if (loading) {
+        loadingHistory.set(sessionId, true);
+      } else {
+        loadingHistory.delete(sessionId);
+      }
+      return { loadingHistory };
     }),
 
   appendStreamDelta: (sessionId, delta) =>
@@ -258,6 +324,36 @@ export const useStore = create<SessionState>((set) => ({
       const permissionAnswers = new Map(state.permissionAnswers);
       permissionAnswers.set(requestId, selections);
       return { permissionAnswers };
+    }),
+
+  addPendingRequest: (sessionId, request) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      const existing = pendingRequests.get(sessionId) || [];
+      pendingRequests.set(sessionId, [...existing, request]);
+      return { pendingRequests };
+    }),
+
+  removePendingRequest: (sessionId, requestId) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      const existing = pendingRequests.get(sessionId);
+      if (existing) {
+        const filtered = existing.filter((r) => r.requestId !== requestId);
+        if (filtered.length === 0) {
+          pendingRequests.delete(sessionId);
+        } else {
+          pendingRequests.set(sessionId, filtered);
+        }
+      }
+      return { pendingRequests };
+    }),
+
+  clearPendingRequests: (sessionId) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      pendingRequests.delete(sessionId);
+      return { pendingRequests };
     }),
 
   addAttention: (sessionId, key) =>
@@ -315,7 +411,10 @@ export const useStore = create<SessionState>((set) => ({
       planContent.set(sessionId, content);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, true); // Auto-open panel when plan content arrives
-      return { planContent, planPanelOpen };
+      // Mutual exclusion: close file preview
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, false);
+      return { planContent, planPanelOpen, filePreviewOpen };
     }),
 
   setPlanPanelOpen: (sessionId, open) =>
@@ -332,6 +431,56 @@ export const useStore = create<SessionState>((set) => ({
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
       return { planContent, planPanelOpen };
+    }),
+
+  setFilePreview: (sessionId, data) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      filePreview.set(sessionId, { ...data, loading: false });
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, true);
+      // Mutual exclusion: close plan panel
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.set(sessionId, false);
+      return { filePreview, filePreviewOpen, planPanelOpen };
+    }),
+
+  setFilePreviewLoading: (sessionId, filePath) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      filePreview.set(sessionId, { filePath, content: "", language: "text", truncated: false, loading: true });
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, true);
+      // Mutual exclusion: close plan panel
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.set(sessionId, false);
+      return { filePreview, filePreviewOpen, planPanelOpen };
+    }),
+
+  setFilePreviewError: (sessionId, error) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      const existing = filePreview.get(sessionId);
+      if (existing) {
+        filePreview.set(sessionId, { ...existing, loading: false, error });
+      }
+      return { filePreview };
+    }),
+
+  setFilePreviewOpen: (sessionId, open) =>
+    set((state) => {
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, open);
+      return { filePreviewOpen };
+    }),
+
+  clearFilePreview: (sessionId) =>
+    set((state) => {
+      const filePreview = new Map(state.filePreview);
+      filePreview.delete(sessionId);
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.delete(sessionId);
+      return { filePreview, filePreviewOpen };
     }),
 
   setWorktrees: (machineId, worktrees) =>

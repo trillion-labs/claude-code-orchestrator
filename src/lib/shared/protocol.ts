@@ -54,6 +54,8 @@ export type ClientMessage =
   | { type: "session.config.write"; sessionId: string; file: "settings" | "claudemd"; content: string }
   | { type: "worktrees.list"; machineId: string; workDir: string }
   | { type: "path.list"; machineId: string; path: string; requestId: string }
+  | { type: "path.mkdir"; machineId: string; path: string; requestId: string }
+  | { type: "file.read"; machineId: string; filePath: string; requestId: string; maxLines?: number }
   // ── Project CRUD ──
   | { type: "project.create"; name: string; machineId: string; workDir: string; permissionMode: PermissionMode }
   | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode } }
@@ -71,7 +73,9 @@ export type ClientMessage =
   | { type: "task.linkSession"; projectId: string; taskId: string; sessionId: string }
   | { type: "task.list"; projectId: string }
   // ── Session-Project linking ──
-  | { type: "session.setProject"; sessionId: string; projectId: string | null };
+  | { type: "session.setProject"; sessionId: string; projectId: string | null }
+  // ── Message history pagination ──
+  | { type: "session.history"; sessionId: string; before: number; limit?: number };
 
 // ── Server → Client Messages ──
 
@@ -179,6 +183,23 @@ export type ServerMessage =
       error?: string;
     }
   | {
+      type: "path.mkdir";
+      requestId: string;
+      success: boolean;
+      resolvedPath: string;
+      error?: string;
+    }
+  | {
+      type: "file.read";
+      requestId: string;
+      content: string;
+      language: string;
+      filePath: string;
+      truncated: boolean;
+      totalLines?: number;
+      error?: string;
+    }
+  | {
       type: "error";
       error: string;
     }
@@ -200,4 +221,8 @@ export type ServerMessage =
   | { type: "task.sessionLinked"; task: Task; session: Session }
   | { type: "task.sessionCompleted"; task: Task }
   // ── Session-Project linking ──
-  | { type: "session.projectChanged"; sessionId: string; projectId: string | null };
+  | { type: "session.projectChanged"; sessionId: string; projectId: string | null }
+  // ── Display name ──
+  | { type: "session.displayName"; sessionId: string; name: string }
+  // ── Message history pagination ──
+  | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean };

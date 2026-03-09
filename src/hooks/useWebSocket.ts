@@ -18,11 +18,28 @@ export interface PathListResult {
   error?: string;
 }
 
+export interface MkdirResult {
+  success: boolean;
+  resolvedPath: string;
+  error?: string;
+}
+
+export interface FileReadResult {
+  content: string;
+  language: string;
+  filePath: string;
+  truncated: boolean;
+  totalLines?: number;
+  error?: string;
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelayRef = useRef(RECONNECT_DELAY);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pathListCallbacksRef = useRef<Map<string, (result: PathListResult) => void>>(new Map());
+  const mkdirCallbacksRef = useRef<Map<string, (result: MkdirResult) => void>>(new Map());
+  const fileReadCallbacksRef = useRef<Map<string, (result: FileReadResult) => void>>(new Map());
 
   const {
     addSession,
@@ -32,10 +49,13 @@ export function useWebSocket() {
     setSessions,
     setMachines,
     addMessage,
+    prependMessages,
     appendStreamDelta,
     setDiscoveredSessions,
     addAttention,
     clearAttention,
+    addPendingRequest,
+    clearPendingRequests,
     setGlobalConfig,
     setSessionConfig,
     setPlanContent,
@@ -51,6 +71,7 @@ export function useWebSocket() {
     removeTask,
     updateSessionLink,
     updateSessionProject,
+    setSessionName,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -71,6 +92,7 @@ export function useWebSocket() {
             addAttention(msg.sessionId, "question");
           }
           addAttention(msg.sessionId, `perm:${msg.request.requestId}`);
+          addPendingRequest(msg.sessionId, msg.request);
           break;
 
         case "session.permissionModeChanged":
@@ -81,6 +103,10 @@ export function useWebSocket() {
           addMessage(msg.sessionId, msg.message);
           break;
 
+        case "session.history":
+          prependMessages(msg.sessionId, msg.messages, msg.hasMore);
+          break;
+
         case "session.status":
           updateSessionStatus(
             msg.sessionId,
@@ -88,10 +114,11 @@ export function useWebSocket() {
             msg.totalCostUsd,
             msg.error
           );
-          // Clear attention when session is no longer busy
+          // Clear attention and pending requests when session is no longer busy
           // (expired permission requests are no longer actionable)
           if (msg.status !== "busy") {
             clearAttention(msg.sessionId);
+            clearPendingRequests(msg.sessionId);
           }
           break;
 
@@ -120,6 +147,24 @@ export function useWebSocket() {
           if (cb) {
             cb({ entries: msg.entries, resolvedPath: msg.resolvedPath, prefix: msg.prefix, error: msg.error });
             pathListCallbacksRef.current.delete(msg.requestId);
+          }
+          break;
+        }
+
+        case "path.mkdir": {
+          const mkdirCb = mkdirCallbacksRef.current.get(msg.requestId);
+          if (mkdirCb) {
+            mkdirCb({ success: msg.success, resolvedPath: msg.resolvedPath, error: msg.error });
+            mkdirCallbacksRef.current.delete(msg.requestId);
+          }
+          break;
+        }
+
+        case "file.read": {
+          const frCb = fileReadCallbacksRef.current.get(msg.requestId);
+          if (frCb) {
+            frCb({ content: msg.content, language: msg.language, filePath: msg.filePath, truncated: msg.truncated, totalLines: msg.totalLines, error: msg.error });
+            fileReadCallbacksRef.current.delete(msg.requestId);
           }
           break;
         }
@@ -229,9 +274,13 @@ export function useWebSocket() {
         case "session.projectChanged":
           updateSessionProject(msg.sessionId, msg.projectId);
           break;
+
+        case "session.displayName":
+          setSessionName(msg.sessionId, msg.name);
+          break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName]
   );
 
   const connect = useCallback(() => {
@@ -297,6 +346,46 @@ export function useWebSocket() {
     [send],
   );
 
+  const requestMkdir = useCallback(
+    (machineId: string, path: string): Promise<MkdirResult> => {
+      return new Promise((resolve) => {
+        const requestId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          mkdirCallbacksRef.current.delete(requestId);
+          resolve({ success: false, resolvedPath: path, error: "Request timed out" });
+        }, 5000);
+
+        mkdirCallbacksRef.current.set(requestId, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
+
+        send({ type: "path.mkdir", machineId, path, requestId });
+      });
+    },
+    [send],
+  );
+
+  const requestFileRead = useCallback(
+    (machineId: string, filePath: string, maxLines?: number): Promise<FileReadResult> => {
+      return new Promise((resolve) => {
+        const requestId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          fileReadCallbacksRef.current.delete(requestId);
+          resolve({ content: "", language: "text", filePath, truncated: false, error: "Request timed out" });
+        }, 10000);
+
+        fileReadCallbacksRef.current.set(requestId, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
+
+        send({ type: "file.read", machineId, filePath, requestId, maxLines });
+      });
+    },
+    [send],
+  );
+
   useEffect(() => {
     connect();
 
@@ -308,5 +397,5 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  return { send, requestPathList };
+  return { send, requestPathList, requestMkdir, requestFileRead };
 }

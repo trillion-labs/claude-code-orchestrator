@@ -11,13 +11,15 @@ import { SettingsDialog } from "./SettingsDialog";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { ProjectCreateDialog } from "./ProjectCreateDialog";
 import { ProjectBoard } from "./ProjectBoard";
+import { PendingPermissions } from "./PendingPermissions";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
+import { useStore } from "@/store";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
-  const { send, requestPathList } = useWebSocket();
+  const { send, requestPathList, requestMkdir, requestFileRead } = useWebSocket();
   const {
     sessions,
     activeSession,
@@ -64,11 +66,14 @@ export function Dashboard() {
     removeAttention(activeSessionId, "question");
   };
 
+  const removePendingRequest = useStore((s) => s.removePendingRequest);
+
   const handlePermissionResponse = (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => {
     if (!activeSessionId) return;
     send({ type: "session.permissionResponse", sessionId: activeSessionId, requestId, allow, answers, message });
     removeAttention(activeSessionId, `perm:${requestId}`);
     removeAttention(activeSessionId, "question");
+    removePendingRequest(activeSessionId, requestId);
   };
 
   const handleTerminate = () => {
@@ -158,6 +163,7 @@ export function Dashboard() {
             <ProjectCreateDialog
               machines={machines}
               requestPathList={requestPathList}
+              requestMkdir={requestMkdir}
               onCreateProject={(name, machineId, workDir, permissionMode) => {
                 send({ type: "project.create", name, machineId, workDir, permissionMode });
               }}
@@ -194,6 +200,8 @@ export function Dashboard() {
               </div>
             </ScrollArea>
 
+            <PendingPermissions onNavigate={handleViewSession} />
+
             <Separator />
             <div className="p-3 text-xs text-muted-foreground text-center">
               {sessions.length} session{sessions.length !== 1 ? "s" : ""} active
@@ -202,6 +210,7 @@ export function Dashboard() {
         ) : (
           <ProjectSidebar
             send={send}
+            onNavigateToSession={handleViewSession}
           />
         )}
       </div>
@@ -220,6 +229,7 @@ export function Dashboard() {
               onPermissionResponse={handlePermissionResponse}
               onTerminate={handleTerminate}
               send={send}
+              requestFileRead={requestFileRead}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
