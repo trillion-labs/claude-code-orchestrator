@@ -636,6 +636,14 @@ export class WebSocketHandler {
         error,
       });
 
+      // Auto-move task back to "in-progress" when session becomes busy again
+      if (status === "busy") {
+        const updatedTask = this.projectManager.handleSessionBusy(sessionId);
+        if (updatedTask) {
+          this.broadcast({ type: "task.sessionBusy", task: updatedTask });
+        }
+      }
+
       // Auto-move task to "in-review" when linked session completes
       if (status === "idle" && !error) {
         const updatedTask = this.projectManager.handleSessionCompleted(sessionId);

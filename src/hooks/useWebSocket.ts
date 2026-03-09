@@ -271,6 +271,10 @@ export function useWebSocket() {
           updateTask(msg.task);
           break;
 
+        case "task.sessionBusy":
+          updateTask(msg.task);
+          break;
+
         case "session.projectChanged":
           updateSessionProject(msg.sessionId, msg.projectId);
           break;
