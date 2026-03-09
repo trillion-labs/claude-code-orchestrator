@@ -72,6 +72,8 @@ export interface Task {
   column: KanbanColumn;
   order: number;
   sessionId?: string;
+  claudeSessionId?: string;   // Claude CLI session ID (for --resume)
+  lastMachineId?: string;     // Machine ID the session last ran on
   createdAt: number;
   updatedAt: number;
   completedAt?: number;

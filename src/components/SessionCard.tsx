@@ -2,8 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { StatusBadge } from "./StatusBadge";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { useStore } from "@/store";
 import type { Session } from "@/lib/shared/types";
-import { Monitor, Server, GitBranch } from "lucide-react";
+import type { ClientMessage } from "@/lib/shared/protocol";
+import { Monitor, Server, GitBranch, FolderOpen, X } from "lucide-react";
 
 interface SessionCardProps {
   session: Session;
@@ -12,6 +15,7 @@ interface SessionCardProps {
   attentionCount: number;
   displayName?: string;
   onRename: (name: string) => void;
+  send: (msg: ClientMessage) => void;
 }
 
 export function SessionCard({
@@ -21,10 +25,15 @@ export function SessionCard({
   attentionCount,
   displayName,
   onRename,
+  send,
 }: SessionCardProps) {
   const isLocal = session.machineId === "local";
   const timeSinceActivity = formatTimeAgo(session.lastActivity);
   const hasAttention = !isActive && attentionCount > 0;
+
+  const projects = useStore((s) => s.projects);
+  const linkedProject = session.projectId ? projects.get(session.projectId) : undefined;
+  const [projectPopoverOpen, setProjectPopoverOpen] = useState(false);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -59,6 +68,11 @@ export function SessionCard({
     }
   };
 
+  const handleSetProject = (projectId: string | null) => {
+    send({ type: "session.setProject", sessionId: session.id, projectId });
+    setProjectPopoverOpen(false);
+  };
+
   return (
     <div className="relative">
       {/* Attention pulse dot — outside button to avoid overflow-hidden clipping */}
@@ -68,9 +82,12 @@ export function SessionCard({
           <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
         </span>
       )}
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
-        className={`w-full text-left p-3 rounded-lg border transition-colors overflow-hidden ${
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
+        className={`w-full text-left p-3 rounded-lg border transition-colors overflow-hidden cursor-pointer ${
           isActive
             ? "bg-accent border-accent-foreground/20"
             : hasAttention
@@ -131,13 +148,56 @@ export function SessionCard({
           <span className="font-mono truncate">{session.worktree.branch}</span>
         </div>
       )}
+
+      {/* Project indicator with dropdown */}
+      <Popover open={projectPopoverOpen} onOpenChange={setProjectPopoverOpen}>
+        <PopoverTrigger asChild>
+          <div
+            onClick={(e) => { e.stopPropagation(); setProjectPopoverOpen(true); }}
+            className="flex items-center gap-1 text-xs mt-0.5 cursor-pointer hover:text-foreground transition-colors"
+          >
+            <FolderOpen className="w-3 h-3 shrink-0" />
+            <span className={`truncate ${linkedProject ? "text-muted-foreground" : "text-muted-foreground/50 italic"}`}>
+              {linkedProject ? linkedProject.name : "No project"}
+            </span>
+          </div>
+        </PopoverTrigger>
+        <PopoverContent className="w-48 p-1" align="start" side="right">
+          <div className="text-xs font-medium text-muted-foreground px-2 py-1">Project</div>
+          {linkedProject && (
+            <button
+              className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent flex items-center gap-1.5 text-red-400"
+              onClick={(e) => { e.stopPropagation(); handleSetProject(null); }}
+            >
+              <X className="w-3 h-3" />
+              Unlink
+            </button>
+          )}
+          {Array.from(projects.values())
+            .filter((p) => p.id !== session.projectId)
+            .map((p) => (
+              <button
+                key={p.id}
+                className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-accent flex items-center gap-1.5 truncate"
+                onClick={(e) => { e.stopPropagation(); handleSetProject(p.id); }}
+              >
+                <FolderOpen className="w-3 h-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{p.name}</span>
+              </button>
+            ))}
+          {projects.size === 0 && (
+            <div className="text-xs text-muted-foreground/50 px-2 py-1.5 italic">No projects</div>
+          )}
+        </PopoverContent>
+      </Popover>
+
       <div className="flex items-center justify-between mt-1.5 text-xs text-muted-foreground">
         <span>{timeSinceActivity}</span>
         {session.totalCostUsd > 0 && (
           <span className="font-mono">${session.totalCostUsd.toFixed(4)}</span>
         )}
       </div>
-    </button>
+    </div>
     </div>
   );
 }

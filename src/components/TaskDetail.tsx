@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, ExternalLink, Play, Pencil, Check } from "lucide-react";
+import { X, ExternalLink, Play, Pencil, Check, Unplug, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +17,7 @@ interface TaskDetailProps {
   onClose: () => void;
   onUpdate: (updates: { title?: string; description?: string }) => void;
   onSubmit: () => void;
+  onResume: () => void;
   onViewSession: () => void;
   onPermissionResponse: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
 }
@@ -29,6 +30,7 @@ export function TaskDetail({
   onClose,
   onUpdate,
   onSubmit,
+  onResume,
   onViewSession,
   onPermissionResponse,
 }: TaskDetailProps) {
@@ -153,6 +155,25 @@ export function TaskDetail({
                 >
                   <ExternalLink className="w-3 h-3" />
                   View Session
+                </Button>
+              </>
+            ) : task.claudeSessionId && task.column !== "todo" && task.column !== "done" ? (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <Unplug className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-xs text-amber-400 font-medium">Session disconnected</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground font-mono ml-1">
+                  {task.claudeSessionId.slice(0, 8)}…
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto gap-1 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  onClick={onResume}
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Resume
                 </Button>
               </>
             ) : (

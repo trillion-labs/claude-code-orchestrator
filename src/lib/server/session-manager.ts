@@ -1195,6 +1195,18 @@ for line in sys.stdin:
     this.emit("session:permissionModeChanged", sessionId, mode);
   }
 
+  setSessionProject(sessionId: string, projectId: string | null): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return;
+
+    if (projectId) {
+      managed.session.projectId = projectId;
+    } else {
+      delete managed.session.projectId;
+    }
+    this.emit("session:projectChanged", sessionId, projectId);
+  }
+
   interruptSession(sessionId: string): void {
     const managed = this.sessions.get(sessionId);
     if (!managed || managed.session.status !== "busy") return;
