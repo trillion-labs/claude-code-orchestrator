@@ -24,9 +24,33 @@
 | `.claude/worktrees/<name>` | `feat/*`, `fix/*` | 임시 feature/fix worktree. PR 완료 후 정리. |
 
 - **절대 project root에서 `git checkout dev` 하지 말 것.** dev 작업은 `.claude/worktrees/dev`에서 수행.
-- dev worktree에서 서버 실행: `npm run dev:preview` (port 9000)
-- main에서 서버 실행: `npm run dev:main` (port 8888)
-- **worktree 서버 실행 시 반드시 `preview_start`를 사용할 것.** Bash로 직접 띄우면 Claude Code 환경변수(`CLAUDECODE` 등)가 상속되어 MCP permission 서버가 작동하지 않음. `.claude/launch.json`에 설정 추가 후 `preview_start`로 실행.
+
+### Dev Server 실행
+
+Bash로 직접 `npm run dev:*`를 실행하면 Claude Code 환경변수(`CLAUDECODE` 등)가 상속되어 MCP permission 서버가 작동하지 않음. 반드시 `env -u CLAUDECODE`로 환경변수를 제거해서 실행할 것.
+
+| 용도 | 명령어 | Port |
+|------|--------|------|
+| main 서버 | `npm run dev:main` | 8888 |
+| dev/feat worktree 서버 | `npm run dev:preview` | 9000 |
+| 테스트/프리뷰 서버 | `npm run dev:test` | 3333 |
+
+**실행 방법** (worktree에서 임의 포트로 띄우는 예시):
+```bash
+# 1. 기존 포트 정리
+lsof -ti:<PORT> | xargs kill -9 2>/dev/null
+
+# 2. Next.js lock 파일 제거 (다른 인스턴스가 사용하던 것)
+rm -f <worktree-path>/.next/dev/lock
+
+# 3. CLAUDECODE 환경변수 제거 후 실행 (run_in_background로)
+env -u CLAUDECODE PORT=<PORT> npx tsx watch server.ts
+```
+
+**주의사항:**
+- `env -u CLAUDECODE` 없이 실행하면 MCP permission이 깨짐
+- `.next/dev/lock` 파일이 남아있으면 서버 시작 실패함 — 반드시 삭제 후 재시작
+- worktree에서 실행할 때는 해당 worktree 디렉토리가 cwd여야 함
 
 ### Git Workflow
 
