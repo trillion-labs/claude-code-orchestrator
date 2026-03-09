@@ -202,6 +202,29 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.setProject": {
+        // When unlinking (projectId=null), also clear the task side
+        if (!msg.projectId) {
+          for (const project of this.projectManager.getAllProjects()) {
+            const tasks = this.projectManager.getProjectTasks(project.id);
+            const linkedTask = tasks.find((t) => t.sessionId === msg.sessionId);
+            if (linkedTask) {
+              // Clear all session references so task shows "No session linked"
+              this.projectManager.unlinkTaskSession(project.id, linkedTask.id)
+                .then((updatedTask) => {
+                  this.broadcast({ type: "task.updated", task: updatedTask });
+                })
+                .catch((err) => {
+                  console.error(`[WsHandler] Failed to unlink task ${linkedTask.id} from session:`, err);
+                });
+              break;
+            }
+          }
+        }
+        this.sessionManager.setSessionProject(msg.sessionId, msg.projectId);
+        break;
+      }
+
       case "config.read": {
         try {
           const claudeDir = join(homedir(), ".claude");
@@ -447,6 +470,26 @@ export class WebSocketHandler {
         break;
       }
 
+      case "task.resume": {
+        try {
+          const taskForResume = this.projectManager.getProjectTasks(msg.projectId)
+            .find((t) => t.id === msg.taskId);
+          const project = this.projectManager.getProject(msg.projectId);
+          const machineId = taskForResume?.lastMachineId || project?.machineId;
+          const resumeMachine = this.machines.find((m) => m.id === machineId);
+          if (!resumeMachine) {
+            this.send(ws, { type: "error", error: "Machine not found for resume" });
+            return;
+          }
+          const { task, session } = await this.projectManager.resumeTask(msg.projectId, msg.taskId, resumeMachine);
+          this.broadcast({ type: "task.resumed", task, session });
+          this.broadcast({ type: "session.created", session });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
       case "task.importSession": {
         try {
           const { task, session } = await this.projectManager.importSessionAsTask(
@@ -510,6 +553,10 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:planContent", (sessionId: string, content: string, filePath: string) => {
       this.broadcast({ type: "session.planContent", sessionId, content, filePath });
+    });
+
+    this.sessionManager.on("session:projectChanged", (sessionId: string, projectId: string | null) => {
+      this.broadcast({ type: "session.projectChanged", sessionId, projectId });
     });
   }
 

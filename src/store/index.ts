@@ -45,6 +45,7 @@ interface SessionState {
     error?: string
   ) => void;
   updateSessionPermissionMode: (sessionId: string, mode: PermissionMode) => void;
+  updateSessionProject: (sessionId: string, projectId: string | null) => void;
   removeSession: (sessionId: string) => void;
   setActiveSession: (sessionId: string | null) => void;
   setMachines: (machines: MachineConfig[]) => void;
@@ -153,6 +154,22 @@ export const useStore = create<SessionState>((set) => ({
       const session = sessions.get(sessionId);
       if (session) {
         sessions.set(sessionId, { ...session, permissionMode: mode });
+      }
+      return { sessions };
+    }),
+
+  updateSessionProject: (sessionId, projectId) =>
+    set((state) => {
+      const sessions = new Map(state.sessions);
+      const session = sessions.get(sessionId);
+      if (session) {
+        const updated = { ...session };
+        if (projectId) {
+          updated.projectId = projectId;
+        } else {
+          delete updated.projectId;
+        }
+        sessions.set(sessionId, updated);
       }
       return { sessions };
     }),

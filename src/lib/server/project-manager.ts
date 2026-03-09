@@ -91,9 +91,24 @@ export class ProjectManager {
   async updateTask(
     projectId: string,
     taskId: string,
-    updates: { title?: string; description?: string },
+    updates: { title?: string; description?: string; sessionId?: string },
   ): Promise<Task> {
     await this.store.updateTask(projectId, taskId, updates);
+    const task = this.store.getTask(projectId, taskId);
+    if (!task) throw new Error(`Task ${taskId} not found`);
+    return task;
+  }
+
+  /**
+   * Fully unlink a session from a task — clears sessionId, claudeSessionId, lastMachineId.
+   * Used when user deliberately unlinks a project from a SessionCard.
+   */
+  async unlinkTaskSession(projectId: string, taskId: string): Promise<Task> {
+    await this.store.updateTask(projectId, taskId, {
+      sessionId: undefined,
+      claudeSessionId: undefined,
+      lastMachineId: undefined,
+    });
     const task = this.store.getTask(projectId, taskId);
     if (!task) throw new Error(`Task ${taskId} not found`);
     return task;
@@ -159,10 +174,50 @@ export class ProjectManager {
       column: "in-progress",
       order: 0,
       sessionId: session.id,
+      claudeSessionId: session.claudeSessionId,
+      lastMachineId: machine.id,
     });
 
     // Wait for session to be idle, then send the task description as prompt
     this.waitForIdleAndSendPrompt(session.id, task.description);
+
+    const updatedTask = this.store.getTask(projectId, taskId)!;
+    return { task: updatedTask, session };
+  }
+
+  async resumeTask(
+    projectId: string,
+    taskId: string,
+    machine: MachineConfig,
+  ): Promise<{ task: Task; session: Session }> {
+    const project = this.store.getProject(projectId);
+    if (!project) throw new Error(`Project ${projectId} not found`);
+
+    const task = this.store.getTask(projectId, taskId);
+    if (!task) throw new Error(`Task ${taskId} not found`);
+    if (!task.claudeSessionId) {
+      throw new Error("Task has no claudeSessionId — cannot resume");
+    }
+    if (task.column === "todo" || task.column === "done") {
+      throw new Error(`Cannot resume task in "${task.column}" column`);
+    }
+
+    // Create a new session with --resume pointing to the old Claude session
+    const session = await this.sessionManager.createSession(
+      machine,
+      project.workDir,
+      task.claudeSessionId,    // resumeSessionId
+      project.permissionMode,
+      undefined,               // worktree (not re-creating)
+      project.id,
+      task.id,
+    );
+
+    // Update the task's sessionId to the new orchestrator session
+    await this.store.updateTask(projectId, taskId, {
+      sessionId: session.id,
+      lastMachineId: machine.id,
+    });
 
     const updatedTask = this.store.getTask(projectId, taskId)!;
     return { task: updatedTask, session };

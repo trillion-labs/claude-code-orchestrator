@@ -186,6 +186,7 @@ export function Dashboard() {
                         attentionCount={attentionSet ? attentionSet.size : 0}
                         displayName={getSessionDisplayName(session.id)}
                         onRename={(name) => setSessionName(session.id, name)}
+                        send={send}
                       />
                     );
                   })

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -24,7 +24,7 @@ import { KANBAN_COLUMNS } from "@/lib/shared/types";
 import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Button } from "@/components/ui/button";
-import { Server, FolderOpen, Link } from "lucide-react";
+import { Server, FolderOpen, Link, GripVertical } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
@@ -35,8 +35,39 @@ interface ProjectBoardProps {
 export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps) {
   const { getTasksByColumn, getTaskSession } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
+  const tasks = useStore((s) => s.tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [detailWidth, setDetailWidth] = useState(380);
+
+  // Derive selectedTask from store so it stays in sync with updates
+  const selectedTask = useMemo(() => {
+    if (!selectedTaskId) return null;
+    const projectTasks = tasks.get(project.id) || [];
+    return projectTasks.find((t) => t.id === selectedTaskId) ?? null;
+  }, [selectedTaskId, tasks, project.id]);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const delta = resizeRef.current.startX - e.clientX;
+      const maxWidth = Math.floor(window.innerWidth * 0.7);
+      const newWidth = Math.min(maxWidth, Math.max(320, resizeRef.current.startWidth + delta));
+      setDetailWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      resizeRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -132,6 +163,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.update", projectId: project.id, taskId, updates });
   };
 
+  const handleResumeTask = (task: Task) => {
+    send({ type: "task.resume", projectId: project.id, taskId: task.id });
+  };
+
   const selectedSession = selectedTask?.sessionId
     ? sessions.get(selectedTask.sessionId)
     : undefined;
@@ -192,7 +227,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   label={col.label}
                   tasks={getTasksByColumn(project.id, col.id)}
                   getSession={getTaskSession}
-                  onTaskClick={(task) => setSelectedTask(task)}
+                  onTaskClick={(task) => setSelectedTaskId(task.id)}
                   onTaskSubmit={handleSubmitTask}
                   onViewSession={onViewSession}
                 />
@@ -215,16 +250,30 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
 
         {/* Task detail panel */}
         {selectedTask && (
-          <div className="w-[380px] flex-shrink-0">
+          <div className="flex-shrink-0 flex" style={{ width: detailWidth }}>
+            {/* Resize handle */}
+            <div
+              className="w-1.5 flex-shrink-0 cursor-col-resize flex items-center justify-center hover:bg-violet-500/20 active:bg-violet-500/30 transition-colors group"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                resizeRef.current = { startX: e.clientX, startWidth: detailWidth };
+                document.body.style.cursor = "col-resize";
+                document.body.style.userSelect = "none";
+              }}
+            >
+              <GripVertical className="w-3 h-3 text-muted-foreground/30 group-hover:text-violet-400 transition-colors" />
+            </div>
+            <div className="flex-1 min-w-0">
             <TaskDetail
               task={selectedTask}
               session={selectedSession}
               messages={selectedMessages}
               streamingText={selectedStreamingText}
-              onClose={() => setSelectedTask(null)}
+              onClose={() => setSelectedTaskId(null)}
               onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
               onSubmit={() => handleSubmitTask(selectedTask)}
               onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
+              onResume={() => handleResumeTask(selectedTask)}
               onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
               onPermissionResponse={(requestId, allow, answers, message) => {
                 if (selectedTask.sessionId) {
@@ -239,6 +288,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                 }
               }}
             />
+            </div>
           </div>
         )}
       </div>

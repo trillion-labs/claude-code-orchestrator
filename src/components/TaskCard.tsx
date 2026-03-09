@@ -2,8 +2,9 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Clock, Play, ExternalLink, AlertCircle, RotateCcw } from "lucide-react";
+import { Play, ExternalLink, AlertCircle, RotateCcw } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
+import { TimeAgo } from "./TimeAgo";
 import type { Task, Session } from "@/lib/shared/types";
 
 interface TaskCardProps {
@@ -12,17 +13,6 @@ interface TaskCardProps {
   onClick: () => void;
   onSubmit?: () => void;
   onViewSession?: () => void;
-}
-
-function timeAgo(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: TaskCardProps) {
@@ -105,10 +95,7 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: Ta
 
       {/* Footer: timestamp + actions */}
       <div className="mt-2 flex items-center gap-2">
-        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-          <Clock className="w-2.5 h-2.5" />
-          {timeAgo(task.updatedAt)}
-        </span>
+        <TimeAgo timestamp={task.updatedAt} className="text-[10px] text-muted-foreground" />
 
         <div className="ml-auto flex gap-1">
           {/* Submit button — only in Todo */}
