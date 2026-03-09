@@ -30,8 +30,14 @@ function getToolSummary(req: PermissionRequest): string {
     const cmd = String(input.command);
     return cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd;
   }
-  if (toolName === "Write" && input.file_path) return `Write ${String(input.file_path)}`;
-  if (toolName === "Edit" && input.file_path) return `Edit ${String(input.file_path)}`;
+  if (toolName === "Write" && input.file_path) {
+    const p = String(input.file_path);
+    return `Write ${p.length > 50 ? "..." + p.slice(-47) : p}`;
+  }
+  if (toolName === "Edit" && input.file_path) {
+    const p = String(input.file_path);
+    return `Edit ${p.length > 50 ? "..." + p.slice(-47) : p}`;
+  }
   if (toolName === "AskUserQuestion") return "Question";
   if (toolName === "ExitPlanMode") return "Plan approval";
   if (input.file_path) return String(input.file_path);
@@ -84,12 +90,12 @@ export function PendingPermissions({ onNavigate }: PendingPermissionsProps) {
             <button
               key={request.requestId}
               onClick={() => onNavigate(sessionId)}
-              className="w-full text-left px-2.5 py-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.04] hover:bg-amber-500/[0.08] transition-colors group"
+              className="w-full text-left px-2.5 py-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.04] hover:bg-amber-500/[0.08] transition-colors group overflow-hidden"
             >
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-0.5">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-0.5 min-w-0">
                 <span className="truncate">{getDisplayName(sessionId)}</span>
               </div>
-              <div className="flex items-center gap-1.5 text-xs">
+              <div className="flex items-center gap-1.5 text-xs min-w-0">
                 {getToolIcon(request.toolName)}
                 <span className="truncate font-mono text-foreground/80">
                   {getToolSummary(request)}
