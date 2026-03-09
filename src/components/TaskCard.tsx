@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Play, ExternalLink, AlertCircle, RotateCcw } from "lucide-react";
+import { Play, ExternalLink, AlertCircle, RotateCcw, Trash2, Link } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { TimeAgo } from "./TimeAgo";
 import type { Task, Session } from "@/lib/shared/types";
@@ -12,10 +12,12 @@ interface TaskCardProps {
   session?: Session;
   onClick: () => void;
   onSubmit?: () => void;
+  onLinkSession?: () => void;
   onViewSession?: () => void;
+  onDelete?: () => void;
 }
 
-export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: TaskCardProps) {
+export function TaskCard({ task, session, onClick, onSubmit, onLinkSession, onViewSession, onDelete }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -49,10 +51,24 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: Ta
         ${hasError ? "border-red-500/30" : ""}
       `}
     >
-      {/* Title */}
-      <p className="text-sm font-medium leading-tight line-clamp-2">
-        {task.title}
-      </p>
+      {/* Title + Delete */}
+      <div className="flex items-start gap-1">
+        <p className="text-sm font-medium leading-tight line-clamp-2 flex-1">
+          {task.title}
+        </p>
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-red-400 transition-all flex-shrink-0"
+            title="Delete task"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
 
       {/* Description preview */}
       {task.description && (
@@ -111,6 +127,22 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: Ta
             >
               <Play className="w-2.5 h-2.5" />
               Submit
+            </button>
+          )}
+
+          {/* Link existing session — only in Todo */}
+          {task.column === "todo" && onLinkSession && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onLinkSession();
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium
+                bg-purple-500/15 text-purple-400 border border-purple-500/25
+                hover:bg-purple-500/25 transition-colors"
+            >
+              <Link className="w-2.5 h-2.5" />
+              Link
             </button>
           )}
 

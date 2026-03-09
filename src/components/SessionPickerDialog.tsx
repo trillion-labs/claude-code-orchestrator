@@ -9,19 +9,23 @@ import { TimeAgo } from "./TimeAgo";
 import type { Session } from "@/lib/shared/types";
 
 interface SessionPickerDialogProps {
-  trigger: React.ReactNode;
+  trigger?: React.ReactNode;
   title: string;
   onSelectSession: (sessionId: string) => void;
+  /** Controlled mode: externally manage open state */
+  _controlled?: { open: boolean; onOpenChange: (open: boolean) => void };
 }
 
-export function SessionPickerDialog({ trigger, title, onSelectSession }: SessionPickerDialogProps) {
-  const [open, setOpen] = useState(false);
+export function SessionPickerDialog({ trigger, title, onSelectSession, _controlled }: SessionPickerDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = _controlled ? _controlled.open : internalOpen;
+  const setOpen = _controlled ? _controlled.onOpenChange : setInternalOpen;
   const { sessions, sessionNames } = useStore();
 
   const unlinkedSessions = useMemo(() => {
     const result: Session[] = [];
     for (const session of sessions.values()) {
-      if (!session.projectId && session.status !== "terminated") {
+      if (session.status !== "terminated") {
         result.push(session);
       }
     }
@@ -35,9 +39,11 @@ export function SessionPickerDialog({ trigger, title, onSelectSession }: Session
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger}
-      </DialogTrigger>
+      {trigger && (
+        <DialogTrigger asChild>
+          {trigger}
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -45,7 +51,7 @@ export function SessionPickerDialog({ trigger, title, onSelectSession }: Session
         <div className="pt-2">
           {unlinkedSessions.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
-              No unlinked sessions available
+              No sessions available
             </p>
           ) : (
             <div className="space-y-1 max-h-[400px] overflow-y-auto">

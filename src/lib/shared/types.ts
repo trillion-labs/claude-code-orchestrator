@@ -233,6 +233,7 @@ export interface ClaudeSessionInfo {
   messageCount: number;
   summary?: string; // First user message as summary
   worktreeName?: string; // Detected from ".claude/worktrees/<name>" in project path
+  slug?: string; // User-set session name from JSONL slug field
 }
 
 // ── Permission Request (for interactive approval) ──

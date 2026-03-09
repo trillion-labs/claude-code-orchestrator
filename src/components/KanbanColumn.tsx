@@ -26,6 +26,8 @@ interface KanbanColumnProps {
   getSession: (sessionId?: string) => Session | undefined;
   onTaskClick: (task: Task) => void;
   onTaskSubmit: (task: Task) => void;
+  onTaskLinkSession: (task: Task) => void;
+  onTaskDelete: (task: Task) => void;
   onViewSession: (sessionId: string) => void;
 }
 
@@ -36,6 +38,8 @@ export function KanbanColumn({
   getSession,
   onTaskClick,
   onTaskSubmit,
+  onTaskLinkSession,
+  onTaskDelete,
   onViewSession,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column });
@@ -78,6 +82,8 @@ export function KanbanColumn({
                 session={getSession(task.sessionId)}
                 onClick={() => onTaskClick(task)}
                 onSubmit={task.column === "todo" ? () => onTaskSubmit(task) : undefined}
+                onLinkSession={task.column === "todo" ? () => onTaskLinkSession(task) : undefined}
+                onDelete={() => onTaskDelete(task)}
                 onViewSession={
                   task.sessionId
                     ? () => onViewSession(task.sessionId!)

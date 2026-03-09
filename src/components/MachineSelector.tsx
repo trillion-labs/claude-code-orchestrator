@@ -376,6 +376,13 @@ export function MachineSelector({
                 <PathInput
                   value={workDir}
                   onChange={setWorkDir}
+                  onConfirm={() => {
+                    if (selectedMachine && workDir) {
+                      onDiscoverSessions(selectedMachine, workDir);
+                      setDiscovering(true);
+                      setTimeout(() => setDiscovering(false), 3000);
+                    }
+                  }}
                   machineId={selectedMachine}
                   requestPathList={requestPathList}
                   placeholder="~/projects/my-app"
@@ -409,7 +416,7 @@ export function MachineSelector({
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-mono text-muted-foreground">
-                            {s.sessionId.slice(0, 8)}...
+                            {s.slug || `${s.sessionId.slice(0, 8)}...`}
                           </span>
                           <TimeAgo timestamp={s.lastActivity} className="text-xs text-muted-foreground" />
                         </div>

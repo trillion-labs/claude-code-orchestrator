@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Input } from "@/components/ui/input";
-import { ChevronUp, Folder, File } from "lucide-react";
+import { ChevronUp, Folder, File, Check } from "lucide-react";
 import type { PathListResult } from "@/hooks/useWebSocket";
 
 interface PathInputProps {
   value: string;
   onChange: (value: string) => void;
+  onConfirm?: () => void;
   machineId: string | null;
   requestPathList: (machineId: string, path: string) => Promise<PathListResult>;
   placeholder?: string;
@@ -17,6 +18,7 @@ interface PathInputProps {
 export function PathInput({
   value,
   onChange,
+  onConfirm,
   machineId,
   requestPathList,
   placeholder = "~/projects/my-app",
@@ -27,6 +29,7 @@ export function PathInput({
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [loading, setLoading] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -70,8 +73,9 @@ export function PathInput({
     [fetchEntries],
   );
 
-  // Fetch on value change (debounced)
+  // Fetch on value change (debounced) + reset confirmed
   useEffect(() => {
+    setConfirmed(false);
     if (value && machineId) {
       debouncedFetch(value);
     } else {
@@ -117,6 +121,16 @@ export function PathInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Enter to confirm path when dropdown is closed or empty
+      if (e.key === "Enter" && (!isOpen || entries.length === 0)) {
+        e.preventDefault();
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        setIsOpen(false);
+        setConfirmed(true);
+        onConfirm?.();
+        return;
+      }
+
       if (!isOpen || entries.length === 0) {
         // Open on arrow down even when closed
         if (e.key === "ArrowDown" && value && machineId) {
@@ -144,6 +158,12 @@ export function PathInput({
           e.preventDefault();
           if (highlightedIndex >= 0 && highlightedIndex < entries.length) {
             handleSelect(entries[highlightedIndex]);
+          } else {
+            // No item highlighted — confirm the current path
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+            setIsOpen(false);
+            setConfirmed(true);
+            onConfirm?.();
           }
           break;
         case "Tab":
@@ -162,7 +182,7 @@ export function PathInput({
           break;
       }
     },
-    [isOpen, entries, highlightedIndex, handleSelect, value, machineId, fetchEntries],
+    [isOpen, entries, highlightedIndex, handleSelect, value, machineId, fetchEntries, onConfirm],
   );
 
   // Close dropdown on outside click
@@ -224,9 +244,12 @@ export function PathInput({
         }}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className={`font-mono text-sm ${className}`}
+        className={`font-mono text-sm ${confirmed ? "border-green-500 pr-8" : ""} ${className}`}
         autoComplete="off"
       />
+      {confirmed && (
+        <Check className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-green-500" />
+      )}
 
       {isOpen && (entries.length > 0 || showResolvedPath) && (
         <div

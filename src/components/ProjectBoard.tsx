@@ -38,6 +38,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const tasks = useStore((s) => s.tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [linkingTask, setLinkingTask] = useState<Task | null>(null);
   const [detailWidth, setDetailWidth] = useState(380);
 
   // Derive selectedTask from store so it stays in sync with updates
@@ -157,6 +158,11 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
 
   const handleLinkSession = (taskId: string, sessionId: string) => {
     send({ type: "task.linkSession", projectId: project.id, taskId, sessionId });
+    setLinkingTask(null);
+  };
+
+  const handleDeleteTask = (task: Task) => {
+    send({ type: "task.delete", projectId: project.id, taskId: task.id });
   };
 
   const handleUpdateTask = (taskId: string, updates: { title?: string; description?: string }) => {
@@ -229,6 +235,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   getSession={getTaskSession}
                   onTaskClick={(task) => setSelectedTaskId(task.id)}
                   onTaskSubmit={handleSubmitTask}
+                  onTaskLinkSession={(task) => setLinkingTask(task)}
+                  onTaskDelete={handleDeleteTask}
                   onViewSession={onViewSession}
                 />
               ))}
@@ -292,6 +300,12 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
           </div>
         )}
       </div>
+      {/* Link Session Dialog (triggered from KanbanColumn task cards) */}
+      <SessionPickerDialog
+        title={linkingTask ? `Link session to "${linkingTask.title}"` : "Link session"}
+        onSelectSession={(sessionId) => linkingTask && handleLinkSession(linkingTask.id, sessionId)}
+        _controlled={{ open: !!linkingTask, onOpenChange: (v) => { if (!v) setLinkingTask(null); } }}
+      />
     </div>
   );
 }

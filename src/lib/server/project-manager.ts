@@ -256,7 +256,6 @@ export class ProjectManager {
 
     const session = this.sessionManager.getSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
-    if (session.projectId) throw new Error(`Session ${sessionId} is already linked to a project`);
 
     // Determine column based on session status
     const column: KanbanColumn = session.status === "idle" || session.status === "terminated"
@@ -303,10 +302,9 @@ export class ProjectManager {
 
     const session = this.sessionManager.getSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
-    if (session.projectId) throw new Error(`Session ${sessionId} is already linked to a project`);
 
-    // Link both sides
-    await this.store.updateTask(projectId, taskId, { sessionId });
+    // Link both sides and move to in-progress
+    await this.store.updateTask(projectId, taskId, { sessionId, column: "in-progress" });
     this.sessionManager.linkSessionToProject(sessionId, projectId, taskId);
 
     const updatedTask = this.store.getTask(projectId, taskId)!;

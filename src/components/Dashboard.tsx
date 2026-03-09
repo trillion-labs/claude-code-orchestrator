@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { hydrateFromLocalStorage } from "@/store";
 import { useSessionStore } from "@/hooks/useSessionStore";
 import { useProjectStore } from "@/hooks/useProjectStore";
 import { SessionCard } from "./SessionCard";
@@ -17,6 +18,12 @@ import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    hydrateFromLocalStorage();
+    setMounted(true);
+  }, []);
+
   const { send, requestPathList } = useWebSocket();
   const {
     sessions,
@@ -31,6 +38,7 @@ export function Dashboard() {
     setActiveSession,
     setSessionName,
     removeAttention,
+    removeSession,
     getSessionDisplayName,
   } = useSessionStore();
 
@@ -93,6 +101,10 @@ export function Dashboard() {
     setViewMode("sessions");
     setActiveSession(sessionId);
   };
+
+  if (!mounted) {
+    return <div className="flex h-screen overflow-hidden bg-background" />;
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -185,7 +197,17 @@ export function Dashboard() {
                         onClick={() => setActiveSession(session.id)}
                         attentionCount={attentionSet ? attentionSet.size : 0}
                         displayName={getSessionDisplayName(session.id)}
-                        onRename={(name) => setSessionName(session.id, name)}
+                        onRename={(name) => {
+                          setSessionName(session.id, name);
+                          send({
+                            type: "session.rename",
+                            sessionId: session.id,
+                            machineId: session.machineId,
+                            workDir: session.workDir,
+                            slug: name,
+                          });
+                        }}
+                        onDelete={() => removeSession(session.id)}
                         send={send}
                       />
                     );

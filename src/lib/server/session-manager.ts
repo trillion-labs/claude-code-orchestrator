@@ -1528,8 +1528,9 @@ done
           const filePath = join(projectDir, file);
           const fileStat = await stat(filePath);
 
-          // Extract summary from first user message
+          // Extract summary and slug from first messages
           let summary: string | undefined;
+          let slug: string | undefined;
           let messageCount = 0;
           try {
             const content = await readFile(filePath, "utf-8");
@@ -1538,6 +1539,7 @@ done
             for (const line of lines.slice(0, 20)) {
               try {
                 const msg = JSON.parse(line);
+                if (msg.slug) slug = msg.slug;
                 if (msg.type === "user" && msg.message?.content) {
                   const c = msg.message.content;
                   const text = typeof c === "string"
@@ -1569,6 +1571,7 @@ done
             messageCount,
             summary,
             worktreeName,
+            slug,
           });
         }
       }
@@ -1586,7 +1589,7 @@ done
       // Use find with maxdepth to avoid subagent directories, and basename -- to handle dash-prefixed names
       // Use Python for reliable JSON parsing — avoids shell quoting nightmares over SSH
       // Search ~/.claude/projects/ AND .claude/projects/ in workDir ancestors (for direnv setups)
-      const searchWorkDir = workDir ? workDir.replace(/^~/, "$HOME") : "";
+      const searchWorkDir = workDir || "";
       const script = `python3 -c '
 import os, json, re, sys
 
@@ -1616,12 +1619,15 @@ def scan_base(base):
                 size_kb = st.st_size // 1024
                 cwd = ""
                 summary = ""
+                slug = ""
                 with open(fp, errors="replace") as f:
                     for i, line in enumerate(f):
                         if i >= 50:
                             break
                         try:
                             obj = json.loads(line)
+                            if obj.get("slug"):
+                                slug = obj["slug"]
                             if obj.get("type") == "user" and not cwd:
                                 cwd = obj.get("cwd") or ""
                                 msg = obj.get("message", {})
@@ -1638,38 +1644,66 @@ def scan_base(base):
                             pass
                 wt_match = re.search(r"-claude-worktrees-(.+)$", proj)
                 wt_name = wt_match.group(1) if wt_match else ""
-                print(f"SESSION|{sid}|{proj}|{cwd}|{mtime}|{size_kb}|{wt_name}|{summary}")
+                print(f"SESSION|{sid}|{proj}|{cwd}|{mtime}|{size_kb}|{wt_name}|{slug}|{summary}")
             except Exception as e:
                 print(f"ERROR|{proj}|{fn}|{e}", file=sys.stderr)
 
 # 1) Always scan default ~/.claude/projects
 scan_base(os.path.expanduser("~/.claude/projects"))
 
-# 2) Walk up from workDir looking for .claude/projects (direnv / custom config)
+# 2) Walk up from workDir looking for .envrc with CLAUDE_CONFIG_DIR or .claude/projects
 work = "${searchWorkDir}"
 if work:
-    work = os.path.expanduser(work)
+    work = os.path.realpath(os.path.expanduser(work))
     p = os.path.abspath(work)
+    print(f"RESOLVED_WORKDIR|{work}")
     checked = set()
     while p and p != "/" and len(checked) < 10:
         if p in checked:
             break
         checked.add(p)
+        envrc = os.path.join(p, ".envrc")
+        if os.path.isfile(envrc):
+            try:
+                with open(envrc) as ef:
+                    for eline in ef:
+                        eline = eline.strip()
+                        if "CLAUDE_CONFIG_DIR" in eline:
+                            val = eline.split("=", 1)[1].strip().strip(chr(39)).strip(chr(34))
+                            val = os.path.expanduser(val)
+                            val = os.path.realpath(val)
+                            cand = os.path.join(val, "projects")
+                            if os.path.isdir(cand):
+                                scan_base(cand)
+            except:
+                pass
+        # Also check .claude/projects directly
         candidate = os.path.join(p, ".claude", "projects")
         if os.path.isdir(candidate) and candidate != os.path.expanduser("~/.claude/projects"):
             scan_base(candidate)
         p = os.path.dirname(p)
 '`;
-      const channel = await this.sshManager.exec(machine, script);
+      const channel = await this.sshManager.execFresh(machine, script);
       return new Promise((resolve) => {
         let output = "";
         channel.on("data", (data: Buffer) => { output += data.toString(); });
         channel.on("close", () => {
           const sessions: ClaudeSessionInfo[] = [];
-          for (const line of output.split("\n")) {
+          const lines = output.split("\n");
+          // First pass: extract resolved workDir
+          let resolvedWorkDir: string | undefined;
+          for (const line of lines) {
+            if (line.startsWith("RESOLVED_WORKDIR|")) {
+              resolvedWorkDir = line.split("|")[1]?.trim();
+              console.log(`[Discover] resolvedWorkDir: ${resolvedWorkDir}`);
+              break;
+            }
+          }
+          // Second pass: parse sessions
+          for (const line of lines) {
             if (!line.startsWith("SESSION|")) continue;
-            // Format: SESSION|sid|proj|cwd|mtime|sizeKb|wtName|summary
-            const [, sessionId, projDir, cwd, mtime, sizeKb, wtName, ...summaryParts] = line.split("|");
+            // Format: SESSION|sid|proj|cwd|mtime|sizeKb|wtName|slug|summary
+            const [, sessionId, projDir, cwd, mtime, sizeKb, wtName, slugVal, ...summaryParts] = line.split("|");
             const summary = summaryParts.join("|"); // summary may contain |
 
             // Derive display path: prefer cwd from JSONL, fall back to project dir name
@@ -1681,11 +1715,17 @@ if work:
             if (workDir && workDir !== "~") {
               // Normalize workDir: strip trailing slash
               const normalizedWork = workDir.replace(/\/+$/, "");
-              // Match against: cwd (actual path), projDir (dash-encoded), projPath (decoded)
+              // Use resolved path (symlinks resolved) for matching too
+              const resolvedDash = resolvedWorkDir ? resolvedWorkDir.replace(/\//g, "-") : "";
               const matches =
                 (cwd && cwd.includes(normalizedWork)) ||
+                (resolvedWorkDir && cwd && cwd.includes(resolvedWorkDir)) ||
                 projPath.includes(normalizedWork) ||
-                projDir.includes(normalizedWork.replace(/\//g, "-"));
+                projDir.includes(normalizedWork.replace(/\//g, "-")) ||
+                (resolvedDash && projDir.includes(resolvedDash));
+              if (projDir.includes("sangwon") && projDir.includes("opencode")) {
+                console.log(`[Discover] Filter check: projDir=${projDir}, normalizedWork=${normalizedWork}, resolvedDash=${resolvedDash}, matches=${matches}`);
+              }
               if (!matches) continue;
             }
 
@@ -1696,6 +1736,7 @@ if work:
               messageCount: parseInt(sizeKb, 10) || 0, // Now stores size in KB
               summary: summary || undefined,
               worktreeName: wtName || undefined,
+              slug: slugVal || undefined,
             });
           }
           resolve(sessions.sort((a, b) => b.lastActivity - a.lastActivity));
@@ -1798,6 +1839,170 @@ if work:
       channel.on("data", (data: Buffer) => { out += data.toString(); });
       channel.on("close", () => resolve(out));
       channel.on("error", () => resolve(""));
+    });
+  }
+
+  // ── Session Rename (persist slug to JSONL) ──
+
+  async renameSession(machine: MachineConfig, sessionId: string, workDir: string, newSlug: string): Promise<void> {
+    if (machine.type === "local") {
+      await this.renameLocalSession(sessionId, workDir, newSlug);
+    } else {
+      await this.renameRemoteSession(machine, sessionId, workDir, newSlug);
+    }
+  }
+
+  private async renameLocalSession(sessionId: string, workDir: string, newSlug: string): Promise<void> {
+    // Find JSONL file: check default ~/.claude/projects and CLAUDE_CONFIG_DIR from .envrc
+    const filePath = await this.findLocalSessionFile(sessionId, workDir);
+    if (!filePath) {
+      console.warn(`[SessionManager] Could not find JSONL for session ${sessionId}`);
+      return;
+    }
+
+    const content = await readFile(filePath, "utf-8");
+    const lines = content.split("\n");
+
+    // Remove any existing slug-only line at the top
+    if (lines[0]) {
+      try {
+        const first = JSON.parse(lines[0]);
+        if (first.slug && Object.keys(first).length === 1) {
+          lines.shift();
+        }
+      } catch { /* not JSON */ }
+    }
+
+    // Prepend slug-only line at top (always findable by discovery)
+    lines.unshift(JSON.stringify({ slug: newSlug }));
+    await writeFile(filePath, lines.join("\n"), "utf-8");
+  }
+
+  private async findLocalSessionFile(sessionId: string, workDir: string): Promise<string | null> {
+    const expandedWork = workDir.replace(/^~/, homedir());
+
+    // 1) Check default ~/.claude/projects
+    const claudeDir = join(homedir(), ".claude", "projects");
+    const projectDirName = expandedWork.replace(/\//g, "-");
+    const candidates = [projectDirName, `-${projectDirName.replace(/^\//, "")}`];
+    for (const dirName of candidates) {
+      const filePath = join(claudeDir, dirName, `${sessionId}.jsonl`);
+      try { await stat(filePath); return filePath; } catch { /* skip */ }
+    }
+
+    // 2) Walk up workDir to find .envrc with CLAUDE_CONFIG_DIR
+    const { realpath } = await import("fs/promises");
+    let resolvedWork: string;
+    try { resolvedWork = await realpath(expandedWork); } catch { resolvedWork = expandedWork; }
+    const resolvedDirName = resolvedWork.replace(/\//g, "-");
+
+    let p = resolvedWork;
+    const checked = new Set<string>();
+    while (p && p !== "/" && checked.size < 10) {
+      if (checked.has(p)) break;
+      checked.add(p);
+      const envrcPath = join(p, ".envrc");
+      try {
+        const envrc = await readFile(envrcPath, "utf-8");
+        for (const line of envrc.split("\n")) {
+          if (line.includes("CLAUDE_CONFIG_DIR")) {
+            let val = line.split("=")[1]?.trim().replace(/['"]/g, "");
+            if (val) {
+              val = val.replace(/^~/, homedir());
+              try { val = await realpath(val); } catch { /* skip */ }
+              const configCandidates = [resolvedDirName, `-${resolvedDirName.replace(/^\//, "")}`];
+              for (const dirName of configCandidates) {
+                const filePath = join(val, "projects", dirName, `${sessionId}.jsonl`);
+                try { await stat(filePath); return filePath; } catch { /* skip */ }
+              }
+            }
+          }
+        }
+      } catch { /* no .envrc */ }
+      p = join(p, "..");
+    }
+
+    return null;
+  }
+
+  private async renameRemoteSession(machine: MachineConfig, sessionId: string, workDir: string, newSlug: string): Promise<void> {
+    const script = Buffer.from(`
+import os, json, sys, re
+
+home = os.path.expanduser("~")
+work = os.path.realpath(os.path.expanduser("${workDir}"))
+dir_name = work.replace("/", "-")
+session_file = "${sessionId}.jsonl"
+
+def find_jsonl():
+    # 1) Check default ~/.claude/projects
+    claude_dir = os.path.join(home, ".claude", "projects")
+    for d in [dir_name, dir_name.lstrip("-")]:
+        fp = os.path.join(claude_dir, d, session_file)
+        if os.path.exists(fp):
+            return fp
+    # 2) Walk up to find .envrc with CLAUDE_CONFIG_DIR
+    p = work
+    checked = set()
+    while p and p != "/" and len(checked) < 10:
+        if p in checked:
+            break
+        checked.add(p)
+        envrc = os.path.join(p, ".envrc")
+        if os.path.isfile(envrc):
+            with open(envrc) as ef:
+                for line in ef:
+                    if "CLAUDE_CONFIG_DIR" in line:
+                        val = line.split("=", 1)[1].strip().strip(chr(39)).strip(chr(34))
+                        val = os.path.realpath(os.path.expanduser(val))
+                        for d in [dir_name, dir_name.lstrip("-")]:
+                            fp = os.path.join(val, "projects", d, session_file)
+                            if os.path.exists(fp):
+                                return fp
+        p = os.path.dirname(p)
+    return None
+
+fp = find_jsonl()
+if not fp:
+    print("NOT_FOUND", file=sys.stderr)
+    sys.exit(1)
+
+with open(fp, "r") as f:
+    lines = f.readlines()
+
+# Remove existing slug-only line at top
+if lines:
+    try:
+        first = json.loads(lines[0])
+        if first.get("slug") and len(first) == 1:
+            lines.pop(0)
+    except:
+        pass
+
+# Prepend slug-only line
+lines.insert(0, json.dumps({"slug": "${newSlug}"}) + chr(10))
+
+with open(fp, "w") as f:
+    f.writelines(lines)
+print("OK")
+    sys.exit(0)
+print("NOT_FOUND", file=sys.stderr)
+sys.exit(1)
+`).toString("base64");
+
+    const channel = await this.sshManager.execFresh(machine, `echo '${script}' | base64 -d | python3`);
+    return new Promise((resolve, reject) => {
+      let stderr = "";
+      channel.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
+      channel.on("close", (code: number | null) => {
+        if (code !== 0) {
+          console.warn(`[SessionManager] Remote rename failed: ${stderr}`);
+          reject(new Error(`Remote rename failed: ${stderr}`));
+        } else {
+          resolve();
+        }
+      });
+      channel.on("error", (err: Error) => reject(err));
     });
   }
 

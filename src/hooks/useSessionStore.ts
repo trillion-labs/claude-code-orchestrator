@@ -19,6 +19,7 @@ export function useSessionStore() {
     setSessionName,
     removeAttention,
     clearAttention,
+    removeSession,
   } = useStore();
 
   const sessionsArray = Array.from(sessions.values()).sort(
@@ -73,6 +74,7 @@ export function useSessionStore() {
     setSessionName,
     removeAttention,
     clearAttention,
+    removeSession,
     getSessionDisplayName,
   };
 }

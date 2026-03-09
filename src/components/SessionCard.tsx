@@ -6,7 +6,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { useStore } from "@/store";
 import type { Session } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
-import { Monitor, Server, GitBranch, FolderOpen, X } from "lucide-react";
+import { Monitor, Server, GitBranch, FolderOpen, X, Pencil, Trash2 } from "lucide-react";
 import { TimeAgo } from "./TimeAgo";
 
 interface SessionCardProps {
@@ -16,6 +16,7 @@ interface SessionCardProps {
   attentionCount: number;
   displayName?: string;
   onRename: (name: string) => void;
+  onDelete?: () => void;
   send: (msg: ClientMessage) => void;
 }
 
@@ -26,6 +27,7 @@ export function SessionCard({
   attentionCount,
   displayName,
   onRename,
+  onDelete,
   send,
 }: SessionCardProps) {
   const isLocal = session.machineId === "local";
@@ -87,7 +89,7 @@ export function SessionCard({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
-        className={`w-full text-left p-3 rounded-lg border transition-colors overflow-hidden cursor-pointer ${
+        className={`group w-full text-left p-3 rounded-lg border transition-colors overflow-hidden cursor-pointer relative ${
           isActive
             ? "bg-accent border-accent-foreground/20"
             : hasAttention
@@ -95,6 +97,32 @@ export function SessionCard({
               : "border-border hover:bg-accent/50"
         }`}
       >
+      {/* Hover action buttons */}
+      <div className="absolute top-1.5 right-1.5 hidden group-hover:flex items-center gap-1 z-10 bg-background/90 rounded-md border shadow-sm px-1 py-0.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setEditValue(displayName || session.machineName);
+            setIsEditing(true);
+          }}
+          className="p-1.5 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+          title="Rename"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </button>
+        {onDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1.5 rounded-md hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+            title="Remove"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
 
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 min-w-0 flex-1">

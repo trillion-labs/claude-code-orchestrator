@@ -36,7 +36,8 @@ export class SSHConnectionManager extends EventEmitter {
       host: machine.host,
       port: machine.port || 22,
       username: machine.username || process.env.USER || "root",
-      privateKey,
+      ...(privateKey ? { privateKey } : {}),
+      ...(process.env.SSH_AUTH_SOCK ? { agent: process.env.SSH_AUTH_SOCK } : {}),
       keepaliveInterval: 30000,
       keepaliveCountMax: 3,
       readyTimeout: 10000,
@@ -95,7 +96,8 @@ export class SSHConnectionManager extends EventEmitter {
       host: machine.host,
       port: machine.port || 22,
       username: machine.username || process.env.USER || "root",
-      privateKey,
+      ...(privateKey ? { privateKey } : {}),
+      ...(process.env.SSH_AUTH_SOCK ? { agent: process.env.SSH_AUTH_SOCK } : {}),
       readyTimeout: 10000,
     };
 
@@ -213,10 +215,14 @@ export class SSHConnectionManager extends EventEmitter {
     }
   }
 
-  private async getPrivateKey(identityFile?: string): Promise<Buffer> {
-    // If a host-specific identity file is specified, use it directly
+  private async getPrivateKey(identityFile?: string): Promise<Buffer | undefined> {
+    // If a host-specific identity file is specified, try it first
     if (identityFile) {
-      return readFile(identityFile);
+      try {
+        return await readFile(identityFile);
+      } catch {
+        console.warn(`[SSH] Identity file not found: ${identityFile}, trying defaults`);
+      }
     }
 
     // Otherwise use default keys (cached)
@@ -228,9 +234,14 @@ export class SSHConnectionManager extends EventEmitter {
       return this.privateKeyCache;
     } catch {
       // Try ed25519
-      const ed25519Path = join(homedir(), ".ssh", "id_ed25519");
-      this.privateKeyCache = await readFile(ed25519Path);
-      return this.privateKeyCache;
+      try {
+        const ed25519Path = join(homedir(), ".ssh", "id_ed25519");
+        this.privateKeyCache = await readFile(ed25519Path);
+        return this.privateKeyCache;
+      } catch {
+        // No key found — rely on SSH agent
+        return undefined;
+      }
     }
   }
 }

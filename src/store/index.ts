@@ -1,6 +1,73 @@
 import { create } from "zustand";
 import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task } from "@/lib/shared/types";
 
+// ── localStorage persistence helpers ──
+
+function persistSessions(sessions: Map<string, Session>) {
+  try {
+    localStorage.setItem("sessions", JSON.stringify(Array.from(sessions.values())));
+  } catch { /* ignore */ }
+}
+
+function loadSessions(): Map<string, Session> {
+  try {
+    const stored = typeof window !== "undefined" ? localStorage.getItem("sessions") : null;
+    if (stored) {
+      const arr: Session[] = JSON.parse(stored);
+      const map = new Map<string, Session>();
+      for (const s of arr) map.set(s.id, s);
+      return map;
+    }
+  } catch { /* ignore */ }
+  return new Map();
+}
+
+function persistMessages(messages: Map<string, ConversationMessage[]>) {
+  try {
+    const obj: Record<string, ConversationMessage[]> = {};
+    for (const [id, msgs] of messages) obj[id] = msgs;
+    localStorage.setItem("messages", JSON.stringify(obj));
+  } catch { /* ignore */ }
+}
+
+function loadMessages(): Map<string, ConversationMessage[]> {
+  try {
+    const stored = typeof window !== "undefined" ? localStorage.getItem("messages") : null;
+    if (stored) {
+      const obj: Record<string, ConversationMessage[]> = JSON.parse(stored);
+      return new Map(Object.entries(obj));
+    }
+  } catch { /* ignore */ }
+  return new Map();
+}
+
+// Hydrate from localStorage after mount (avoid SSR mismatch)
+let _hydrated = false;
+export function hydrateFromLocalStorage() {
+  if (_hydrated) return;
+  _hydrated = true;
+  const state = useStore.getState();
+  const sessions = loadSessions();
+  const messages = loadMessages();
+  let activeSessionId: string | null = null;
+  let sessionNames = new Map<string, string>();
+  try {
+    activeSessionId = localStorage.getItem("active-session-id") || null;
+  } catch { /* ignore */ }
+  try {
+    const stored = localStorage.getItem("session-names");
+    if (stored) sessionNames = new Map(Object.entries(JSON.parse(stored)));
+  } catch { /* ignore */ }
+  if (sessions.size > 0 || messages.size > 0 || activeSessionId || sessionNames.size > 0) {
+    useStore.setState({
+      sessions: new Map([...sessions, ...state.sessions]),
+      messages: new Map([...messages, ...state.messages]),
+      activeSessionId: activeSessionId || state.activeSessionId,
+      sessionNames: new Map([...sessionNames, ...state.sessionNames]),
+    });
+  }
+}
+
 interface SessionState {
   sessions: Map<string, Session>;
   activeSessionId: string | null;
@@ -52,6 +119,7 @@ interface SessionState {
 
   // Messages
   addMessage: (sessionId: string, message: ConversationMessage) => void;
+  setMessages: (sessionId: string, messages: ConversationMessage[]) => void;
 
   // Streaming
   appendStreamDelta: (sessionId: string, delta: string) => void;
@@ -119,9 +187,12 @@ export const useStore = create<SessionState>((set) => ({
   viewMode: "sessions" as const,
 
   setSessions: (sessions) =>
-    set(() => {
+    set((state) => {
       const map = new Map<string, Session>();
+      // Merge: server sessions take priority, but keep locally-cached ones
+      for (const [id, s] of state.sessions) map.set(id, s);
       for (const s of sessions) map.set(s.id, s);
+      persistSessions(map);
       return { sessions: map };
     }),
 
@@ -129,6 +200,8 @@ export const useStore = create<SessionState>((set) => ({
     set((state) => {
       const sessions = new Map(state.sessions);
       sessions.set(session.id, session);
+      persistSessions(sessions);
+      try { localStorage.setItem("active-session-id", session.id); } catch { /* ignore */ }
       return { sessions, activeSessionId: session.id };
     }),
 
@@ -192,6 +265,11 @@ export const useStore = create<SessionState>((set) => ({
       planContent.delete(sessionId);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
+      persistSessions(sessions);
+      persistMessages(messages);
+      try {
+        localStorage.setItem("session-names", JSON.stringify(Object.fromEntries(sessionNames)));
+      } catch { /* ignore */ }
       return {
         sessions,
         messages,
@@ -206,7 +284,10 @@ export const useStore = create<SessionState>((set) => ({
       };
     }),
 
-  setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
+  setActiveSession: (sessionId) => {
+    try { localStorage.setItem("active-session-id", sessionId || ""); } catch { /* ignore */ }
+    set({ activeSessionId: sessionId });
+  },
 
   setMachines: (machines) => set({ machines }),
 
@@ -215,12 +296,21 @@ export const useStore = create<SessionState>((set) => ({
       const messages = new Map(state.messages);
       const existing = messages.get(sessionId) || [];
       messages.set(sessionId, [...existing, message]);
+      persistMessages(messages);
       // Clear streaming text when an assistant message arrives
       if (message.role === "assistant") {
         const streamingText = new Map(state.streamingText);
         streamingText.delete(sessionId);
         return { messages, streamingText };
       }
+      return { messages };
+    }),
+
+  setMessages: (sessionId, msgs) =>
+    set((state) => {
+      const messages = new Map(state.messages);
+      messages.set(sessionId, msgs);
+      persistMessages(messages);
       return { messages };
     }),
 
@@ -296,6 +386,9 @@ export const useStore = create<SessionState>((set) => ({
     set((state) => {
       const sessionNames = new Map(state.sessionNames);
       sessionNames.set(sessionId, name);
+      try {
+        localStorage.setItem("session-names", JSON.stringify(Object.fromEntries(sessionNames)));
+      } catch { /* ignore */ }
       return { sessionNames };
     }),
 

@@ -71,7 +71,11 @@ export type ClientMessage =
   | { type: "task.linkSession"; projectId: string; taskId: string; sessionId: string }
   | { type: "task.list"; projectId: string }
   // ── Session-Project linking ──
-  | { type: "session.setProject"; sessionId: string; projectId: string | null };
+  | { type: "session.setProject"; sessionId: string; projectId: string | null }
+  // ── Session rename ──
+  | { type: "session.rename"; sessionId: string; machineId: string; workDir: string; slug: string }
+  // ── Session messages (reconnect history) ──
+  | { type: "session.getMessages"; sessionId: string };
 
 // ── Server → Client Messages ──
 
@@ -200,4 +204,8 @@ export type ServerMessage =
   | { type: "task.sessionLinked"; task: Task; session: Session }
   | { type: "task.sessionCompleted"; task: Task }
   // ── Session-Project linking ──
-  | { type: "session.projectChanged"; sessionId: string; projectId: string | null };
+  | { type: "session.projectChanged"; sessionId: string; projectId: string | null }
+  // ── Session messages (reconnect history) ──
+  | { type: "session.messages"; sessionId: string; messages: ConversationMessage[] }
+  // ── Session rename ──
+  | { type: "session.renamed"; sessionId: string; slug: string };

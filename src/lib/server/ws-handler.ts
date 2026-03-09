@@ -142,6 +142,21 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.rename": {
+        const renameMachine = this.machines.find((m) => m.id === msg.machineId);
+        if (!renameMachine) {
+          this.send(ws, { type: "error", error: `Machine ${msg.machineId} not found` });
+          return;
+        }
+        try {
+          await this.sessionManager.renameSession(renameMachine, msg.sessionId, msg.workDir, msg.slug);
+          this.broadcast({ type: "session.renamed", sessionId: msg.sessionId, slug: msg.slug });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
       case "session.discover": {
         const discoverMachine = this.machines.find((m) => m.id === msg.machineId);
         if (!discoverMachine) {
@@ -184,6 +199,19 @@ export class WebSocketHandler {
       case "session.list": {
         const sessions = this.sessionManager.getAllSessions();
         this.send(ws, { type: "session.list", sessions });
+        // Also send messages for all active sessions so clients can restore history
+        for (const session of sessions) {
+          const msgs = this.sessionManager.getSessionMessages(session.id);
+          if (msgs.length > 0) {
+            this.send(ws, { type: "session.messages", sessionId: session.id, messages: msgs });
+          }
+        }
+        break;
+      }
+
+      case "session.getMessages": {
+        const msgs = this.sessionManager.getSessionMessages(msg.sessionId);
+        this.send(ws, { type: "session.messages", sessionId: msg.sessionId, messages: msgs });
         break;
       }
 
