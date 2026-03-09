@@ -6,6 +6,7 @@
     "dev": "tsx watch server.ts",
     "dev:main": "PORT=8888 tsx watch server.ts",
     "dev:preview": "PORT=9000 tsx watch server.ts",
+    "dev:test": "PORT=3333 tsx watch server.ts",
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts",
     "lint": "eslint"

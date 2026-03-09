@@ -66,6 +66,8 @@ export type ClientMessage =
   | { type: "task.move"; projectId: string; taskId: string; column: KanbanColumn; order: number }
   | { type: "task.reorder"; projectId: string; column: KanbanColumn; taskIds: string[] }
   | { type: "task.submit"; projectId: string; taskId: string }
+  | { type: "task.importSession"; projectId: string; sessionId: string; title?: string }
+  | { type: "task.linkSession"; projectId: string; taskId: string; sessionId: string }
   | { type: "task.list"; projectId: string };
 
 // ── Server → Client Messages ──
@@ -190,4 +192,6 @@ export type ServerMessage =
   | { type: "task.reordered"; projectId: string; column: KanbanColumn; taskIds: string[] }
   | { type: "task.list"; projectId: string; tasks: Task[] }
   | { type: "task.submitted"; task: Task; session: Session }
+  | { type: "task.sessionImported"; task: Task; session: Session }
+  | { type: "task.sessionLinked"; task: Task; session: Session }
   | { type: "task.sessionCompleted"; task: Task };

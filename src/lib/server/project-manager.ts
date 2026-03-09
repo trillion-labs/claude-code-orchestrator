@@ -185,6 +185,79 @@ export class ProjectManager {
     setTimeout(check, 500);
   }
 
+  // ── Session Import / Link ──
+
+  /**
+   * Import an existing session as a new task in a project.
+   * Places the task in "in-progress" or "in-review" depending on session status.
+   */
+  async importSessionAsTask(
+    projectId: string,
+    sessionId: string,
+    title?: string,
+  ): Promise<{ task: Task; session: Session }> {
+    const project = this.store.getProject(projectId);
+    if (!project) throw new Error(`Project ${projectId} not found`);
+
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.projectId) throw new Error(`Session ${sessionId} is already linked to a project`);
+
+    // Determine column based on session status
+    const column: KanbanColumn = session.status === "idle" || session.status === "terminated"
+      ? "in-review" : "in-progress";
+
+    const taskTitle = title || this.sessionManager.getSessionDisplayName(sessionId);
+
+    const existingTasks = this.store.getProjectTasks(projectId);
+    const colTasks = existingTasks.filter((t) => t.column === column);
+
+    const now = Date.now();
+    const task: Task = {
+      id: uuidv4(),
+      projectId,
+      title: taskTitle,
+      description: "",
+      column,
+      order: colTasks.length,
+      sessionId,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.store.createTask(task);
+    this.sessionManager.linkSessionToProject(sessionId, projectId, task.id);
+
+    return { task, session: this.sessionManager.getSession(sessionId)! };
+  }
+
+  /**
+   * Link an existing session to an existing task.
+   */
+  async linkSessionToTask(
+    projectId: string,
+    taskId: string,
+    sessionId: string,
+  ): Promise<{ task: Task; session: Session }> {
+    const project = this.store.getProject(projectId);
+    if (!project) throw new Error(`Project ${projectId} not found`);
+
+    const task = this.store.getTask(projectId, taskId);
+    if (!task) throw new Error(`Task ${taskId} not found`);
+    if (task.sessionId) throw new Error(`Task ${taskId} already has a linked session`);
+
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session) throw new Error(`Session ${sessionId} not found`);
+    if (session.projectId) throw new Error(`Session ${sessionId} is already linked to a project`);
+
+    // Link both sides
+    await this.store.updateTask(projectId, taskId, { sessionId });
+    this.sessionManager.linkSessionToProject(sessionId, projectId, taskId);
+
+    const updatedTask = this.store.getTask(projectId, taskId)!;
+    return { task: updatedTask, session: this.sessionManager.getSession(sessionId)! };
+  }
+
   // ── Session Completion Handling ──
 
   /**

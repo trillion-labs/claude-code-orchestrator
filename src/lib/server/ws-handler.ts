@@ -446,6 +446,30 @@ export class WebSocketHandler {
         }
         break;
       }
+
+      case "task.importSession": {
+        try {
+          const { task, session } = await this.projectManager.importSessionAsTask(
+            msg.projectId, msg.sessionId, msg.title
+          );
+          this.broadcast({ type: "task.sessionImported", task, session });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "task.linkSession": {
+        try {
+          const { task, session } = await this.projectManager.linkSessionToTask(
+            msg.projectId, msg.taskId, msg.sessionId
+          );
+          this.broadcast({ type: "task.sessionLinked", task, session });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
     }
   }
 

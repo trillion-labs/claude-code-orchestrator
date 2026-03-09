@@ -49,6 +49,7 @@ export function useWebSocket() {
     addTask,
     updateTask,
     removeTask,
+    updateSessionLink,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -205,12 +206,22 @@ export function useWebSocket() {
           addSession(msg.session);
           break;
 
+        case "task.sessionImported":
+          addTask(msg.task);
+          updateSessionLink(msg.session.id, msg.task.projectId, msg.task.id);
+          break;
+
+        case "task.sessionLinked":
+          updateTask(msg.task);
+          updateSessionLink(msg.session.id, msg.task.projectId, msg.task.id);
+          break;
+
         case "task.sessionCompleted":
           updateTask(msg.task);
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink]
   );
 
   const connect = useCallback(() => {

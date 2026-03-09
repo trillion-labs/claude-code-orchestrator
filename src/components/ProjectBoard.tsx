@@ -19,10 +19,12 @@ import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
 import { TaskDialog } from "./TaskDialog";
 import { TaskDetail } from "./TaskDetail";
+import { SessionPickerDialog } from "./SessionPickerDialog";
 import { KANBAN_COLUMNS } from "@/lib/shared/types";
 import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
-import { Server, FolderOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Server, FolderOpen, Link } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
@@ -114,8 +116,16 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.create", projectId: project.id, title, description });
   };
 
+  const handleImportSession = (sessionId: string) => {
+    send({ type: "task.importSession", projectId: project.id, sessionId });
+  };
+
   const handleSubmitTask = (task: Task) => {
     send({ type: "task.submit", projectId: project.id, taskId: task.id });
+  };
+
+  const handleLinkSession = (taskId: string, sessionId: string) => {
+    send({ type: "task.linkSession", projectId: project.id, taskId, sessionId });
   };
 
   const handleUpdateTask = (taskId: string, updates: { title?: string; description?: string }) => {
@@ -149,7 +159,17 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
             <span className="truncate max-w-[200px]">{project.workDir}</span>
           </span>
         </div>
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 flex items-center gap-1.5">
+          <SessionPickerDialog
+            title="Import Session as Task"
+            onSelectSession={handleImportSession}
+            trigger={
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Link className="w-3.5 h-3.5" />
+                Import Session
+              </Button>
+            }
+          />
           <TaskDialog onCreateTask={handleCreateTask} />
         </div>
       </div>
@@ -204,6 +224,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               onClose={() => setSelectedTask(null)}
               onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
               onSubmit={() => handleSubmitTask(selectedTask)}
+              onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
               onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
               onPermissionResponse={(requestId, allow, answers, message) => {
                 if (selectedTask.sessionId) {
