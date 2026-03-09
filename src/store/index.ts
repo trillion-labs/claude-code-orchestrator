@@ -390,6 +390,8 @@ export const useStore = create<SessionState>((set) => ({
     set((state) => {
       const tasks = new Map(state.tasks);
       const existing = tasks.get(task.projectId) || [];
+      // Prevent duplicate
+      if (existing.some((t) => t.id === task.id)) return state;
       tasks.set(task.projectId, [...existing, task]);
       return { tasks };
     }),

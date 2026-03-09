@@ -390,6 +390,13 @@ export class WebSocketHandler {
       case "project.list": {
         const projects = this.projectManager.getAllProjects();
         this.send(ws, { type: "project.list", projects });
+        // Also send tasks for each project so clients can restore kanban state
+        for (const project of projects) {
+          const tasks = this.projectManager.getProjectTasks(project.id);
+          if (tasks.length > 0) {
+            this.send(ws, { type: "task.list", projectId: project.id, tasks });
+          }
+        }
         break;
       }
 
