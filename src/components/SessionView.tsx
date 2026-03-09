@@ -49,6 +49,16 @@ export function SessionView({
   const planContent = useStore((s) => s.planContent.get(session.id));
   const planPanelOpen = useStore((s) => s.planPanelOpen.get(session.id) ?? false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
+  const hasMoreMessages = useStore((s) => s.hasMoreMessages.get(session.id) ?? true);
+  const loadingHistory = useStore((s) => s.loadingHistory.get(session.id) ?? false);
+  const setLoadingHistory = useStore((s) => s.setLoadingHistory);
+
+  const handleLoadHistory = useCallback(() => {
+    if (loadingHistory || !hasMoreMessages || messages.length === 0) return;
+    setLoadingHistory(session.id, true);
+    const oldestTimestamp = messages[0].timestamp;
+    send({ type: "session.history", sessionId: session.id, before: oldestTimestamp, limit: 20 });
+  }, [loadingHistory, hasMoreMessages, messages, session.id, setLoadingHistory, send]);
 
   const filePreview = useStore((s) => s.filePreview.get(session.id));
   const filePreviewOpen = useStore((s) => s.filePreviewOpen.get(session.id) ?? false);
@@ -235,7 +245,16 @@ export function SessionView({
               Send a prompt to start the conversation
             </div>
           ) : (
-            <StreamOutput messages={messages} streamingText={streamingText} onSendPrompt={onSendPrompt} onPermissionResponse={onPermissionResponse} onFilePreview={handleFilePreview} />
+            <StreamOutput
+              messages={messages}
+              streamingText={streamingText}
+              hasMoreMessages={hasMoreMessages}
+              loadingHistory={loadingHistory}
+              onLoadHistory={handleLoadHistory}
+              onSendPrompt={onSendPrompt}
+              onPermissionResponse={onPermissionResponse}
+              onFilePreview={handleFilePreview}
+            />
           )}
 
           {/* Input */}

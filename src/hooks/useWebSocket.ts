@@ -49,6 +49,7 @@ export function useWebSocket() {
     setSessions,
     setMachines,
     addMessage,
+    prependMessages,
     appendStreamDelta,
     setDiscoveredSessions,
     addAttention,
@@ -70,6 +71,7 @@ export function useWebSocket() {
     removeTask,
     updateSessionLink,
     updateSessionProject,
+    setSessionName,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -99,6 +101,10 @@ export function useWebSocket() {
 
         case "session.message":
           addMessage(msg.sessionId, msg.message);
+          break;
+
+        case "session.history":
+          prependMessages(msg.sessionId, msg.messages, msg.hasMore);
           break;
 
         case "session.status":
@@ -268,9 +274,13 @@ export function useWebSocket() {
         case "session.projectChanged":
           updateSessionProject(msg.sessionId, msg.projectId);
           break;
+
+        case "session.displayName":
+          setSessionName(msg.sessionId, msg.name);
+          break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName]
   );
 
   const connect = useCallback(() => {

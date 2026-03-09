@@ -592,6 +592,18 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.history": {
+        try {
+          const { messages, hasMore } = await this.sessionManager.loadMessageHistory(
+            msg.sessionId, msg.before, msg.limit
+          );
+          this.send(ws, { type: "session.history", sessionId: msg.sessionId, messages, hasMore });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
       case "task.linkSession": {
         try {
           const { task, session } = await this.projectManager.linkSessionToTask(
@@ -647,6 +659,10 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:projectChanged", (sessionId: string, projectId: string | null) => {
       this.broadcast({ type: "session.projectChanged", sessionId, projectId });
+    });
+
+    this.sessionManager.on("session:displayName", (sessionId: string, name: string) => {
+      this.broadcast({ type: "session.displayName", sessionId, name });
     });
   }
 
