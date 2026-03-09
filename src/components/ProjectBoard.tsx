@@ -38,7 +38,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const tasks = useStore((s) => s.tasks);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [detailWidth, setDetailWidth] = useState(380);
+  const [detailWidth, setDetailWidth] = useState(780);
 
   // Derive selectedTask from store so it stays in sync with updates
   const selectedTask = useMemo(() => {
@@ -275,6 +275,16 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
               onResume={() => handleResumeTask(selectedTask)}
               onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
+              onSendPrompt={(prompt) => {
+                if (selectedTask.sessionId) {
+                  send({ type: "session.prompt", sessionId: selectedTask.sessionId, prompt });
+                }
+              }}
+              onCancelPrompt={() => {
+                if (selectedTask.sessionId) {
+                  send({ type: "session.interrupt", sessionId: selectedTask.sessionId });
+                }
+              }}
               onPermissionResponse={(requestId, allow, answers, message) => {
                 if (selectedTask.sessionId) {
                   send({
