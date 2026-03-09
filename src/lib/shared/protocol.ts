@@ -55,6 +55,7 @@ export type ClientMessage =
   | { type: "worktrees.list"; machineId: string; workDir: string }
   | { type: "path.list"; machineId: string; path: string; requestId: string }
   | { type: "path.mkdir"; machineId: string; path: string; requestId: string }
+  | { type: "file.read"; machineId: string; filePath: string; requestId: string; maxLines?: number }
   // ── Project CRUD ──
   | { type: "project.create"; name: string; machineId: string; workDir: string; permissionMode: PermissionMode }
   | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode } }
@@ -184,6 +185,16 @@ export type ServerMessage =
       requestId: string;
       success: boolean;
       resolvedPath: string;
+      error?: string;
+    }
+  | {
+      type: "file.read";
+      requestId: string;
+      content: string;
+      language: string;
+      filePath: string;
+      truncated: boolean;
+      totalLines?: number;
       error?: string;
     }
   | {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
 import { PromptInput } from "./PromptInput";
@@ -8,13 +8,15 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
 import { PlanPanel } from "./PlanPanel";
+import { FilePreviewPanel } from "./FilePreviewPanel";
 import { useStore } from "@/store";
 import type { ClientMessage } from "@/lib/shared/protocol";
+import type { FileReadResult } from "@/hooks/useWebSocket";
 
 interface SessionViewProps {
   session: Session;
@@ -25,6 +27,7 @@ interface SessionViewProps {
   onPermissionResponse: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
   onTerminate: () => void;
   send: (msg: ClientMessage) => void;
+  requestFileRead: (machineId: string, filePath: string, maxLines?: number) => Promise<FileReadResult>;
 }
 
 export function SessionView({
@@ -36,6 +39,7 @@ export function SessionView({
   onPermissionResponse,
   onTerminate,
   send,
+  requestFileRead,
 }: SessionViewProps) {
   const isLocal = session.machineId === "local";
   const isBusy = session.status === "busy" || session.status === "starting";
@@ -45,6 +49,36 @@ export function SessionView({
   const planContent = useStore((s) => s.planContent.get(session.id));
   const planPanelOpen = useStore((s) => s.planPanelOpen.get(session.id) ?? false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
+
+  const filePreview = useStore((s) => s.filePreview.get(session.id));
+  const filePreviewOpen = useStore((s) => s.filePreviewOpen.get(session.id) ?? false);
+  const setFilePreviewOpen = useStore((s) => s.setFilePreviewOpen);
+  const setFilePreviewLoading = useStore((s) => s.setFilePreviewLoading);
+  const setFilePreview = useStore((s) => s.setFilePreview);
+  const setFilePreviewError = useStore((s) => s.setFilePreviewError);
+
+  const handleFilePreview = useCallback(async (filePath: string) => {
+    // Toggle off if same file already shown
+    if (filePreview?.filePath === filePath && filePreviewOpen) {
+      setFilePreviewOpen(session.id, false);
+      return;
+    }
+
+    setFilePreviewLoading(session.id, filePath);
+
+    const result = await requestFileRead(session.machineId, filePath);
+
+    if (result.error) {
+      setFilePreviewError(session.id, result.error);
+    } else {
+      setFilePreview(session.id, {
+        filePath: result.filePath,
+        content: result.content,
+        language: result.language,
+        truncated: result.truncated,
+      });
+    }
+  }, [session.id, session.machineId, filePreview?.filePath, filePreviewOpen, requestFileRead, setFilePreview, setFilePreviewLoading, setFilePreviewError, setFilePreviewOpen]);
 
   const handleSessionSettingsOpen = (open: boolean) => {
     setSessionSettingsOpen(open);
@@ -144,6 +178,16 @@ export function SessionView({
               Total: ${session.totalCostUsd.toFixed(4)}
             </span>
           )}
+          {filePreview && !filePreview.loading && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setFilePreviewOpen(session.id, !filePreviewOpen)}
+              className={`h-8 w-8 transition-colors ${filePreviewOpen ? "text-sky-400 hover:text-sky-300" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <FileText className="w-4 h-4" />
+            </Button>
+          )}
           {planContent && (
             <Button
               variant="ghost"
@@ -191,7 +235,7 @@ export function SessionView({
               Send a prompt to start the conversation
             </div>
           ) : (
-            <StreamOutput messages={messages} streamingText={streamingText} onSendPrompt={onSendPrompt} onPermissionResponse={onPermissionResponse} />
+            <StreamOutput messages={messages} streamingText={streamingText} onSendPrompt={onSendPrompt} onPermissionResponse={onPermissionResponse} onFilePreview={handleFilePreview} />
           )}
 
           {/* Input */}
@@ -207,6 +251,19 @@ export function SessionView({
           <PlanPanel
             content={planContent}
             onClose={() => setPlanPanelOpen(session.id, false)}
+          />
+        )}
+
+        {/* File preview panel */}
+        {filePreview && filePreviewOpen && (
+          <FilePreviewPanel
+            filePath={filePreview.filePath}
+            content={filePreview.content}
+            language={filePreview.language}
+            truncated={filePreview.truncated}
+            loading={filePreview.loading}
+            error={filePreview.error}
+            onClose={() => setFilePreviewOpen(session.id, false)}
           />
         )}
       </div>

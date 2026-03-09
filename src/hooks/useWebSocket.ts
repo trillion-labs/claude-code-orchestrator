@@ -24,12 +24,22 @@ export interface MkdirResult {
   error?: string;
 }
 
+export interface FileReadResult {
+  content: string;
+  language: string;
+  filePath: string;
+  truncated: boolean;
+  totalLines?: number;
+  error?: string;
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelayRef = useRef(RECONNECT_DELAY);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pathListCallbacksRef = useRef<Map<string, (result: PathListResult) => void>>(new Map());
   const mkdirCallbacksRef = useRef<Map<string, (result: MkdirResult) => void>>(new Map());
+  const fileReadCallbacksRef = useRef<Map<string, (result: FileReadResult) => void>>(new Map());
 
   const {
     addSession,
@@ -140,6 +150,15 @@ export function useWebSocket() {
           if (mkdirCb) {
             mkdirCb({ success: msg.success, resolvedPath: msg.resolvedPath, error: msg.error });
             mkdirCallbacksRef.current.delete(msg.requestId);
+          }
+          break;
+        }
+
+        case "file.read": {
+          const frCb = fileReadCallbacksRef.current.get(msg.requestId);
+          if (frCb) {
+            frCb({ content: msg.content, language: msg.language, filePath: msg.filePath, truncated: msg.truncated, totalLines: msg.totalLines, error: msg.error });
+            fileReadCallbacksRef.current.delete(msg.requestId);
           }
           break;
         }
@@ -337,6 +356,26 @@ export function useWebSocket() {
     [send],
   );
 
+  const requestFileRead = useCallback(
+    (machineId: string, filePath: string, maxLines?: number): Promise<FileReadResult> => {
+      return new Promise((resolve) => {
+        const requestId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          fileReadCallbacksRef.current.delete(requestId);
+          resolve({ content: "", language: "text", filePath, truncated: false, error: "Request timed out" });
+        }, 10000);
+
+        fileReadCallbacksRef.current.set(requestId, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
+
+        send({ type: "file.read", machineId, filePath, requestId, maxLines });
+      });
+    },
+    [send],
+  );
+
   useEffect(() => {
     connect();
 
@@ -348,5 +387,5 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  return { send, requestPathList, requestMkdir };
+  return { send, requestPathList, requestMkdir, requestFileRead };
 }
