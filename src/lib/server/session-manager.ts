@@ -32,9 +32,12 @@ interface ManagedSession {
   isProcessingPrompt: boolean;
   currentAssistantMessage: string;
   messages: ConversationMessage[];
+  firstUserMessage?: string; // Cached for display name
   // Whether text was streamed via content_block_delta for the current message
   hasStreamedText: boolean;
 }
+
+const MAX_RECENT_MESSAGES = 20; // Keep last 10 turns (user + assistant)
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
@@ -808,7 +811,9 @@ except:
       content: prompt,
       timestamp: Date.now(),
     };
+    if (!managed.firstUserMessage) managed.firstUserMessage = prompt;
     managed.messages.push(userMsg);
+    this.trimMessages(managed);
     this.emit("session:message", sessionId, userMsg);
 
     if (managed.isProcessingPrompt) {
@@ -966,6 +971,7 @@ except:
             durationMs: msg.duration_ms,
           };
           managed.messages.push(assistantMsg);
+          this.trimMessages(managed);
           this.emit("session:message", sessionId, assistantMsg);
         }
 
@@ -1411,9 +1417,10 @@ for line in sys.stdin:
   getSessionDisplayName(sessionId: string): string {
     const managed = this.sessions.get(sessionId);
     if (!managed) return "Imported session";
-    const firstUser = managed.messages.find((m) => m.role === "user");
-    if (firstUser?.content) {
-      const text = firstUser.content.replace(/\n/g, " ").trim();
+    const content = managed.firstUserMessage
+      || managed.messages.find((m) => m.role === "user")?.content;
+    if (content) {
+      const text = content.replace(/\n/g, " ").trim();
       return text.length > 80 ? text.slice(0, 77) + "..." : text;
     }
     return "Imported session";
@@ -1528,6 +1535,7 @@ done
 
   private parseSessionJsonl(managed: ManagedSession, content: string): void {
     const lines = content.split("\n").filter(Boolean);
+    const allMessages: ConversationMessage[] = [];
 
     for (const line of lines) {
       try {
@@ -1547,14 +1555,13 @@ done
               : "";
           if (!text) continue;
 
-          const userMsg: ConversationMessage = {
+          if (!managed.firstUserMessage) managed.firstUserMessage = text;
+          allMessages.push({
             id: uuidv4(),
             role: "user",
             content: text,
             timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-          };
-          managed.messages.push(userMsg);
-          this.emit("session:message", managed.session.id, userMsg);
+          });
         }
 
         if (msg.type === "assistant" && msg.message?.content) {
@@ -1584,17 +1591,147 @@ done
           }
           if (!text.trim()) continue;
 
-          const assistantMsg: ConversationMessage = {
+          allMessages.push({
             id: uuidv4(),
             role: "assistant",
             content: text,
             timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-          };
-          managed.messages.push(assistantMsg);
-          this.emit("session:message", managed.session.id, assistantMsg);
+          });
         }
       } catch { /* skip invalid lines */ }
     }
+
+    // Only keep and emit the most recent messages
+    const recent = allMessages.slice(-MAX_RECENT_MESSAGES);
+    managed.messages = recent;
+    for (const m of recent) {
+      this.emit("session:message", managed.session.id, m);
+    }
+  }
+
+  private trimMessages(managed: ManagedSession): void {
+    if (managed.messages.length > MAX_RECENT_MESSAGES) {
+      managed.messages = managed.messages.slice(-MAX_RECENT_MESSAGES);
+    }
+  }
+
+  /**
+   * Load older messages from .jsonl history for pagination.
+   * Returns messages with timestamp < `before`, up to `limit` items (newest first within the batch).
+   */
+  async loadMessageHistory(sessionId: string, before: number, limit = 20): Promise<{ messages: ConversationMessage[]; hasMore: boolean }> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return { messages: [], hasMore: false };
+
+    const allMessages = await this.parseFullHistory(managed);
+    // Filter messages older than `before`
+    const older = allMessages.filter((m) => m.timestamp < before);
+    const hasMore = older.length > limit;
+    // Return the most recent `limit` messages from the older set
+    const page = older.slice(-limit);
+    return { messages: page, hasMore };
+  }
+
+  /**
+   * Parse the full .jsonl history without storing it in memory.
+   * Returns all ConversationMessages from the session's history file.
+   */
+  private async parseFullHistory(managed: ManagedSession): Promise<ConversationMessage[]> {
+    const claudeSessionId = managed.session.claudeSessionId;
+    const messages: ConversationMessage[] = [];
+
+    const content = managed.machine.type === "local"
+      ? await this.readLocalJsonl(claudeSessionId)
+      : await this.readRemoteJsonl(managed.machine, claudeSessionId);
+
+    if (!content) return messages;
+
+    const lines = content.split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const msg = JSON.parse(line);
+
+        if (msg.type === "user" && msg.message?.content) {
+          const c = msg.message.content;
+          const text = typeof c === "string"
+            ? c
+            : Array.isArray(c)
+              ? c.filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n")
+              : "";
+          if (!text) continue;
+          messages.push({
+            id: uuidv4(),
+            role: "user",
+            content: text,
+            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+          });
+        }
+
+        if (msg.type === "assistant" && msg.message?.content) {
+          const c = msg.message.content;
+          let text = "";
+          if (typeof c === "string") {
+            text = c;
+          } else if (Array.isArray(c)) {
+            const parts: string[] = [];
+            for (const block of c) {
+              if (block.type === "text") {
+                parts.push(block.text);
+              } else if (block.type === "tool_use") {
+                const inputStr = block.input ? JSON.stringify(block.input) : "";
+                parts.push(this.renderToolUse(block.name, inputStr));
+              }
+            }
+            text = parts.join("\n");
+          }
+          if (!text.trim()) continue;
+          messages.push({
+            id: uuidv4(),
+            role: "assistant",
+            content: text,
+            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+          });
+        }
+      } catch { /* skip invalid lines */ }
+    }
+
+    return messages;
+  }
+
+  private async readLocalJsonl(claudeSessionId: string): Promise<string | null> {
+    const claudeDir = join(homedir(), ".claude", "projects");
+    try {
+      const projects = await readdir(claudeDir);
+      for (const project of projects) {
+        const filePath = join(claudeDir, project, `${claudeSessionId}.jsonl`);
+        try {
+          return await readFile(filePath, "utf-8");
+        } catch {
+          // Not in this project dir, try next
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  private async readRemoteJsonl(machine: MachineConfig, claudeSessionId: string): Promise<string | null> {
+    const script = `python3 -c "
+import os, glob
+home = os.path.expanduser('~')
+pattern = os.path.join(home, '.claude', 'projects', '*', '${claudeSessionId}.jsonl')
+files = glob.glob(pattern)
+if files:
+    with open(files[0]) as f:
+        print(f.read())
+"`;
+    try {
+      const channel = await this.sshManager.execFresh(machine, script);
+      return await new Promise<string>((resolve) => {
+        let out = "";
+        channel.on("data", (data: Buffer) => { out += data.toString(); });
+        channel.on("close", () => resolve(out || ""));
+      });
+    } catch { return null; }
   }
 
   async discoverSessions(machine: MachineConfig, workDir?: string): Promise<ClaudeSessionInfo[]> {

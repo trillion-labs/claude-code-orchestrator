@@ -73,7 +73,9 @@ export type ClientMessage =
   | { type: "task.linkSession"; projectId: string; taskId: string; sessionId: string }
   | { type: "task.list"; projectId: string }
   // ── Session-Project linking ──
-  | { type: "session.setProject"; sessionId: string; projectId: string | null };
+  | { type: "session.setProject"; sessionId: string; projectId: string | null }
+  // ── Message history pagination ──
+  | { type: "session.history"; sessionId: string; before: number; limit?: number };
 
 // ── Server → Client Messages ──
 
@@ -219,4 +221,6 @@ export type ServerMessage =
   | { type: "task.sessionLinked"; task: Task; session: Session }
   | { type: "task.sessionCompleted"; task: Task }
   // ── Session-Project linking ──
-  | { type: "session.projectChanged"; sessionId: string; projectId: string | null };
+  | { type: "session.projectChanged"; sessionId: string; projectId: string | null }
+  // ── Message history pagination ──
+  | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean };

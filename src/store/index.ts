@@ -7,6 +7,10 @@ interface SessionState {
   machines: MachineConfig[];
   // Per-session message history
   messages: Map<string, ConversationMessage[]>;
+  // Whether more history is available for a session (for pagination)
+  hasMoreMessages: Map<string, boolean>;
+  // Whether history is currently being loaded
+  loadingHistory: Map<string, boolean>;
   // Per-session streaming text
   streamingText: Map<string, string>;
   // Discovered sessions per machine
@@ -57,6 +61,8 @@ interface SessionState {
 
   // Messages
   addMessage: (sessionId: string, message: ConversationMessage) => void;
+  prependMessages: (sessionId: string, messages: ConversationMessage[], hasMore: boolean) => void;
+  setLoadingHistory: (sessionId: string, loading: boolean) => void;
 
   // Streaming
   appendStreamDelta: (sessionId: string, delta: string) => void;
@@ -115,6 +121,8 @@ export const useStore = create<SessionState>((set) => ({
   activeSessionId: null,
   machines: [],
   messages: new Map(),
+  hasMoreMessages: new Map(),
+  loadingHistory: new Map(),
   streamingText: new Map(),
   discoveredSessions: new Map(),
   respondedPermissions: new Map(),
@@ -197,6 +205,10 @@ export const useStore = create<SessionState>((set) => ({
       sessions.delete(sessionId);
       const messages = new Map(state.messages);
       messages.delete(sessionId);
+      const hasMoreMessages = new Map(state.hasMoreMessages);
+      hasMoreMessages.delete(sessionId);
+      const loadingHistory = new Map(state.loadingHistory);
+      loadingHistory.delete(sessionId);
       const streamingText = new Map(state.streamingText);
       streamingText.delete(sessionId);
       const pendingAttention = new Map(state.pendingAttention);
@@ -218,6 +230,8 @@ export const useStore = create<SessionState>((set) => ({
       return {
         sessions,
         messages,
+        hasMoreMessages,
+        loadingHistory,
         streamingText,
         pendingAttention,
         pendingRequests,
@@ -248,6 +262,32 @@ export const useStore = create<SessionState>((set) => ({
         return { messages, streamingText };
       }
       return { messages };
+    }),
+
+  prependMessages: (sessionId, olderMessages, hasMore) =>
+    set((state) => {
+      const messages = new Map(state.messages);
+      const existing = messages.get(sessionId) || [];
+      // Deduplicate by timestamp (history messages may overlap with recent)
+      const existingTimestamps = new Set(existing.map((m) => m.timestamp));
+      const unique = olderMessages.filter((m) => !existingTimestamps.has(m.timestamp));
+      messages.set(sessionId, [...unique, ...existing]);
+      const hasMoreMessages = new Map(state.hasMoreMessages);
+      hasMoreMessages.set(sessionId, hasMore);
+      const loadingHistory = new Map(state.loadingHistory);
+      loadingHistory.delete(sessionId);
+      return { messages, hasMoreMessages, loadingHistory };
+    }),
+
+  setLoadingHistory: (sessionId, loading) =>
+    set((state) => {
+      const loadingHistory = new Map(state.loadingHistory);
+      if (loading) {
+        loadingHistory.set(sessionId, true);
+      } else {
+        loadingHistory.delete(sessionId);
+      }
+      return { loadingHistory };
     }),
 
   appendStreamDelta: (sessionId, delta) =>
