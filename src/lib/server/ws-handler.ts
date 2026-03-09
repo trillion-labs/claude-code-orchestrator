@@ -202,6 +202,11 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.setProject": {
+        this.sessionManager.setSessionProject(msg.sessionId, msg.projectId);
+        break;
+      }
+
       case "config.read": {
         try {
           const claudeDir = join(homedir(), ".claude");
@@ -447,6 +452,26 @@ export class WebSocketHandler {
         break;
       }
 
+      case "task.resume": {
+        try {
+          const taskForResume = this.projectManager.getProjectTasks(msg.projectId)
+            .find((t) => t.id === msg.taskId);
+          const project = this.projectManager.getProject(msg.projectId);
+          const machineId = taskForResume?.lastMachineId || project?.machineId;
+          const resumeMachine = this.machines.find((m) => m.id === machineId);
+          if (!resumeMachine) {
+            this.send(ws, { type: "error", error: "Machine not found for resume" });
+            return;
+          }
+          const { task, session } = await this.projectManager.resumeTask(msg.projectId, msg.taskId, resumeMachine);
+          this.broadcast({ type: "task.resumed", task, session });
+          this.broadcast({ type: "session.created", session });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
       case "task.importSession": {
         try {
           const { task, session } = await this.projectManager.importSessionAsTask(
@@ -510,6 +535,10 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:planContent", (sessionId: string, content: string, filePath: string) => {
       this.broadcast({ type: "session.planContent", sessionId, content, filePath });
+    });
+
+    this.sessionManager.on("session:projectChanged", (sessionId: string, projectId: string | null) => {
+      this.broadcast({ type: "session.projectChanged", sessionId, projectId });
     });
   }
 

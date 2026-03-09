@@ -155,6 +155,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.update", projectId: project.id, taskId, updates });
   };
 
+  const handleResumeTask = (task: Task) => {
+    send({ type: "task.resume", projectId: project.id, taskId: task.id });
+  };
+
   const selectedSession = selectedTask?.sessionId
     ? sessions.get(selectedTask.sessionId)
     : undefined;
@@ -261,6 +265,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
               onSubmit={() => handleSubmitTask(selectedTask)}
               onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
+              onResume={() => handleResumeTask(selectedTask)}
               onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
               onPermissionResponse={(requestId, allow, answers, message) => {
                 if (selectedTask.sessionId) {
