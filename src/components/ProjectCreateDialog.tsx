@@ -7,15 +7,16 @@ import { Input } from "@/components/ui/input";
 import { Plus } from "lucide-react";
 import { PathInput } from "./PathInput";
 import type { MachineConfig, PermissionMode } from "@/lib/shared/types";
-import type { PathListResult } from "@/hooks/useWebSocket";
+import type { PathListResult, MkdirResult } from "@/hooks/useWebSocket";
 
 interface ProjectCreateDialogProps {
   machines: MachineConfig[];
   requestPathList: (machineId: string, path: string) => Promise<PathListResult>;
+  requestMkdir: (machineId: string, path: string) => Promise<MkdirResult>;
   onCreateProject: (name: string, machineId: string, workDir: string, permissionMode: PermissionMode) => void;
 }
 
-export function ProjectCreateDialog({ machines, requestPathList, onCreateProject }: ProjectCreateDialogProps) {
+export function ProjectCreateDialog({ machines, requestPathList, requestMkdir, onCreateProject }: ProjectCreateDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [machineId, setMachineId] = useState(machines[0]?.id || "");
@@ -75,6 +76,7 @@ export function ProjectCreateDialog({ machines, requestPathList, onCreateProject
               onChange={setWorkDir}
               machineId={machineId}
               requestPathList={requestPathList}
+              requestMkdir={requestMkdir}
               placeholder="/path/to/project"
             />
           </div>

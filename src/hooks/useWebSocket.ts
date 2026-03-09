@@ -18,11 +18,18 @@ export interface PathListResult {
   error?: string;
 }
 
+export interface MkdirResult {
+  success: boolean;
+  resolvedPath: string;
+  error?: string;
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectDelayRef = useRef(RECONNECT_DELAY);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pathListCallbacksRef = useRef<Map<string, (result: PathListResult) => void>>(new Map());
+  const mkdirCallbacksRef = useRef<Map<string, (result: MkdirResult) => void>>(new Map());
 
   const {
     addSession,
@@ -120,6 +127,15 @@ export function useWebSocket() {
           if (cb) {
             cb({ entries: msg.entries, resolvedPath: msg.resolvedPath, prefix: msg.prefix, error: msg.error });
             pathListCallbacksRef.current.delete(msg.requestId);
+          }
+          break;
+        }
+
+        case "path.mkdir": {
+          const mkdirCb = mkdirCallbacksRef.current.get(msg.requestId);
+          if (mkdirCb) {
+            mkdirCb({ success: msg.success, resolvedPath: msg.resolvedPath, error: msg.error });
+            mkdirCallbacksRef.current.delete(msg.requestId);
           }
           break;
         }
@@ -297,6 +313,26 @@ export function useWebSocket() {
     [send],
   );
 
+  const requestMkdir = useCallback(
+    (machineId: string, path: string): Promise<MkdirResult> => {
+      return new Promise((resolve) => {
+        const requestId = crypto.randomUUID();
+        const timer = setTimeout(() => {
+          mkdirCallbacksRef.current.delete(requestId);
+          resolve({ success: false, resolvedPath: path, error: "Request timed out" });
+        }, 5000);
+
+        mkdirCallbacksRef.current.set(requestId, (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        });
+
+        send({ type: "path.mkdir", machineId, path, requestId });
+      });
+    },
+    [send],
+  );
+
   useEffect(() => {
     connect();
 
@@ -308,5 +344,5 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  return { send, requestPathList };
+  return { send, requestPathList, requestMkdir };
 }

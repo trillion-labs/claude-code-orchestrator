@@ -54,6 +54,7 @@ export type ClientMessage =
   | { type: "session.config.write"; sessionId: string; file: "settings" | "claudemd"; content: string }
   | { type: "worktrees.list"; machineId: string; workDir: string }
   | { type: "path.list"; machineId: string; path: string; requestId: string }
+  | { type: "path.mkdir"; machineId: string; path: string; requestId: string }
   // ── Project CRUD ──
   | { type: "project.create"; name: string; machineId: string; workDir: string; permissionMode: PermissionMode }
   | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode } }
@@ -176,6 +177,13 @@ export type ServerMessage =
       entries: Array<{ name: string; isDir: boolean }>;
       resolvedPath: string;
       prefix?: string;
+      error?: string;
+    }
+  | {
+      type: "path.mkdir";
+      requestId: string;
+      success: boolean;
+      resolvedPath: string;
       error?: string;
     }
   | {
