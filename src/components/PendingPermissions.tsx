@@ -76,7 +76,7 @@ export function PendingPermissions({ onNavigate }: PendingPermissionsProps) {
   };
 
   return (
-    <div className="border-t">
+    <div className="border-t overflow-hidden min-w-0">
       <div className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-500">
         <ShieldAlert className="w-3.5 h-3.5" />
         <span>Pending Permissions</span>
