@@ -43,6 +43,8 @@ export function useWebSocket() {
     setDiscoveredSessions,
     addAttention,
     clearAttention,
+    addPendingRequest,
+    clearPendingRequests,
     setGlobalConfig,
     setSessionConfig,
     setPlanContent,
@@ -78,6 +80,7 @@ export function useWebSocket() {
             addAttention(msg.sessionId, "question");
           }
           addAttention(msg.sessionId, `perm:${msg.request.requestId}`);
+          addPendingRequest(msg.sessionId, msg.request);
           break;
 
         case "session.permissionModeChanged":
@@ -95,10 +98,11 @@ export function useWebSocket() {
             msg.totalCostUsd,
             msg.error
           );
-          // Clear attention when session is no longer busy
+          // Clear attention and pending requests when session is no longer busy
           // (expired permission requests are no longer actionable)
           if (msg.status !== "busy") {
             clearAttention(msg.sessionId);
+            clearPendingRequests(msg.sessionId);
           }
           break;
 
@@ -247,7 +251,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject]
   );
 
   const connect = useCallback(() => {

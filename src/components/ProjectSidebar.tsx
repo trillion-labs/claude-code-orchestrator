@@ -3,14 +3,16 @@
 import { useProjectStore } from "@/hooks/useProjectStore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { PendingPermissions } from "./PendingPermissions";
 import { FolderOpen, Server, Trash2 } from "lucide-react";
 import type { ClientMessage } from "@/lib/shared/protocol";
 
 interface ProjectSidebarProps {
   send: (msg: ClientMessage) => void;
+  onNavigateToSession: (sessionId: string) => void;
 }
 
-export function ProjectSidebar({ send }: ProjectSidebarProps) {
+export function ProjectSidebar({ send, onNavigateToSession }: ProjectSidebarProps) {
   const { projects, activeProjectId, setActiveProject } = useProjectStore();
 
   const handleDeleteProject = (e: React.MouseEvent, projectId: string) => {
@@ -65,6 +67,8 @@ export function ProjectSidebar({ send }: ProjectSidebarProps) {
           )}
         </div>
       </ScrollArea>
+
+      <PendingPermissions onNavigate={onNavigateToSession} />
 
       <Separator />
       <div className="p-3 text-xs text-muted-foreground text-center">

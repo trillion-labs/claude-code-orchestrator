@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest } from "@/lib/shared/types";
 
 interface SessionState {
   sessions: Map<string, Session>;
@@ -17,6 +17,8 @@ interface SessionState {
   permissionAnswers: Map<string, Map<number, string | string[]>>;
   // Pending attention indicators per session (e.g. "perm:reqId", "question")
   pendingAttention: Map<string, Set<string>>;
+  // Pending permission requests per session (for sidebar display)
+  pendingRequests: Map<string, PermissionRequest[]>;
   // Custom session names (user-set or auto-extracted from first message)
   sessionNames: Map<string, string>;
   // Global config
@@ -63,6 +65,9 @@ interface SessionState {
   // Permissions
   respondPermission: (requestId: string, decision: "allow" | "deny") => void;
   setPermissionAnswers: (requestId: string, selections: Map<number, string | string[]>) => void;
+  addPendingRequest: (sessionId: string, request: PermissionRequest) => void;
+  removePendingRequest: (sessionId: string, requestId: string) => void;
+  clearPendingRequests: (sessionId: string) => void;
 
   // Attention
   addAttention: (sessionId: string, key: string) => void;
@@ -106,6 +111,7 @@ export const useStore = create<SessionState>((set) => ({
   respondedPermissions: new Map(),
   permissionAnswers: new Map(),
   pendingAttention: new Map(),
+  pendingRequests: new Map(),
   sessionNames: new Map(),
   globalSettings: null,
   globalClaudeMd: null,
@@ -184,6 +190,8 @@ export const useStore = create<SessionState>((set) => ({
       streamingText.delete(sessionId);
       const pendingAttention = new Map(state.pendingAttention);
       pendingAttention.delete(sessionId);
+      const pendingRequests = new Map(state.pendingRequests);
+      pendingRequests.delete(sessionId);
       const sessionNames = new Map(state.sessionNames);
       sessionNames.delete(sessionId);
       const sessionConfig = new Map(state.sessionConfig);
@@ -197,6 +205,7 @@ export const useStore = create<SessionState>((set) => ({
         messages,
         streamingText,
         pendingAttention,
+        pendingRequests,
         sessionNames,
         sessionConfig,
         planContent,
@@ -258,6 +267,36 @@ export const useStore = create<SessionState>((set) => ({
       const permissionAnswers = new Map(state.permissionAnswers);
       permissionAnswers.set(requestId, selections);
       return { permissionAnswers };
+    }),
+
+  addPendingRequest: (sessionId, request) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      const existing = pendingRequests.get(sessionId) || [];
+      pendingRequests.set(sessionId, [...existing, request]);
+      return { pendingRequests };
+    }),
+
+  removePendingRequest: (sessionId, requestId) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      const existing = pendingRequests.get(sessionId);
+      if (existing) {
+        const filtered = existing.filter((r) => r.requestId !== requestId);
+        if (filtered.length === 0) {
+          pendingRequests.delete(sessionId);
+        } else {
+          pendingRequests.set(sessionId, filtered);
+        }
+      }
+      return { pendingRequests };
+    }),
+
+  clearPendingRequests: (sessionId) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      pendingRequests.delete(sessionId);
+      return { pendingRequests };
     }),
 
   addAttention: (sessionId, key) =>
