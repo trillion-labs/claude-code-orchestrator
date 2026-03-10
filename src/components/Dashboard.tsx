@@ -11,10 +11,11 @@ import { SettingsDialog } from "./SettingsDialog";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { ProjectCreateDialog } from "./ProjectCreateDialog";
 import { ProjectBoard } from "./ProjectBoard";
+import { GitHubIssueBoard } from "./GitHubIssueBoard";
 import { PendingPermissions } from "./PendingPermissions";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
+import { Terminal, Settings, LayoutGrid, FolderOpen, Github } from "lucide-react";
 import { useStore } from "@/store";
 import type { PermissionMode } from "@/lib/shared/types";
 
@@ -41,6 +42,9 @@ export function Dashboard() {
     viewMode,
     setViewMode,
   } = useProjectStore();
+
+  const projectTab = useStore((s) => s.projectTab);
+  const setProjectTab = useStore((s) => s.setProjectTab);
 
   const handleCreateSession = (
     machineId: string,
@@ -240,13 +244,51 @@ export function Dashboard() {
             </div>
           )
         ) : (
-          // Kanban view
+          // Projects view with Local/GitHub tab
           activeProject ? (
-            <ProjectBoard
-              project={activeProject}
-              send={send}
-              onViewSession={handleViewSession}
-            />
+            <div className="flex flex-col h-full min-w-0">
+              {/* Project sub-tab: Local / GitHub Issues */}
+              <div className="flex items-center gap-1 px-4 pt-2 border-b">
+                <button
+                  onClick={() => setProjectTab("local")}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-2 border-b-2 transition-colors ${
+                    projectTab === "local"
+                      ? "border-foreground font-medium text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <LayoutGrid className="w-3 h-3" />
+                  Local Tasks
+                </button>
+                <button
+                  onClick={() => setProjectTab("github")}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-2 border-b-2 transition-colors ${
+                    projectTab === "github"
+                      ? "border-foreground font-medium text-foreground"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Github className="w-3 h-3" />
+                  GitHub Issues
+                </button>
+              </div>
+
+              {/* Tab content */}
+              <div className="flex-1 min-w-0 overflow-hidden">
+                {projectTab === "local" ? (
+                  <ProjectBoard
+                    project={activeProject}
+                    send={send}
+                    onViewSession={handleViewSession}
+                  />
+                ) : (
+                  <GitHubIssueBoard
+                    project={activeProject}
+                    send={send}
+                  />
+                )}
+              </div>
+            </div>
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
               <div className="text-center">

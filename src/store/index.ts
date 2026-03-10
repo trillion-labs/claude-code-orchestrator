@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest, GitHubIssue, GitHubComment, GitHubRepoInfo, GitHubLabel } from "@/lib/shared/types";
 
 interface SessionState {
   sessions: Map<string, Session>;
@@ -43,6 +43,14 @@ interface SessionState {
   activeProjectId: string | null;
   tasks: Map<string, Task[]>; // projectId → Task[]
   viewMode: "sessions" | "kanban";
+  // GitHub Issues
+  githubRepos: Map<string, GitHubRepoInfo>;     // projectId → repo info
+  githubIssues: Map<string, GitHubIssue[]>;     // projectId → issues
+  githubComments: Map<string, GitHubComment[]>;  // "projectId:issueNumber" → comments
+  githubLabels: Map<string, GitHubLabel[]>;      // projectId → labels
+  githubLoading: Map<string, boolean>;           // projectId → loading state
+  githubError: Map<string, string>;              // projectId → error message
+  projectTab: "local" | "github";                // current project sub-tab
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -114,6 +122,17 @@ interface SessionState {
   removeTask: (projectId: string, taskId: string) => void;
   updateSessionLink: (sessionId: string, projectId: string, taskId: string) => void;
   setViewMode: (mode: "sessions" | "kanban") => void;
+  // GitHub Issues
+  setGitHubRepo: (projectId: string, repo: GitHubRepoInfo | null) => void;
+  setGitHubIssues: (projectId: string, issues: GitHubIssue[]) => void;
+  updateGitHubIssue: (projectId: string, issue: GitHubIssue) => void;
+  addGitHubIssue: (projectId: string, issue: GitHubIssue) => void;
+  setGitHubComments: (projectId: string, issueNumber: number, comments: GitHubComment[]) => void;
+  addGitHubComment: (projectId: string, issueNumber: number, comment: GitHubComment) => void;
+  setGitHubLabels: (projectId: string, labels: GitHubLabel[]) => void;
+  setGitHubLoading: (projectId: string, loading: boolean) => void;
+  setGitHubError: (projectId: string, error: string | null) => void;
+  setProjectTab: (tab: "local" | "github") => void;
 }
 
 export const useStore = create<SessionState>((set) => ({
@@ -142,6 +161,13 @@ export const useStore = create<SessionState>((set) => ({
   activeProjectId: null,
   tasks: new Map(),
   viewMode: "sessions" as const,
+  githubRepos: new Map(),
+  githubIssues: new Map(),
+  githubComments: new Map(),
+  githubLabels: new Map(),
+  githubLoading: new Map(),
+  githubError: new Map(),
+  projectTab: "local" as const,
 
   setSessions: (sessions) =>
     set(() => {
@@ -576,4 +602,92 @@ export const useStore = create<SessionState>((set) => ({
     }),
 
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  // ── GitHub Issues ──
+
+  setGitHubRepo: (projectId, repo) =>
+    set((state) => {
+      const githubRepos = new Map(state.githubRepos);
+      if (repo) {
+        githubRepos.set(projectId, repo);
+      } else {
+        githubRepos.delete(projectId);
+      }
+      return { githubRepos };
+    }),
+
+  setGitHubIssues: (projectId, issues) =>
+    set((state) => {
+      const githubIssues = new Map(state.githubIssues);
+      githubIssues.set(projectId, issues);
+      return { githubIssues };
+    }),
+
+  updateGitHubIssue: (projectId, issue) =>
+    set((state) => {
+      const githubIssues = new Map(state.githubIssues);
+      const existing = githubIssues.get(projectId) || [];
+      const idx = existing.findIndex((i) => i.number === issue.number);
+      if (idx >= 0) {
+        const updated = [...existing];
+        updated[idx] = issue;
+        githubIssues.set(projectId, updated);
+      }
+      return { githubIssues };
+    }),
+
+  addGitHubIssue: (projectId, issue) =>
+    set((state) => {
+      const githubIssues = new Map(state.githubIssues);
+      const existing = githubIssues.get(projectId) || [];
+      githubIssues.set(projectId, [issue, ...existing]);
+      return { githubIssues };
+    }),
+
+  setGitHubComments: (projectId, issueNumber, comments) =>
+    set((state) => {
+      const githubComments = new Map(state.githubComments);
+      githubComments.set(`${projectId}:${issueNumber}`, comments);
+      return { githubComments };
+    }),
+
+  addGitHubComment: (projectId, issueNumber, comment) =>
+    set((state) => {
+      const githubComments = new Map(state.githubComments);
+      const key = `${projectId}:${issueNumber}`;
+      const existing = githubComments.get(key) || [];
+      githubComments.set(key, [...existing, comment]);
+      return { githubComments };
+    }),
+
+  setGitHubLabels: (projectId, labels) =>
+    set((state) => {
+      const githubLabels = new Map(state.githubLabels);
+      githubLabels.set(projectId, labels);
+      return { githubLabels };
+    }),
+
+  setGitHubLoading: (projectId, loading) =>
+    set((state) => {
+      const githubLoading = new Map(state.githubLoading);
+      if (loading) {
+        githubLoading.set(projectId, true);
+      } else {
+        githubLoading.delete(projectId);
+      }
+      return { githubLoading };
+    }),
+
+  setGitHubError: (projectId, error) =>
+    set((state) => {
+      const githubError = new Map(state.githubError);
+      if (error) {
+        githubError.set(projectId, error);
+      } else {
+        githubError.delete(projectId);
+      }
+      return { githubError };
+    }),
+
+  setProjectTab: (tab) => set({ projectTab: tab }),
 }));

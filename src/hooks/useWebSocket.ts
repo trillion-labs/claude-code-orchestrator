@@ -72,6 +72,16 @@ export function useWebSocket() {
     updateSessionLink,
     updateSessionProject,
     setSessionName,
+    // GitHub Issues
+    setGitHubRepo,
+    setGitHubIssues,
+    updateGitHubIssue,
+    addGitHubIssue,
+    setGitHubComments,
+    addGitHubComment,
+    setGitHubLabels,
+    setGitHubLoading,
+    setGitHubError,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -282,9 +292,53 @@ export function useWebSocket() {
         case "session.displayName":
           setSessionName(msg.sessionId, msg.name);
           break;
+
+        // ── GitHub Issues ──
+
+        case "github.repo.detected":
+          setGitHubRepo(msg.projectId, msg.repo);
+          setGitHubLoading(msg.projectId, false);
+          if (msg.error) setGitHubError(msg.projectId, msg.error);
+          break;
+
+        case "github.issues.list":
+          setGitHubIssues(msg.projectId, msg.issues);
+          setGitHubLoading(msg.projectId, false);
+          break;
+
+        case "github.issues.got":
+          updateGitHubIssue(msg.projectId, msg.issue);
+          break;
+
+        case "github.issues.created":
+          addGitHubIssue(msg.projectId, msg.issue);
+          setGitHubLoading(msg.projectId, false);
+          break;
+
+        case "github.issues.updated":
+          updateGitHubIssue(msg.projectId, msg.issue);
+          setGitHubLoading(msg.projectId, false);
+          break;
+
+        case "github.issues.comments":
+          setGitHubComments(msg.projectId, msg.issueNumber, msg.comments);
+          break;
+
+        case "github.issues.commentAdded":
+          addGitHubComment(msg.projectId, msg.issueNumber, msg.comment);
+          break;
+
+        case "github.labels.list":
+          setGitHubLabels(msg.projectId, msg.labels);
+          break;
+
+        case "github.error":
+          setGitHubError(msg.projectId, msg.error);
+          setGitHubLoading(msg.projectId, false);
+          break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setGitHubRepo, setGitHubIssues, updateGitHubIssue, addGitHubIssue, setGitHubComments, addGitHubComment, setGitHubLabels, setGitHubLoading, setGitHubError]
   );
 
   const connect = useCallback(() => {
