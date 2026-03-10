@@ -6,7 +6,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { useStore } from "@/store";
 import type { Session } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
-import { Monitor, Server, GitBranch, FolderOpen, X } from "lucide-react";
+import { Monitor, Server, GitBranch, FolderOpen, X, PanelRight } from "lucide-react";
 import { TimeAgo } from "./TimeAgo";
 
 interface SessionCardProps {
@@ -17,6 +17,7 @@ interface SessionCardProps {
   displayName?: string;
   onRename: (name: string) => void;
   send: (msg: ClientMessage) => void;
+  onSplitRight?: (sessionId: string) => void;
 }
 
 export function SessionCard({
@@ -27,6 +28,7 @@ export function SessionCard({
   displayName,
   onRename,
   send,
+  onSplitRight,
 }: SessionCardProps) {
   const isLocal = session.machineId === "local";
   const hasAttention = !isActive && attentionCount > 0;
@@ -87,7 +89,7 @@ export function SessionCard({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
-        className={`w-full text-left p-3 rounded-lg border transition-colors overflow-hidden cursor-pointer ${
+        className={`group/card w-full text-left p-3 rounded-lg border transition-colors overflow-hidden cursor-pointer ${
           isActive
             ? "bg-accent border-accent-foreground/20"
             : hasAttention
@@ -124,7 +126,18 @@ export function SessionCard({
             </span>
           )}
         </div>
-        <StatusBadge status={session.status} />
+        <div className="flex items-center gap-1 shrink-0">
+          {onSplitRight && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onSplitRight(session.id); }}
+              className="p-0.5 rounded text-muted-foreground/0 group-hover/card:text-muted-foreground hover:!text-foreground hover:bg-accent transition-colors"
+              title="Open in split panel"
+            >
+              <PanelRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <StatusBadge status={session.status} />
+        </div>
       </div>
 
       {/* Show machineName as secondary info when displayName is set */}

@@ -12,6 +12,7 @@ import { ProjectSidebar } from "./ProjectSidebar";
 import { ProjectCreateDialog } from "./ProjectCreateDialog";
 import { ProjectBoard } from "./ProjectBoard";
 import { PendingPermissions } from "./PendingPermissions";
+import { SplitPanelContainer } from "./SplitPanelContainer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
@@ -41,6 +42,9 @@ export function Dashboard() {
     viewMode,
     setViewMode,
   } = useProjectStore();
+
+  const splitPanels = useStore((s) => s.splitPanels);
+  const splitSession = useStore((s) => s.splitSession);
 
   const handleCreateSession = (
     machineId: string,
@@ -193,6 +197,7 @@ export function Dashboard() {
                         displayName={getSessionDisplayName(session.id)}
                         onRename={(name) => setSessionName(session.id, name)}
                         send={send}
+                        onSplitRight={splitSession}
                       />
                     );
                   })
@@ -218,8 +223,10 @@ export function Dashboard() {
       {/* Right Panel - Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {viewMode === "sessions" ? (
-          // Sessions view (unchanged)
-          activeSession ? (
+          // Sessions view
+          splitPanels.length > 0 ? (
+            <SplitPanelContainer send={send} requestFileRead={requestFileRead} />
+          ) : activeSession ? (
             <SessionView
               session={activeSession}
               messages={activeMessages}
@@ -230,6 +237,7 @@ export function Dashboard() {
               onTerminate={handleTerminate}
               send={send}
               requestFileRead={requestFileRead}
+              onSplitRight={splitSession}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
