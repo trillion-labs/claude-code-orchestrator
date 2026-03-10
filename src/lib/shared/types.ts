@@ -244,6 +244,55 @@ export interface PermissionRequest {
   input: Record<string, unknown>;
 }
 
+// ── GitHub Issue Types ──
+
+export interface GitHubLabel {
+  name: string;
+  color: string;
+  description?: string;
+}
+
+export interface GitHubUser {
+  login: string;
+  avatarUrl?: string;
+}
+
+export interface GitHubMilestone {
+  title: string;
+  number: number;
+}
+
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body: string;
+  state: "open" | "closed";
+  labels: GitHubLabel[];
+  assignees: GitHubUser[];
+  author: GitHubUser;
+  milestone?: GitHubMilestone;
+  createdAt: string;
+  updatedAt: string;
+  closedAt?: string;
+  commentsCount: number;
+  url: string;
+}
+
+export interface GitHubComment {
+  id: number;
+  body: string;
+  author: GitHubUser;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GitHubRepoInfo {
+  owner: string;
+  repo: string;
+  fullName: string;
+  url: string;
+}
+
 // ── Conversation Message (for UI display) ──
 
 export interface ConversationMessage {

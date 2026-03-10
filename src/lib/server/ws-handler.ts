@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { SessionManager } from "./session-manager";
 import { ProjectStore } from "./project-store";
 import { ProjectManager } from "./project-manager";
+import { GitHubManager } from "./github-manager";
 import { loadSSHHosts } from "./ssh-config-loader";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
@@ -31,6 +32,7 @@ export class WebSocketHandler {
   private sessionManager: SessionManager;
   private projectStore: ProjectStore;
   private projectManager: ProjectManager;
+  private githubManager: GitHubManager;
   private clients = new Set<WebSocket>();
   private machines: MachineConfig[] = [];
 
@@ -38,6 +40,7 @@ export class WebSocketHandler {
     this.sessionManager = new SessionManager(port);
     this.projectStore = new ProjectStore();
     this.projectManager = new ProjectManager(this.projectStore, this.sessionManager);
+    this.githubManager = new GitHubManager();
     this.setupSessionEvents();
   }
 
@@ -612,6 +615,140 @@ export class WebSocketHandler {
           this.broadcast({ type: "task.sessionLinked", task, session });
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      // ── GitHub Issues ──
+
+      case "github.repo.detect": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const repo = await this.githubManager.detectRepo(project.workDir);
+          this.send(ws, { type: "github.repo.detected", projectId: msg.projectId, repo });
+        } catch (err) {
+          this.send(ws, { type: "github.repo.detected", projectId: msg.projectId, repo: null, error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "github.issues.list": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const issues = await this.githubManager.listIssues(project.workDir, {
+            state: msg.state,
+            labels: msg.labels,
+          });
+          this.send(ws, { type: "github.issues.list", projectId: msg.projectId, issues });
+        } catch (err) {
+          this.send(ws, { type: "github.error", projectId: msg.projectId, error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "github.issues.get": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const issue = await this.githubManager.getIssue(project.workDir, msg.issueNumber);
+          this.send(ws, { type: "github.issues.got", projectId: msg.projectId, issue });
+        } catch (err) {
+          this.send(ws, { type: "github.error", projectId: msg.projectId, error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "github.issues.create": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const issue = await this.githubManager.createIssue(project.workDir, msg.title, msg.body, {
+            labels: msg.labels,
+            assignees: msg.assignees,
+          });
+          this.send(ws, { type: "github.issues.created", projectId: msg.projectId, issue });
+        } catch (err) {
+          this.send(ws, { type: "github.error", projectId: msg.projectId, error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "github.issues.update": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const issue = await this.githubManager.updateIssue(project.workDir, msg.issueNumber, {
+            title: msg.title,
+            body: msg.body,
+            state: msg.state,
+            labels: msg.labels,
+            assignees: msg.assignees,
+          });
+          this.send(ws, { type: "github.issues.updated", projectId: msg.projectId, issue });
+        } catch (err) {
+          this.send(ws, { type: "github.error", projectId: msg.projectId, error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "github.issues.comments": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const comments = await this.githubManager.listComments(project.workDir, msg.issueNumber);
+          this.send(ws, { type: "github.issues.comments", projectId: msg.projectId, issueNumber: msg.issueNumber, comments });
+        } catch (err) {
+          this.send(ws, { type: "github.error", projectId: msg.projectId, error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "github.issues.addComment": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const comment = await this.githubManager.addComment(project.workDir, msg.issueNumber, msg.body);
+          this.send(ws, { type: "github.issues.commentAdded", projectId: msg.projectId, issueNumber: msg.issueNumber, comment });
+        } catch (err) {
+          this.send(ws, { type: "github.error", projectId: msg.projectId, error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "github.labels.list": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "github.error", projectId: msg.projectId, error: "Project not found" });
+            return;
+          }
+          const labels = await this.githubManager.listLabels(project.workDir);
+          this.send(ws, { type: "github.labels.list", projectId: msg.projectId, labels });
+        } catch (err) {
+          this.send(ws, { type: "github.error", projectId: msg.projectId, error: (err as Error).message });
         }
         break;
       }

@@ -1,4 +1,4 @@
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn } from "./types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn, GitHubIssue, GitHubComment, GitHubRepoInfo, GitHubLabel } from "./types";
 
 // ── Client → Server Messages ──
 
@@ -75,7 +75,16 @@ export type ClientMessage =
   // ── Session-Project linking ──
   | { type: "session.setProject"; sessionId: string; projectId: string | null }
   // ── Message history pagination ──
-  | { type: "session.history"; sessionId: string; before: number; limit?: number };
+  | { type: "session.history"; sessionId: string; before: number; limit?: number }
+  // ── GitHub Issues ──
+  | { type: "github.repo.detect"; projectId: string }
+  | { type: "github.issues.list"; projectId: string; state?: "open" | "closed" | "all"; labels?: string[] }
+  | { type: "github.issues.get"; projectId: string; issueNumber: number }
+  | { type: "github.issues.create"; projectId: string; title: string; body: string; labels?: string[]; assignees?: string[] }
+  | { type: "github.issues.update"; projectId: string; issueNumber: number; title?: string; body?: string; state?: "open" | "closed"; labels?: string[]; assignees?: string[] }
+  | { type: "github.issues.comments"; projectId: string; issueNumber: number }
+  | { type: "github.issues.addComment"; projectId: string; issueNumber: number; body: string }
+  | { type: "github.labels.list"; projectId: string };
 
 // ── Server → Client Messages ──
 
@@ -226,4 +235,14 @@ export type ServerMessage =
   // ── Display name ──
   | { type: "session.displayName"; sessionId: string; name: string }
   // ── Message history pagination ──
-  | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean };
+  | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean }
+  // ── GitHub Issues ──
+  | { type: "github.repo.detected"; projectId: string; repo: GitHubRepoInfo | null; error?: string }
+  | { type: "github.issues.list"; projectId: string; issues: GitHubIssue[] }
+  | { type: "github.issues.got"; projectId: string; issue: GitHubIssue }
+  | { type: "github.issues.created"; projectId: string; issue: GitHubIssue }
+  | { type: "github.issues.updated"; projectId: string; issue: GitHubIssue }
+  | { type: "github.issues.comments"; projectId: string; issueNumber: number; comments: GitHubComment[] }
+  | { type: "github.issues.commentAdded"; projectId: string; issueNumber: number; comment: GitHubComment }
+  | { type: "github.labels.list"; projectId: string; labels: GitHubLabel[] }
+  | { type: "github.error"; projectId: string; error: string };
