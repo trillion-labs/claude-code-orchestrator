@@ -8,6 +8,7 @@ import type { PathListResult, MkdirResult } from "@/hooks/useWebSocket";
 interface PathInputProps {
   value: string;
   onChange: (value: string) => void;
+  onConfirm?: () => void;
   machineId: string | null;
   requestPathList: (machineId: string, path: string) => Promise<PathListResult>;
   requestMkdir?: (machineId: string, path: string) => Promise<MkdirResult>;
@@ -18,6 +19,7 @@ interface PathInputProps {
 export function PathInput({
   value,
   onChange,
+  onConfirm,
   machineId,
   requestPathList,
   requestMkdir,
@@ -124,6 +126,15 @@ export function PathInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      // Enter to confirm path when dropdown is closed or empty
+      if (e.key === "Enter" && (!isOpen || entries.length === 0)) {
+        e.preventDefault();
+        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+        setIsOpen(false);
+        onConfirm?.();
+        return;
+      }
+
       if (!isOpen || entries.length === 0) {
         // Open on arrow down even when closed
         if (e.key === "ArrowDown" && value && machineId) {
@@ -151,6 +162,11 @@ export function PathInput({
           e.preventDefault();
           if (highlightedIndex >= 0 && highlightedIndex < entries.length) {
             handleSelect(entries[highlightedIndex]);
+          } else {
+            // No item highlighted — confirm the current path
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+            setIsOpen(false);
+            onConfirm?.();
           }
           break;
         case "Tab":
@@ -169,7 +185,7 @@ export function PathInput({
           break;
       }
     },
-    [isOpen, entries, highlightedIndex, handleSelect, value, machineId, fetchEntries],
+    [isOpen, entries, highlightedIndex, handleSelect, value, machineId, fetchEntries, onConfirm],
   );
 
   // Close dropdown on outside click
