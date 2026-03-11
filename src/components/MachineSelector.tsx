@@ -376,6 +376,7 @@ export function MachineSelector({
                 <PathInput
                   value={workDir}
                   onChange={setWorkDir}
+                  onConfirm={handleDiscover}
                   machineId={selectedMachine}
                   requestPathList={requestPathList}
                   placeholder="~/projects/my-app"
