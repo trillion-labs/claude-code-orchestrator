@@ -892,6 +892,13 @@ function CopyButton({ text }: { text: string }) {
 // Tool blocks are pre-extracted, so this only handles regular markdown.
 
 const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
+  a({ href, children, ...props }) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+        {children}
+      </a>
+    );
+  },
   code({ className, children, ...props }) {
     const match = /language-(\S+)/.exec(className || "");
     const codeString = String(children).replace(/\n$/, "");
