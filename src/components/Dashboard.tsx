@@ -180,7 +180,7 @@ export function Dashboard() {
         {/* Sidebar content */}
         {viewMode === "sessions" ? (
           <>
-            <ScrollArea className="flex-1 min-w-0" data-sidebar-scroll>
+            <ScrollArea className="flex-1 min-w-0 min-h-0" data-sidebar-scroll>
               <div className="p-2 space-y-1">
                 {sessions.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
