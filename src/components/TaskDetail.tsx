@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, ExternalLink, Play, Pencil, Check, Link, Unplug, RotateCcw } from "lucide-react";
+import { X, ExternalLink, Play, Pencil, Check, Link, Unplug, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +9,17 @@ import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
 import { PromptInput } from "./PromptInput";
 import { SessionPickerDialog } from "./SessionPickerDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import type { Task, Session, ConversationMessage } from "@/lib/shared/types";
 
 interface TaskDetailProps {
@@ -24,6 +35,7 @@ interface TaskDetailProps {
   onViewSession: () => void;
   onSendPrompt: (prompt: string) => void;
   onCancelPrompt?: () => void;
+  onDelete: () => void;
   onPermissionResponse: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
 }
 
@@ -40,6 +52,7 @@ export function TaskDetail({
   onViewSession,
   onSendPrompt,
   onCancelPrompt,
+  onDelete,
   onPermissionResponse,
 }: TaskDetailProps) {
   const [editingTitle, setEditingTitle] = useState(false);
@@ -155,15 +168,18 @@ export function TaskDetail({
                 <span className="text-xs text-muted-foreground">
                   ${session.totalCostUsd.toFixed(4)}
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="ml-auto gap-1 text-xs"
-                  onClick={onViewSession}
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  View Session
-                </Button>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <DeleteTaskButton onDelete={onDelete} taskTitle={task.title} />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-xs"
+                    onClick={onViewSession}
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    View Session
+                  </Button>
+                </div>
               </>
             ) : task.claudeSessionId && task.column !== "todo" && task.column !== "done" ? (
               <>
@@ -174,20 +190,24 @@ export function TaskDetail({
                 <span className="text-[10px] text-muted-foreground font-mono ml-1">
                   {task.claudeSessionId.slice(0, 8)}…
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="ml-auto gap-1 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-                  onClick={onResume}
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  Resume
-                </Button>
+                <div className="ml-auto flex items-center gap-1.5">
+                  <DeleteTaskButton onDelete={onDelete} taskTitle={task.title} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                    onClick={onResume}
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Resume
+                  </Button>
+                </div>
               </>
             ) : (
               <>
                 <span className="text-xs text-muted-foreground">No session linked</span>
                 <div className="ml-auto flex items-center gap-1.5">
+                  <DeleteTaskButton onDelete={onDelete} taskTitle={task.title} />
                   <SessionPickerDialog
                     title="Link Session to Task"
                     onSelectSession={onLinkSession}
@@ -236,5 +256,39 @@ export function TaskDetail({
         </div>
       )}
     </div>
+  );
+}
+
+function DeleteTaskButton({ onDelete, taskTitle }: { onDelete: () => void; taskTitle: string }) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="w-3 h-3" />
+          Delete
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete Task</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete &quot;{taskTitle}&quot;? This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onDelete}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

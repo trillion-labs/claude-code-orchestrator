@@ -155,6 +155,11 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
     }
   };
 
+  const handleDeleteTask = (task: Task) => {
+    send({ type: "task.delete", projectId: task.projectId, taskId: task.id });
+    setSelectedTaskId(null);
+  };
+
   const handleResumeTask = (task: Task) => {
     send({ type: "task.resume", projectId: task.projectId, taskId: task.id });
   };
@@ -302,6 +307,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                 streamingText={selectedStreamingText}
                 onClose={() => setSelectedTaskId(null)}
                 onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
+                onDelete={() => handleDeleteTask(selectedTask)}
                 onSubmit={() => handleSubmitTask(selectedTask)}
                 onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
                 onResume={() => handleResumeTask(selectedTask)}
