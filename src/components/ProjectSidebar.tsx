@@ -4,7 +4,8 @@ import { useProjectStore } from "@/hooks/useProjectStore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { PendingPermissions } from "./PendingPermissions";
-import { FolderOpen, Server, Trash2 } from "lucide-react";
+import { FolderOpen, Server, Trash2, LayoutGrid } from "lucide-react";
+import { ALL_TASKS_ID } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 
 interface ProjectSidebarProps {
@@ -24,6 +25,31 @@ export function ProjectSidebar({ send, onNavigateToSession }: ProjectSidebarProp
     <>
       <ScrollArea className="flex-1 min-w-0" data-sidebar-scroll>
         <div className="p-2 space-y-1">
+          {/* All Tasks entry */}
+          {projects.length > 0 && (
+            <>
+              <div
+                onClick={() => {
+                  setActiveProject(ALL_TASKS_ID);
+                  for (const p of projects) {
+                    send({ type: "task.list", projectId: p.id });
+                  }
+                }}
+                className={`
+                  group flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition-colors
+                  ${activeProjectId === ALL_TASKS_ID
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/50"
+                  }
+                `}
+              >
+                <LayoutGrid className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="text-sm font-medium truncate flex-1">All Tasks</span>
+              </div>
+              <div className="border-b my-1" />
+            </>
+          )}
+
           {projects.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
               No projects yet

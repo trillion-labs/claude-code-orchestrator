@@ -11,6 +11,7 @@ import { SettingsDialog } from "./SettingsDialog";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { ProjectCreateDialog } from "./ProjectCreateDialog";
 import { ProjectBoard } from "./ProjectBoard";
+import { AllTasksBoard } from "./AllTasksBoard";
 import { PendingPermissions } from "./PendingPermissions";
 import { SplitPanelContainer } from "./SplitPanelContainer";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -39,6 +40,7 @@ export function Dashboard() {
 
   const {
     activeProject,
+    isAllTasksView,
     viewMode,
     setViewMode,
   } = useProjectStore();
@@ -249,7 +251,12 @@ export function Dashboard() {
           )
         ) : (
           // Kanban view
-          activeProject ? (
+          isAllTasksView ? (
+            <AllTasksBoard
+              send={send}
+              onViewSession={handleViewSession}
+            />
+          ) : activeProject ? (
             <ProjectBoard
               project={activeProject}
               send={send}
