@@ -36,6 +36,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const { getTasksByColumn, getTaskSession } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
   const tasks = useStore((s) => s.tasks);
+  const removeAttention = useStore((s) => s.removeAttention);
+  const removePendingRequest = useStore((s) => s.removePendingRequest);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(780);
@@ -295,6 +297,9 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                     answers,
                     message,
                   });
+                  removeAttention(selectedTask.sessionId, `perm:${requestId}`);
+                  removeAttention(selectedTask.sessionId, "question");
+                  removePendingRequest(selectedTask.sessionId, requestId);
                 }
               }}
             />

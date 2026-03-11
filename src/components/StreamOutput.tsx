@@ -518,6 +518,7 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
   // Read decision from Zustand store (survives re-mounts) or from resolved field in data (finalized messages)
   const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
   const respondPermission = useStore((s) => s.respondPermission);
+  const removePendingRequestById = useStore((s) => s.removePendingRequestById);
   const responded = data.resolved || storeDecision || null;
 
   const readOnly = !interactive || responded !== null;
@@ -526,12 +527,14 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
     if (readOnly || !sendPermission || !data.requestId) return;
     sendPermission(data.requestId, true);
     respondPermission(data.requestId, "allow");
+    removePendingRequestById(data.requestId);
   };
 
   const handleDeny = () => {
     if (readOnly || !sendPermission || !data.requestId) return;
     sendPermission(data.requestId, false);
     respondPermission(data.requestId, "deny");
+    removePendingRequestById(data.requestId);
   };
 
   // Render a summary of what the tool wants to do
@@ -608,6 +611,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 
   const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
   const respondPermission = useStore((s) => s.respondPermission);
+  const removePendingRequestById = useStore((s) => s.removePendingRequestById);
   const sessionId = useContext(SessionIdContext);
   const hasPlanContent = useStore((s) => sessionId ? s.planContent.has(sessionId) : false);
   const planPanelOpen = useStore((s) => sessionId ? s.planPanelOpen.get(sessionId) ?? false : false);
@@ -622,6 +626,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
     if (readOnly || !sendPermission || !data.requestId) return;
     sendPermission(data.requestId, true);
     respondPermission(data.requestId, "allow");
+    removePendingRequestById(data.requestId);
   };
 
   const handleIterate = () => {
@@ -631,10 +636,9 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 
   const handleSendFeedback = () => {
     if (!feedback.trim() || !sendPermission || !data.requestId) return;
-    // Deny ExitPlanMode with feedback as the deny message.
-    // Claude sees this message in the tool result and uses it to revise the plan.
     sendPermission(data.requestId, false, undefined, feedback.trim());
     respondPermission(data.requestId, "deny");
+    removePendingRequestById(data.requestId);
     setFeedbackMode(false);
   };
 
@@ -766,6 +770,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 function PermissionQuestionCard({ data }: { data: { requestId?: string; input?: Record<string, unknown>; resolved?: string } }) {
   const sendPermission = useContext(PermissionResponseContext);
   const respondPermission = useStore((s) => s.respondPermission);
+  const removePendingRequestById = useStore((s) => s.removePendingRequestById);
   const setPermissionAnswers = useStore((s) => s.setPermissionAnswers);
   const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
   const storedSelections = useStore((s) => data.requestId ? s.permissionAnswers.get(data.requestId) : undefined);
@@ -796,7 +801,8 @@ function PermissionQuestionCard({ data }: { data: { requestId?: string; input?: 
 
     sendPermission(data.requestId, true, answers);
     respondPermission(data.requestId, "allow");
-  }, [sendPermission, data.requestId, respondPermission, setPermissionAnswers, questions.length]);
+    removePendingRequestById(data.requestId);
+  }, [sendPermission, data.requestId, respondPermission, removePendingRequestById, setPermissionAnswers, questions.length]);
 
   return (
     <SendPromptContext.Provider value={handleAnswer}>

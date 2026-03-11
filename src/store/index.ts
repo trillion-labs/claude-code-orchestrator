@@ -87,6 +87,7 @@ interface SessionState {
   setPermissionAnswers: (requestId: string, selections: Map<number, string | string[]>) => void;
   addPendingRequest: (sessionId: string, request: PermissionRequest) => void;
   removePendingRequest: (sessionId: string, requestId: string) => void;
+  removePendingRequestById: (requestId: string) => void;
   clearPendingRequests: (sessionId: string) => void;
 
   // Attention
@@ -402,6 +403,36 @@ export const useStore = create<SessionState>((set) => ({
           pendingRequests.delete(sessionId);
         } else {
           pendingRequests.set(sessionId, filtered);
+        }
+      }
+      return { pendingRequests };
+    }),
+
+  removePendingRequestById: (requestId) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      for (const [sessionId, requests] of pendingRequests) {
+        const filtered = requests.filter((r) => r.requestId !== requestId);
+        if (filtered.length !== requests.length) {
+          if (filtered.length === 0) {
+            pendingRequests.delete(sessionId);
+          } else {
+            pendingRequests.set(sessionId, filtered);
+          }
+          // Also clear attention for this permission
+          const pendingAttention = new Map(state.pendingAttention);
+          const keys = pendingAttention.get(sessionId);
+          if (keys) {
+            const newKeys = new Set(keys);
+            newKeys.delete(`perm:${requestId}`);
+            if (newKeys.size === 0) {
+              pendingAttention.delete(sessionId);
+            } else {
+              pendingAttention.set(sessionId, newKeys);
+            }
+            return { pendingRequests, pendingAttention };
+          }
+          break;
         }
       }
       return { pendingRequests };
