@@ -131,7 +131,7 @@ export function TaskDetail({
                 onChange={(e) => setDescDraft(e.target.value)}
                 rows={4}
                 autoFocus
-                className="text-sm"
+                className="text-sm max-h-[40vh] overflow-y-auto resize-y"
               />
               <div className="flex justify-end gap-1 mt-1">
                 <Button
