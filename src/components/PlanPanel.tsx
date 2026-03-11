@@ -14,6 +14,13 @@ const MAX_WIDTH_FALLBACK = 800;
 const DEFAULT_WIDTH = 480;
 
 const planMarkdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
+  a({ href, children, ...props }) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+        {children}
+      </a>
+    );
+  },
   code({ className, children }) {
     const match = /language-(\S+)/.exec(className || "");
     const codeString = String(children).replace(/\n$/, "");
