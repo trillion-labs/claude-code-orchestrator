@@ -61,6 +61,9 @@ const FilePreviewContext = createContext<
   ((filePath: string) => void) | undefined
 >(undefined);
 
+// Session ID context — used by PlanApprovalCard to know which session it belongs to
+const SessionIdContext = createContext<string | null>(null);
+
 // ── Content Segment Parser ──
 // Extracts ```tool-xxx blocks from markdown so they can be rendered
 // as interactive React components with preserved state.
@@ -605,9 +608,9 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 
   const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
   const respondPermission = useStore((s) => s.respondPermission);
-  const activeSessionId = useStore((s) => s.activeSessionId);
-  const hasPlanContent = useStore((s) => activeSessionId ? s.planContent.has(activeSessionId) : false);
-  const planPanelOpen = useStore((s) => activeSessionId ? s.planPanelOpen.get(activeSessionId) ?? false : false);
+  const sessionId = useContext(SessionIdContext);
+  const hasPlanContent = useStore((s) => sessionId ? s.planContent.has(sessionId) : false);
+  const planPanelOpen = useStore((s) => sessionId ? s.planPanelOpen.get(sessionId) ?? false : false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
   const responded = data.resolved || storeDecision || null;
 
@@ -687,9 +690,9 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
             <RotateCcw className="w-3.5 h-3.5" />
             Request Changes
           </button>
-          {hasPlanContent && activeSessionId && (
+          {hasPlanContent && sessionId && (
             <button
-              onClick={() => setPlanPanelOpen(activeSessionId, !planPanelOpen)}
+              onClick={() => setPlanPanelOpen(sessionId, !planPanelOpen)}
               className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
                 planPanelOpen
                   ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
@@ -704,10 +707,10 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
       )}
 
       {/* View Plan button when already responded */}
-      {readOnly && hasPlanContent && activeSessionId && (
+      {readOnly && hasPlanContent && sessionId && (
         <div className="flex gap-2 px-4 pb-3 pt-1">
           <button
-            onClick={() => setPlanPanelOpen(activeSessionId, !planPanelOpen)}
+            onClick={() => setPlanPanelOpen(sessionId, !planPanelOpen)}
             className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
               planPanelOpen
                 ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
@@ -995,6 +998,7 @@ function MarkdownContent({ content }: { content: string }) {
 interface StreamOutputProps {
   messages: ConversationMessage[];
   streamingText: string;
+  sessionId?: string;
   hasMoreMessages?: boolean;
   loadingHistory?: boolean;
   onLoadHistory?: () => void;
@@ -1006,6 +1010,7 @@ interface StreamOutputProps {
 export function StreamOutput({
   messages,
   streamingText,
+  sessionId,
   hasMoreMessages,
   loadingHistory,
   onLoadHistory,
@@ -1089,6 +1094,7 @@ export function StreamOutput({
       : -1;
 
   return (
+    <SessionIdContext.Provider value={sessionId ?? null}>
     <FilePreviewContext.Provider value={onFilePreview}>
     <SendPromptContext.Provider value={onSendPrompt}>
       <PermissionResponseContext.Provider value={onPermissionResponse}>
@@ -1132,6 +1138,7 @@ export function StreamOutput({
       </PermissionResponseContext.Provider>
     </SendPromptContext.Provider>
     </FilePreviewContext.Provider>
+    </SessionIdContext.Provider>
   );
 }
 
