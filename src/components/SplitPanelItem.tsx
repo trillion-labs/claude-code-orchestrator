@@ -6,7 +6,6 @@ import { useStore } from "@/store";
 import type { SplitPanel } from "@/store";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import type { FileReadResult } from "@/hooks/useWebSocket";
-import { X } from "lucide-react";
 
 interface SplitPanelItemProps {
   panel: SplitPanel;
@@ -91,15 +90,6 @@ export function SplitPanelItem({
       style={style}
       onMouseDown={handleFocus}
     >
-      {canClose && (
-        <button
-          onClick={handleClose}
-          className="absolute top-3 right-3 z-20 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/80 transition-colors"
-          title="Close panel"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
       <SessionView
         session={session}
         messages={messages}
@@ -111,6 +101,7 @@ export function SplitPanelItem({
         send={send}
         requestFileRead={requestFileRead}
         onSplitRight={splitSession}
+        onClosePanel={canClose ? handleClose : undefined}
       />
     </div>
   );

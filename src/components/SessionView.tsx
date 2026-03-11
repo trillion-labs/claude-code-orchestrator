@@ -8,7 +8,7 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2 } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
@@ -29,6 +29,7 @@ interface SessionViewProps {
   send: (msg: ClientMessage) => void;
   requestFileRead: (machineId: string, filePath: string, maxLines?: number) => Promise<FileReadResult>;
   onSplitRight?: (sessionId: string) => void;
+  onClosePanel?: () => void;
 }
 
 export function SessionView({
@@ -42,6 +43,7 @@ export function SessionView({
   send,
   requestFileRead,
   onSplitRight,
+  onClosePanel,
 }: SessionViewProps) {
   const isLocal = session.machineId === "local";
   const isBusy = session.status === "busy" || session.status === "starting";
@@ -102,16 +104,16 @@ export function SessionView({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between px-4 py-3 border-b gap-2">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           {isLocal ? (
-            <Monitor className="w-4 h-4 text-muted-foreground" />
+            <Monitor className="w-4 h-4 text-muted-foreground shrink-0" />
           ) : (
-            <Server className="w-4 h-4 text-muted-foreground" />
+            <Server className="w-4 h-4 text-muted-foreground shrink-0" />
           )}
-          <div>
-            <div className="font-medium text-sm">{displayName || session.machineName}</div>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="min-w-0">
+            <div className="font-medium text-sm truncate">{displayName || session.machineName}</div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
               {displayName && (
                 <>
                   {isLocal ? (
@@ -136,7 +138,7 @@ export function SessionView({
           <StatusBadge status={session.status} />
           <Popover open={modePopoverOpen} onOpenChange={setModePopoverOpen}>
             <PopoverTrigger asChild>
-              <button className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer transition-colors ${
+              <button className={`shrink-0 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer transition-colors whitespace-nowrap ${
                 session.permissionMode === "bypass-permissions"
                   ? "bg-red-500/15 text-red-400 border border-red-500/25 hover:bg-red-500/25"
                   : session.permissionMode === "accept-edits"
@@ -184,7 +186,7 @@ export function SessionView({
             </PopoverContent>
           </Popover>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {session.totalCostUsd > 0 && (
             <span className="text-xs font-mono text-muted-foreground">
               Total: ${session.totalCostUsd.toFixed(4)}
@@ -226,9 +228,21 @@ export function SessionView({
             size="icon"
             onClick={onTerminate}
             className="h-8 w-8 text-destructive hover:text-destructive"
+            title="Terminate session"
           >
-            <X className="w-4 h-4" />
+            <Trash2 className="w-4 h-4" />
           </Button>
+          {onClosePanel && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClosePanel}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              title="Close split panel"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          )}
         </div>
       </div>
 
