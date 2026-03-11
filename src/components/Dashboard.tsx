@@ -11,7 +11,9 @@ import { SettingsDialog } from "./SettingsDialog";
 import { ProjectSidebar } from "./ProjectSidebar";
 import { ProjectCreateDialog } from "./ProjectCreateDialog";
 import { ProjectBoard } from "./ProjectBoard";
+import { AllTasksBoard } from "./AllTasksBoard";
 import { PendingPermissions } from "./PendingPermissions";
+import { SplitPanelContainer } from "./SplitPanelContainer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
@@ -38,9 +40,13 @@ export function Dashboard() {
 
   const {
     activeProject,
+    isAllTasksView,
     viewMode,
     setViewMode,
   } = useProjectStore();
+
+  const splitPanels = useStore((s) => s.splitPanels);
+  const splitSession = useStore((s) => s.splitSession);
 
   const handleCreateSession = (
     machineId: string,
@@ -174,7 +180,7 @@ export function Dashboard() {
         {/* Sidebar content */}
         {viewMode === "sessions" ? (
           <>
-            <ScrollArea className="flex-1 min-w-0" data-sidebar-scroll>
+            <ScrollArea className="flex-1 min-w-0 min-h-0" data-sidebar-scroll>
               <div className="p-2 space-y-1">
                 {sessions.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
@@ -193,6 +199,7 @@ export function Dashboard() {
                         displayName={getSessionDisplayName(session.id)}
                         onRename={(name) => setSessionName(session.id, name)}
                         send={send}
+                        onSplitRight={splitSession}
                       />
                     );
                   })
@@ -218,8 +225,10 @@ export function Dashboard() {
       {/* Right Panel - Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {viewMode === "sessions" ? (
-          // Sessions view (unchanged)
-          activeSession ? (
+          // Sessions view
+          splitPanels.length > 0 ? (
+            <SplitPanelContainer send={send} requestFileRead={requestFileRead} />
+          ) : activeSession ? (
             <SessionView
               session={activeSession}
               messages={activeMessages}
@@ -230,6 +239,7 @@ export function Dashboard() {
               onTerminate={handleTerminate}
               send={send}
               requestFileRead={requestFileRead}
+              onSplitRight={splitSession}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -241,7 +251,12 @@ export function Dashboard() {
           )
         ) : (
           // Kanban view
-          activeProject ? (
+          isAllTasksView ? (
+            <AllTasksBoard
+              send={send}
+              onViewSession={handleViewSession}
+            />
+          ) : activeProject ? (
             <ProjectBoard
               project={activeProject}
               send={send}

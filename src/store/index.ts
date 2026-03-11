@@ -1,10 +1,21 @@
 import { create } from "zustand";
 import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest } from "@/lib/shared/types";
 
+export interface SplitPanel {
+  id: string;
+  sessionId: string;
+}
+
+const MAX_SPLIT_PANELS = 4;
+
 interface SessionState {
   sessions: Map<string, Session>;
   activeSessionId: string | null;
   machines: MachineConfig[];
+  // Split panel
+  splitPanels: SplitPanel[];
+  splitPanelWidths: Map<string, number>;
+  focusedPanelId: string | null;
   // Per-session message history
   messages: Map<string, ConversationMessage[]>;
   // Whether more history is available for a session (for pagination)
@@ -76,6 +87,7 @@ interface SessionState {
   setPermissionAnswers: (requestId: string, selections: Map<number, string | string[]>) => void;
   addPendingRequest: (sessionId: string, request: PermissionRequest) => void;
   removePendingRequest: (sessionId: string, requestId: string) => void;
+  removePendingRequestById: (requestId: string) => void;
   clearPendingRequests: (sessionId: string) => void;
 
   // Attention
@@ -114,6 +126,13 @@ interface SessionState {
   removeTask: (projectId: string, taskId: string) => void;
   updateSessionLink: (sessionId: string, projectId: string, taskId: string) => void;
   setViewMode: (mode: "sessions" | "kanban") => void;
+
+  // Split panel
+  splitSession: (sessionId: string) => void;
+  removeSplitPanel: (panelId: string) => void;
+  focusSplitPanel: (panelId: string) => void;
+  setSplitPanelWidth: (panelId: string, width: number) => void;
+  clearSplitPanels: () => void;
 }
 
 export const useStore = create<SessionState>((set) => ({
@@ -141,6 +160,9 @@ export const useStore = create<SessionState>((set) => ({
   projects: new Map(),
   activeProjectId: null,
   tasks: new Map(),
+  splitPanels: [],
+  splitPanelWidths: new Map(),
+  focusedPanelId: null,
   viewMode: "sessions" as const,
 
   setSessions: (sessions) =>
@@ -227,26 +249,63 @@ export const useStore = create<SessionState>((set) => ({
       filePreview.delete(sessionId);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.delete(sessionId);
+      // Clean up split panels referencing this session
+      let splitPanels = state.splitPanels.filter((p) => p.sessionId !== sessionId);
+      const splitPanelWidths = new Map(state.splitPanelWidths);
+      for (const p of state.splitPanels) {
+        if (p.sessionId === sessionId) splitPanelWidths.delete(p.id);
+      }
+      let focusedPanelId = state.focusedPanelId;
+      // If only one panel remains, collapse to single mode
+      if (splitPanels.length <= 1) {
+        const remainingSessionId = splitPanels[0]?.sessionId ?? null;
+        splitPanels = [];
+        splitPanelWidths.clear();
+        focusedPanelId = null;
+        return {
+          sessions, messages, hasMoreMessages, loadingHistory, streamingText,
+          pendingAttention, pendingRequests, sessionNames, sessionConfig,
+          planContent, planPanelOpen, filePreview, filePreviewOpen,
+          splitPanels, splitPanelWidths, focusedPanelId,
+          activeSessionId: state.activeSessionId === sessionId
+            ? remainingSessionId
+            : state.activeSessionId,
+        };
+      }
+      // Multiple panels still remain
+      if (state.splitPanels.find((p) => p.id === focusedPanelId)?.sessionId === sessionId) {
+        focusedPanelId = splitPanels[0]?.id ?? null;
+      }
       return {
-        sessions,
-        messages,
-        hasMoreMessages,
-        loadingHistory,
-        streamingText,
-        pendingAttention,
-        pendingRequests,
-        sessionNames,
-        sessionConfig,
-        planContent,
-        planPanelOpen,
-        filePreview,
-        filePreviewOpen,
-        activeSessionId:
-          state.activeSessionId === sessionId ? null : state.activeSessionId,
+        sessions, messages, hasMoreMessages, loadingHistory, streamingText,
+        pendingAttention, pendingRequests, sessionNames, sessionConfig,
+        planContent, planPanelOpen, filePreview, filePreviewOpen,
+        splitPanels, splitPanelWidths, focusedPanelId,
+        activeSessionId: focusedPanelId
+          ? splitPanels.find((p) => p.id === focusedPanelId)?.sessionId ?? state.activeSessionId
+          : (state.activeSessionId === sessionId ? null : state.activeSessionId),
       };
     }),
 
-  setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
+  setActiveSession: (sessionId) =>
+    set((state) => {
+      if (state.splitPanels.length === 0 || !sessionId) {
+        return { activeSessionId: sessionId };
+      }
+      // In split mode: if session already in a panel, focus it
+      const existing = state.splitPanels.find((p) => p.sessionId === sessionId);
+      if (existing) {
+        return { activeSessionId: sessionId, focusedPanelId: existing.id };
+      }
+      // Otherwise, replace the focused panel's session
+      if (state.focusedPanelId) {
+        const splitPanels = state.splitPanels.map((p) =>
+          p.id === state.focusedPanelId ? { ...p, sessionId } : p
+        );
+        return { activeSessionId: sessionId, splitPanels };
+      }
+      return { activeSessionId: sessionId };
+    }),
 
   setMachines: (machines) => set({ machines }),
 
@@ -344,6 +403,36 @@ export const useStore = create<SessionState>((set) => ({
           pendingRequests.delete(sessionId);
         } else {
           pendingRequests.set(sessionId, filtered);
+        }
+      }
+      return { pendingRequests };
+    }),
+
+  removePendingRequestById: (requestId) =>
+    set((state) => {
+      const pendingRequests = new Map(state.pendingRequests);
+      for (const [sessionId, requests] of pendingRequests) {
+        const filtered = requests.filter((r) => r.requestId !== requestId);
+        if (filtered.length !== requests.length) {
+          if (filtered.length === 0) {
+            pendingRequests.delete(sessionId);
+          } else {
+            pendingRequests.set(sessionId, filtered);
+          }
+          // Also clear attention for this permission
+          const pendingAttention = new Map(state.pendingAttention);
+          const keys = pendingAttention.get(sessionId);
+          if (keys) {
+            const newKeys = new Set(keys);
+            newKeys.delete(`perm:${requestId}`);
+            if (newKeys.size === 0) {
+              pendingAttention.delete(sessionId);
+            } else {
+              pendingAttention.set(sessionId, newKeys);
+            }
+            return { pendingRequests, pendingAttention };
+          }
+          break;
         }
       }
       return { pendingRequests };
@@ -576,4 +665,78 @@ export const useStore = create<SessionState>((set) => ({
     }),
 
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  // ── Split Panel ──
+
+  splitSession: (sessionId) =>
+    set((state) => {
+      if (state.splitPanels.length >= MAX_SPLIT_PANELS) return {};
+      if (state.splitPanels.length === 0) {
+        // Transition from single to split: create panel for current active + new
+        if (!state.activeSessionId) return {};
+        const panel1: SplitPanel = { id: crypto.randomUUID(), sessionId: state.activeSessionId };
+        const panel2: SplitPanel = { id: crypto.randomUUID(), sessionId };
+        return {
+          splitPanels: [panel1, panel2],
+          focusedPanelId: panel2.id,
+          activeSessionId: sessionId,
+        };
+      }
+      // Already in split mode: add a new panel
+      const newPanel: SplitPanel = { id: crypto.randomUUID(), sessionId };
+      return {
+        splitPanels: [...state.splitPanels, newPanel],
+        focusedPanelId: newPanel.id,
+        activeSessionId: sessionId,
+      };
+    }),
+
+  removeSplitPanel: (panelId) =>
+    set((state) => {
+      const remaining = state.splitPanels.filter((p) => p.id !== panelId);
+      const splitPanelWidths = new Map(state.splitPanelWidths);
+      splitPanelWidths.delete(panelId);
+      if (remaining.length <= 1) {
+        // Collapse to single mode
+        const sessionId = remaining[0]?.sessionId ?? state.activeSessionId;
+        return {
+          splitPanels: [],
+          splitPanelWidths: new Map(),
+          focusedPanelId: null,
+          activeSessionId: sessionId,
+        };
+      }
+      // Re-focus if the removed panel was focused
+      let focusedPanelId = state.focusedPanelId;
+      if (focusedPanelId === panelId) {
+        focusedPanelId = remaining[0].id;
+      }
+      return {
+        splitPanels: remaining,
+        splitPanelWidths,
+        focusedPanelId,
+        activeSessionId: remaining.find((p) => p.id === focusedPanelId)?.sessionId ?? state.activeSessionId,
+      };
+    }),
+
+  focusSplitPanel: (panelId) =>
+    set((state) => {
+      const panel = state.splitPanels.find((p) => p.id === panelId);
+      if (!panel) return {};
+      return { focusedPanelId: panelId, activeSessionId: panel.sessionId };
+    }),
+
+  setSplitPanelWidth: (panelId, width) =>
+    set((state) => {
+      const splitPanelWidths = new Map(state.splitPanelWidths);
+      splitPanelWidths.set(panelId, width);
+      return { splitPanelWidths };
+    }),
+
+  clearSplitPanels: () =>
+    set((state) => ({
+      splitPanels: [],
+      splitPanelWidths: new Map(),
+      focusedPanelId: null,
+    })),
 }));

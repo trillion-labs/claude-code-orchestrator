@@ -61,6 +61,9 @@ const FilePreviewContext = createContext<
   ((filePath: string) => void) | undefined
 >(undefined);
 
+// Session ID context — used by PlanApprovalCard to know which session it belongs to
+const SessionIdContext = createContext<string | null>(null);
+
 // ── Content Segment Parser ──
 // Extracts ```tool-xxx blocks from markdown so they can be rendered
 // as interactive React components with preserved state.
@@ -515,6 +518,7 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
   // Read decision from Zustand store (survives re-mounts) or from resolved field in data (finalized messages)
   const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
   const respondPermission = useStore((s) => s.respondPermission);
+  const removePendingRequestById = useStore((s) => s.removePendingRequestById);
   const responded = data.resolved || storeDecision || null;
 
   const readOnly = !interactive || responded !== null;
@@ -523,12 +527,14 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
     if (readOnly || !sendPermission || !data.requestId) return;
     sendPermission(data.requestId, true);
     respondPermission(data.requestId, "allow");
+    removePendingRequestById(data.requestId);
   };
 
   const handleDeny = () => {
     if (readOnly || !sendPermission || !data.requestId) return;
     sendPermission(data.requestId, false);
     respondPermission(data.requestId, "deny");
+    removePendingRequestById(data.requestId);
   };
 
   // Render a summary of what the tool wants to do
@@ -605,9 +611,10 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 
   const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
   const respondPermission = useStore((s) => s.respondPermission);
-  const activeSessionId = useStore((s) => s.activeSessionId);
-  const hasPlanContent = useStore((s) => activeSessionId ? s.planContent.has(activeSessionId) : false);
-  const planPanelOpen = useStore((s) => activeSessionId ? s.planPanelOpen.get(activeSessionId) ?? false : false);
+  const removePendingRequestById = useStore((s) => s.removePendingRequestById);
+  const sessionId = useContext(SessionIdContext);
+  const hasPlanContent = useStore((s) => sessionId ? s.planContent.has(sessionId) : false);
+  const planPanelOpen = useStore((s) => sessionId ? s.planPanelOpen.get(sessionId) ?? false : false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
   const responded = data.resolved || storeDecision || null;
 
@@ -619,6 +626,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
     if (readOnly || !sendPermission || !data.requestId) return;
     sendPermission(data.requestId, true);
     respondPermission(data.requestId, "allow");
+    removePendingRequestById(data.requestId);
   };
 
   const handleIterate = () => {
@@ -628,10 +636,9 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 
   const handleSendFeedback = () => {
     if (!feedback.trim() || !sendPermission || !data.requestId) return;
-    // Deny ExitPlanMode with feedback as the deny message.
-    // Claude sees this message in the tool result and uses it to revise the plan.
     sendPermission(data.requestId, false, undefined, feedback.trim());
     respondPermission(data.requestId, "deny");
+    removePendingRequestById(data.requestId);
     setFeedbackMode(false);
   };
 
@@ -687,9 +694,9 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
             <RotateCcw className="w-3.5 h-3.5" />
             Request Changes
           </button>
-          {hasPlanContent && activeSessionId && (
+          {hasPlanContent && sessionId && (
             <button
-              onClick={() => setPlanPanelOpen(activeSessionId, !planPanelOpen)}
+              onClick={() => setPlanPanelOpen(sessionId, !planPanelOpen)}
               className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
                 planPanelOpen
                   ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
@@ -704,10 +711,10 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
       )}
 
       {/* View Plan button when already responded */}
-      {readOnly && hasPlanContent && activeSessionId && (
+      {readOnly && hasPlanContent && sessionId && (
         <div className="flex gap-2 px-4 pb-3 pt-1">
           <button
-            onClick={() => setPlanPanelOpen(activeSessionId, !planPanelOpen)}
+            onClick={() => setPlanPanelOpen(sessionId, !planPanelOpen)}
             className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
               planPanelOpen
                 ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
@@ -763,6 +770,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 function PermissionQuestionCard({ data }: { data: { requestId?: string; input?: Record<string, unknown>; resolved?: string } }) {
   const sendPermission = useContext(PermissionResponseContext);
   const respondPermission = useStore((s) => s.respondPermission);
+  const removePendingRequestById = useStore((s) => s.removePendingRequestById);
   const setPermissionAnswers = useStore((s) => s.setPermissionAnswers);
   const storeDecision = useStore((s) => data.requestId ? s.respondedPermissions.get(data.requestId) : undefined);
   const storedSelections = useStore((s) => data.requestId ? s.permissionAnswers.get(data.requestId) : undefined);
@@ -793,7 +801,8 @@ function PermissionQuestionCard({ data }: { data: { requestId?: string; input?: 
 
     sendPermission(data.requestId, true, answers);
     respondPermission(data.requestId, "allow");
-  }, [sendPermission, data.requestId, respondPermission, setPermissionAnswers, questions.length]);
+    removePendingRequestById(data.requestId);
+  }, [sendPermission, data.requestId, respondPermission, removePendingRequestById, setPermissionAnswers, questions.length]);
 
   return (
     <SendPromptContext.Provider value={handleAnswer}>
@@ -889,6 +898,13 @@ function CopyButton({ text }: { text: string }) {
 // Tool blocks are pre-extracted, so this only handles regular markdown.
 
 const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
+  a({ href, children, ...props }) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+        {children}
+      </a>
+    );
+  },
   code({ className, children, ...props }) {
     const match = /language-(\S+)/.exec(className || "");
     const codeString = String(children).replace(/\n$/, "");
@@ -995,6 +1011,7 @@ function MarkdownContent({ content }: { content: string }) {
 interface StreamOutputProps {
   messages: ConversationMessage[];
   streamingText: string;
+  sessionId?: string;
   hasMoreMessages?: boolean;
   loadingHistory?: boolean;
   onLoadHistory?: () => void;
@@ -1006,6 +1023,7 @@ interface StreamOutputProps {
 export function StreamOutput({
   messages,
   streamingText,
+  sessionId,
   hasMoreMessages,
   loadingHistory,
   onLoadHistory,
@@ -1089,6 +1107,7 @@ export function StreamOutput({
       : -1;
 
   return (
+    <SessionIdContext.Provider value={sessionId ?? null}>
     <FilePreviewContext.Provider value={onFilePreview}>
     <SendPromptContext.Provider value={onSendPrompt}>
       <PermissionResponseContext.Provider value={onPermissionResponse}>
@@ -1132,6 +1151,7 @@ export function StreamOutput({
       </PermissionResponseContext.Provider>
     </SendPromptContext.Provider>
     </FilePreviewContext.Provider>
+    </SessionIdContext.Provider>
   );
 }
 

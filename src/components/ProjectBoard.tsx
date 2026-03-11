@@ -36,6 +36,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const { getTasksByColumn, getTaskSession } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
   const tasks = useStore((s) => s.tasks);
+  const removeAttention = useStore((s) => s.removeAttention);
+  const removePendingRequest = useStore((s) => s.removePendingRequest);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(780);
@@ -163,6 +165,11 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.update", projectId: project.id, taskId, updates });
   };
 
+  const handleDeleteTask = (taskId: string) => {
+    send({ type: "task.delete", projectId: project.id, taskId });
+    setSelectedTaskId(null);
+  };
+
   const handleResumeTask = (task: Task) => {
     send({ type: "task.resume", projectId: project.id, taskId: task.id });
   };
@@ -271,6 +278,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               streamingText={selectedStreamingText}
               onClose={() => setSelectedTaskId(null)}
               onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
+              onDelete={() => handleDeleteTask(selectedTask.id)}
               onSubmit={() => handleSubmitTask(selectedTask)}
               onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
               onResume={() => handleResumeTask(selectedTask)}
@@ -295,6 +303,9 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                     answers,
                     message,
                   });
+                  removeAttention(selectedTask.sessionId, `perm:${requestId}`);
+                  removeAttention(selectedTask.sessionId, "question");
+                  removePendingRequest(selectedTask.sessionId, requestId);
                 }
               }}
             />

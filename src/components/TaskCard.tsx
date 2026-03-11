@@ -13,9 +13,10 @@ interface TaskCardProps {
   onClick: () => void;
   onSubmit?: () => void;
   onViewSession?: () => void;
+  projectName?: string;
 }
 
-export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: TaskCardProps) {
+export function TaskCard({ task, session, onClick, onSubmit, onViewSession, projectName }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -49,6 +50,13 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession }: Ta
         ${hasError ? "border-red-500/30" : ""}
       `}
     >
+      {/* Project badge (shown in All Tasks view) */}
+      {projectName && (
+        <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/25 mb-1">
+          {projectName}
+        </span>
+      )}
+
       {/* Title */}
       <p className="text-sm font-medium leading-tight line-clamp-2">
         {task.title}

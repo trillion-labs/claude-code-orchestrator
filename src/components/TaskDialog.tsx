@@ -62,6 +62,7 @@ export function TaskDialog({ onCreateTask }: TaskDialogProps) {
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe what Claude should do..."
               rows={5}
+              className="max-h-[40vh] overflow-y-auto resize-y"
             />
           </div>
           <div className="flex justify-end gap-2">

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useStore } from "@/store";
+import { ALL_TASKS_ID } from "@/lib/shared/types";
 import type { Task, KanbanColumn } from "@/lib/shared/types";
 
 export function useProjectStore() {
@@ -20,11 +21,13 @@ export function useProjectStore() {
     [projects]
   );
 
-  const activeProject = activeProjectId
+  const isAllTasksView = activeProjectId === ALL_TASKS_ID;
+
+  const activeProject = activeProjectId && activeProjectId !== ALL_TASKS_ID
     ? projects.get(activeProjectId)
     : undefined;
 
-  const activeProjectTasks = activeProjectId
+  const activeProjectTasks = activeProjectId && activeProjectId !== ALL_TASKS_ID
     ? tasks.get(activeProjectId) || []
     : [];
 
@@ -37,6 +40,20 @@ export function useProjectStore() {
     };
   }, [tasks]);
 
+  // Get tasks across all projects for a given column
+  const getAllTasksByColumn = useMemo(() => {
+    return (column: KanbanColumn, excludedProjectIds?: Set<string>): Task[] => {
+      const result: Task[] = [];
+      for (const [projectId, projectTasks] of tasks) {
+        if (excludedProjectIds?.has(projectId)) continue;
+        for (const t of projectTasks) {
+          if (t.column === column) result.push(t);
+        }
+      }
+      return result.sort((a, b) => b.updatedAt - a.updatedAt);
+    };
+  }, [tasks]);
+
   // Get the linked session for a task
   const getTaskSession = useMemo(() => {
     return (sessionId?: string) => {
@@ -45,15 +62,25 @@ export function useProjectStore() {
     };
   }, [sessions]);
 
+  // Get project name by id
+  const getProjectName = useMemo(() => {
+    return (projectId: string) => {
+      return projects.get(projectId)?.name;
+    };
+  }, [projects]);
+
   return {
     projects: projectsArray,
     activeProject,
     activeProjectId,
     activeProjectTasks,
+    isAllTasksView,
     viewMode,
     setActiveProject,
     setViewMode,
     getTasksByColumn,
+    getAllTasksByColumn,
     getTaskSession,
+    getProjectName,
   };
 }
