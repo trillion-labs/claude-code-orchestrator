@@ -76,6 +76,10 @@ export function SessionCard({
     const trimmed = editValue.trim();
     if (trimmed && trimmed !== displayName) {
       onRename(trimmed);
+      // Sync to linked task
+      if (session.projectId && session.taskId) {
+        send({ type: "task.update", projectId: session.projectId, taskId: session.taskId, updates: { title: trimmed } });
+      }
     }
     setIsEditing(false);
   };

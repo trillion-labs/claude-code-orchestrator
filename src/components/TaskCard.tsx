@@ -1,8 +1,9 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Play, ExternalLink, AlertCircle, RotateCcw } from "lucide-react";
+import { Play, ExternalLink, AlertCircle, RotateCcw, Pencil } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { TimeAgo } from "./TimeAgo";
 import type { Task, Session } from "@/lib/shared/types";
@@ -13,10 +14,11 @@ interface TaskCardProps {
   onClick: () => void;
   onSubmit?: () => void;
   onViewSession?: () => void;
+  onEditTitle?: (taskId: string, newTitle: string) => void;
   projectName?: string;
 }
 
-export function TaskCard({ task, session, onClick, onSubmit, onViewSession, projectName }: TaskCardProps) {
+export function TaskCard({ task, session, onClick, onSubmit, onViewSession, onEditTitle, projectName }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -33,6 +35,39 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession, proj
 
   const hasError = session?.status === "error";
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditValue(task.title);
+    setIsEditing(true);
+  };
+
+  const handleSave = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== task.title && onEditTitle) {
+      onEditTitle(task.id, trimmed);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSave();
+    } else if (e.key === "Escape") {
+      setIsEditing(false);
+    }
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -41,10 +76,10 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession, proj
       {...listeners}
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        if (!isEditing) onClick();
       }}
       className={`
-        group rounded-lg border bg-card p-3 cursor-grab active:cursor-grabbing
+        group/task rounded-lg border bg-card p-3 cursor-grab active:cursor-grabbing
         hover:border-foreground/20 transition-colors select-none
         ${isDragging ? "opacity-50 shadow-lg z-50" : ""}
         ${hasError ? "border-red-500/30" : ""}
@@ -57,10 +92,34 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession, proj
         </span>
       )}
 
-      {/* Title */}
-      <p className="text-sm font-medium leading-tight line-clamp-2">
-        {task.title}
-      </p>
+      {/* Title with inline edit */}
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={handleKeyDown}
+          onClick={(e) => e.stopPropagation()}
+          className="text-sm font-medium leading-tight w-full bg-transparent border-b border-foreground/30 outline-none"
+          maxLength={100}
+        />
+      ) : (
+        <div className="flex items-start gap-1">
+          <p className="text-sm font-medium leading-tight line-clamp-2 flex-1">
+            {task.title}
+          </p>
+          {onEditTitle && (
+            <button
+              onClick={handleEditClick}
+              className="opacity-0 group-hover/task:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground transition-all shrink-0 mt-0.5"
+              title="Edit title"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Description preview */}
       {task.description && (
