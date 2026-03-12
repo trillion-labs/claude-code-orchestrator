@@ -1,6 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useSessionStore } from "@/hooks/useSessionStore";
 import { useProjectStore } from "@/hooks/useProjectStore";
@@ -36,6 +51,7 @@ export function Dashboard() {
     setSessionName,
     removeAttention,
     getSessionDisplayName,
+    reorderSessions,
   } = useSessionStore();
 
   const {
@@ -104,6 +120,31 @@ export function Dashboard() {
     setViewMode("sessions");
     setActiveSession(sessionId);
   };
+
+  // DnD sensors with activation constraint to distinguish click vs drag
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleSessionDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const oldIndex = sessions.findIndex((s) => s.id === active.id);
+      const newIndex = sessions.findIndex((s) => s.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const newOrder = sessions.map((s) => s.id);
+      const [moved] = newOrder.splice(oldIndex, 1);
+      newOrder.splice(newIndex, 0, moved);
+      reorderSessions(newOrder);
+    },
+    [sessions, reorderSessions],
+  );
+
+  const sessionIds = sessions.map((s) => s.id);
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -181,30 +222,39 @@ export function Dashboard() {
         {viewMode === "sessions" ? (
           <>
             <ScrollArea className="flex-1 min-w-0 min-h-0" data-sidebar-scroll>
-              <div className="p-2 space-y-1">
-                {sessions.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    No active sessions
-                  </p>
-                ) : (
-                  sessions.map((session) => {
-                    const attentionSet = pendingAttention.get(session.id);
-                    return (
-                      <SessionCard
-                        key={session.id}
-                        session={session}
-                        isActive={session.id === activeSessionId}
-                        onClick={() => setActiveSession(session.id)}
-                        attentionCount={attentionSet ? attentionSet.size : 0}
-                        displayName={getSessionDisplayName(session.id)}
-                        onRename={(name) => setSessionName(session.id, name)}
-                        send={send}
-                        onSplitRight={splitSession}
-                      />
-                    );
-                  })
-                )}
-              </div>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+                onDragEnd={handleSessionDragEnd}
+              >
+                <SortableContext items={sessionIds} strategy={verticalListSortingStrategy}>
+                  <div className="p-2 space-y-1">
+                    {sessions.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-8">
+                        No active sessions
+                      </p>
+                    ) : (
+                      sessions.map((session) => {
+                        const attentionSet = pendingAttention.get(session.id);
+                        return (
+                          <SessionCard
+                            key={session.id}
+                            session={session}
+                            isActive={session.id === activeSessionId}
+                            onClick={() => setActiveSession(session.id)}
+                            attentionCount={attentionSet ? attentionSet.size : 0}
+                            displayName={getSessionDisplayName(session.id)}
+                            onRename={(name) => setSessionName(session.id, name)}
+                            send={send}
+                            onSplitRight={splitSession}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
+                </SortableContext>
+              </DndContext>
             </ScrollArea>
 
             <PendingPermissions onNavigate={handleViewSession} />
