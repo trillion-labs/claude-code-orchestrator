@@ -7,7 +7,7 @@ import { loadSSHHosts } from "./ssh-config-loader";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
-import type { MachineConfig, PermissionMode, PermissionRequest } from "../shared/types";
+import type { MachineConfig, PermissionMode, PermissionRequest, ConversationMessage } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 
 const EXT_LANG_MAP: Record<string, string> = {
@@ -70,6 +70,9 @@ export class WebSocketHandler {
 
     // Initialize project store (load from disk)
     await this.projectManager.initialize();
+
+    // Restore persisted session history
+    await this.sessionManager.initializePersistence();
   }
 
   handleConnection(ws: WebSocket) {
@@ -176,6 +179,39 @@ export class WebSocketHandler {
 
       case "session.prompt": {
         try {
+          // If session is terminated (persisted history only), auto-resume it
+          const existingSession = this.sessionManager.getSession(msg.sessionId);
+          if (existingSession?.status === "terminated") {
+            const machine = this.machines.find((m) => m.id === existingSession.machineId);
+            if (!machine) {
+              this.send(ws, { type: "session.error", sessionId: msg.sessionId, error: "Machine not found for auto-resume" });
+              break;
+            }
+            const newSession = await this.sessionManager.createSession(
+              machine,
+              existingSession.workDir,
+              existingSession.claudeSessionId,
+              existingSession.permissionMode,
+              undefined,
+              existingSession.projectId,
+              existingSession.taskId,
+            );
+            // Remove old terminated session, broadcast new one
+            this.sessionManager.removeTerminatedSession(msg.sessionId);
+            this.broadcast({ type: "session.resumed", oldSessionId: msg.sessionId, session: newSession });
+            // Wait for idle then send prompt
+            const waitAndSend = () => {
+              const s = this.sessionManager.getSession(newSession.id);
+              if (!s) return;
+              if (s.status === "idle") {
+                this.sessionManager.sendPrompt(newSession.id, msg.prompt).catch(() => {});
+              } else if (s.status === "starting") {
+                setTimeout(waitAndSend, 500);
+              }
+            };
+            setTimeout(waitAndSend, 500);
+            break;
+          }
           await this.sessionManager.sendPrompt(msg.sessionId, msg.prompt);
         } catch (err) {
           this.send(ws, {
@@ -200,7 +236,15 @@ export class WebSocketHandler {
 
       case "session.list": {
         const sessions = this.sessionManager.getAllSessions();
-        this.send(ws, { type: "session.list", sessions });
+        const sessionNames: Record<string, string> = {};
+        const sessionMessages: Record<string, ConversationMessage[]> = {};
+        for (const s of sessions) {
+          const name = this.sessionManager.getSessionDisplayName(s.id);
+          if (name && name !== "Imported session") sessionNames[s.id] = name;
+          const msgs = this.sessionManager.getSessionMessages(s.id);
+          if (msgs.length > 0) sessionMessages[s.id] = msgs;
+        }
+        this.send(ws, { type: "session.list", sessions, sessionNames, sessionMessages });
         break;
       }
 

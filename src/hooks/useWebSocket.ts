@@ -72,6 +72,7 @@ export function useWebSocket() {
     updateSessionLink,
     updateSessionProject,
     setSessionName,
+    setActiveSession,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -123,11 +124,31 @@ export function useWebSocket() {
           break;
 
         case "session.terminated":
-          removeSession(msg.sessionId);
+          updateSessionStatus(msg.sessionId, "terminated");
           break;
+
+        case "session.resumed": {
+          const wasActive = useStore.getState().activeSessionId === msg.oldSessionId;
+          removeSession(msg.oldSessionId);
+          addSession(msg.session);
+          if (wasActive) setActiveSession(msg.session.id);
+          break;
+        }
 
         case "session.list":
           setSessions(msg.sessions);
+          if (msg.sessionNames) {
+            for (const [id, name] of Object.entries(msg.sessionNames)) {
+              setSessionName(id, name);
+            }
+          }
+          if (msg.sessionMessages) {
+            for (const [id, msgs] of Object.entries(msg.sessionMessages)) {
+              for (const m of msgs) {
+                addMessage(id, m);
+              }
+            }
+          }
           break;
 
         case "machines.list":
@@ -284,7 +305,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setActiveSession]
   );
 
   const connect = useCallback(() => {

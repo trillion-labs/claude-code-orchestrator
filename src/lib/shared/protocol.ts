@@ -111,8 +111,15 @@ export type ServerMessage =
       error: string;
     }
   | {
+      type: "session.resumed";
+      oldSessionId: string;
+      session: Session;
+    }
+  | {
       type: "session.list";
       sessions: Session[];
+      sessionNames?: Record<string, string>;
+      sessionMessages?: Record<string, ConversationMessage[]>;
     }
   | {
       type: "machines.list";

@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import { v4 as uuidv4 } from "uuid";
-import { readdir, readFile, stat, writeFile, unlink, copyFile } from "fs/promises";
+import { readdir, readFile, stat, writeFile, unlink, copyFile, mkdir } from "fs/promises";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { ProcessAdapter } from "./adapters/process-adapter";
@@ -38,9 +38,19 @@ interface ManagedSession {
 }
 
 const MAX_RECENT_MESSAGES = 20; // Keep last 10 turns (user + assistant)
+const SESSIONS_DIR = join(homedir(), ".claude-orchestrator", "sessions");
+
+interface PersistedSessionData {
+  version: number;
+  session: Session;
+  messages: ConversationMessage[];
+  firstUserMessage?: string;
+}
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
+  private terminatedSessions = new Map<string, PersistedSessionData>();
+  private sessionSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private sshManager: SSHConnectionManager;
   private pendingPermissions = new Map<string, PermissionResolver>();
   private orchestratorPort: number;
@@ -49,6 +59,60 @@ export class SessionManager extends EventEmitter {
     super();
     this.sshManager = new SSHConnectionManager();
     this.orchestratorPort = orchestratorPort;
+  }
+
+  // ── Session Persistence ──
+
+  async initializePersistence(): Promise<void> {
+    await mkdir(SESSIONS_DIR, { recursive: true });
+    try {
+      const files = await readdir(SESSIONS_DIR);
+      for (const file of files) {
+        if (!file.endsWith(".json")) continue;
+        try {
+          const content = await readFile(join(SESSIONS_DIR, file), "utf-8");
+          const data: PersistedSessionData = JSON.parse(content);
+          data.session.status = "terminated";
+          this.terminatedSessions.set(data.session.id, data);
+        } catch {
+          // Skip corrupted files
+        }
+      }
+      if (this.terminatedSessions.size > 0) {
+        console.log(`[SessionManager] Restored ${this.terminatedSessions.size} session(s) from disk`);
+      }
+    } catch {
+      // Directory doesn't exist yet
+    }
+  }
+
+  private saveSessionDebounced(sessionId: string): void {
+    const existing = this.sessionSaveTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    this.sessionSaveTimers.set(sessionId, setTimeout(() => {
+      this.sessionSaveTimers.delete(sessionId);
+      this.saveSessionNow(sessionId).catch((err) => {
+        console.warn(`[SessionManager] Failed to persist session ${sessionId}:`, err);
+      });
+    }, 500));
+  }
+
+  private async saveSessionNow(sessionId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId);
+    const terminated = this.terminatedSessions.get(sessionId);
+    const source = managed
+      ? { session: managed.session, messages: managed.messages, firstUserMessage: managed.firstUserMessage }
+      : terminated;
+    if (!source) return;
+
+    const data: PersistedSessionData = {
+      version: 1,
+      session: { ...source.session },
+      messages: [...source.messages],
+      firstUserMessage: source.firstUserMessage,
+    };
+    await mkdir(SESSIONS_DIR, { recursive: true });
+    await writeFile(join(SESSIONS_DIR, `${sessionId}.json`), JSON.stringify(data, null, 2));
   }
 
   async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }, projectId?: string, taskId?: string): Promise<Session> {
@@ -269,6 +333,8 @@ export class SessionManager extends EventEmitter {
         } else {
           await this.loadRemoteSessionHistory(managed, machine, resumeSessionId);
         }
+        // Persist loaded history locally for survival across restarts
+        this.saveSessionDebounced(sessionId);
       }
 
       // Emit display name from first user message (for session card title)
@@ -820,6 +886,7 @@ except:
     managed.messages.push(userMsg);
     this.trimMessages(managed);
     this.emit("session:message", sessionId, userMsg);
+    this.saveSessionDebounced(sessionId);
 
     if (managed.isProcessingPrompt) {
       // Queue the prompt
@@ -978,6 +1045,7 @@ except:
           managed.messages.push(assistantMsg);
           this.trimMessages(managed);
           this.emit("session:message", sessionId, assistantMsg);
+          this.saveSessionDebounced(sessionId);
         }
 
         managed.currentAssistantMessage = "";
@@ -985,6 +1053,7 @@ except:
         managed.isProcessingPrompt = false;
         managed.session.status = "idle";
         this.emit("session:status", sessionId, "idle", undefined, managed.session.totalCostUsd);
+        this.saveSessionDebounced(sessionId);
 
         if (managed.promptQueue.length > 0) {
           const nextPrompt = managed.promptQueue.shift()!;
@@ -1389,20 +1458,43 @@ for line in sys.stdin:
       }
     }
 
+    // Persist and move to terminated sessions
+    const timer = this.sessionSaveTimers.get(sessionId);
+    if (timer) { clearTimeout(timer); this.sessionSaveTimers.delete(sessionId); }
+    this.terminatedSessions.set(sessionId, {
+      version: 1,
+      session: { ...managed.session },
+      messages: [...managed.messages],
+      firstUserMessage: managed.firstUserMessage,
+    });
+    this.saveSessionNow(sessionId).catch(() => {});
+
     this.emit("session:status", sessionId, "terminated");
     this.sessions.delete(sessionId);
   }
 
   getSession(sessionId: string): Session | undefined {
-    return this.sessions.get(sessionId)?.session;
+    return this.sessions.get(sessionId)?.session
+      || this.terminatedSessions.get(sessionId)?.session;
   }
 
   getSessionMessages(sessionId: string): ConversationMessage[] {
-    return this.sessions.get(sessionId)?.messages || [];
+    return this.sessions.get(sessionId)?.messages
+      || this.terminatedSessions.get(sessionId)?.messages
+      || [];
+  }
+
+  removeTerminatedSession(sessionId: string): void {
+    this.terminatedSessions.delete(sessionId);
   }
 
   getAllSessions(): Session[] {
-    return Array.from(this.sessions.values()).map((m) => m.session);
+    const live = Array.from(this.sessions.values()).map((m) => m.session);
+    const liveIds = new Set(live.map((s) => s.id));
+    const restored = Array.from(this.terminatedSessions.values())
+      .filter((d) => !liveIds.has(d.session.id))
+      .map((d) => d.session);
+    return [...live, ...restored];
   }
 
   /**
@@ -1421,9 +1513,11 @@ for line in sys.stdin:
    */
   getSessionDisplayName(sessionId: string): string {
     const managed = this.sessions.get(sessionId);
-    if (!managed) return "Imported session";
-    const content = managed.firstUserMessage
-      || managed.messages.find((m) => m.role === "user")?.content;
+    const terminated = this.terminatedSessions.get(sessionId);
+    const firstMsg = managed?.firstUserMessage || terminated?.firstUserMessage;
+    const messages = managed?.messages || terminated?.messages;
+    const content = firstMsg
+      || messages?.find((m) => m.role === "user")?.content;
     if (content) {
       const text = content.replace(/\n/g, " ").trim();
       return text.length > 80 ? text.slice(0, 77) + "..." : text;
@@ -1626,7 +1720,14 @@ done
    */
   async loadMessageHistory(sessionId: string, before: number, limit = 20): Promise<{ messages: ConversationMessage[]; hasMore: boolean }> {
     const managed = this.sessions.get(sessionId);
-    if (!managed) return { messages: [], hasMore: false };
+    if (!managed) {
+      // For terminated sessions, return persisted messages directly
+      const terminated = this.terminatedSessions.get(sessionId);
+      if (!terminated) return { messages: [], hasMore: false };
+      const older = terminated.messages.filter((m) => m.timestamp < before);
+      const hasMore = older.length > limit;
+      return { messages: older.slice(-limit), hasMore };
+    }
 
     const allMessages = await this.parseFullHistory(managed);
     // Filter messages older than `before`
