@@ -37,6 +37,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const { messages, streamingText, sessions } = useStore();
   const tasks = useStore((s) => s.tasks);
   const removeAttention = useStore((s) => s.removeAttention);
+  const setSessionName = useStore((s) => s.setSessionName);
   const removePendingRequest = useStore((s) => s.removePendingRequest);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -163,6 +164,18 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
 
   const handleUpdateTask = (taskId: string, updates: { title?: string; description?: string }) => {
     send({ type: "task.update", projectId: project.id, taskId, updates });
+    // Sync title to linked session
+    if (updates.title) {
+      const projectTasks = tasks.get(project.id) || [];
+      const task = projectTasks.find((t) => t.id === taskId);
+      if (task?.sessionId) {
+        setSessionName(task.sessionId, updates.title);
+      }
+    }
+  };
+
+  const handleEditTitle = (taskId: string, newTitle: string) => {
+    handleUpdateTask(taskId, { title: newTitle });
   };
 
   const handleDeleteTask = (taskId: string) => {
@@ -237,6 +250,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   onTaskClick={(task) => setSelectedTaskId(task.id)}
                   onTaskSubmit={handleSubmitTask}
                   onViewSession={onViewSession}
+                  onEditTitle={handleEditTitle}
                 />
               ))}
 

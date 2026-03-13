@@ -12,14 +12,27 @@ export function useProjectStore() {
     tasks,
     viewMode,
     sessions,
+    projectOrder,
     setActiveProject,
     setViewMode,
+    reorderProjects,
   } = useStore();
 
-  const projectsArray = useMemo(
-    () => Array.from(projects.values()).sort((a, b) => b.updatedAt - a.updatedAt),
-    [projects]
-  );
+  const projectsArray = useMemo(() => {
+    const all = Array.from(projects.values());
+    if (projectOrder.length === 0) {
+      return all.sort((a, b) => b.updatedAt - a.updatedAt);
+    }
+    const orderMap = new Map(projectOrder.map((id, i) => [id, i]));
+    return all.sort((a, b) => {
+      const oa = orderMap.get(a.id);
+      const ob = orderMap.get(b.id);
+      if (oa === undefined && ob === undefined) return b.updatedAt - a.updatedAt;
+      if (oa === undefined) return -1;
+      if (ob === undefined) return -1;
+      return oa - ob;
+    });
+  }, [projects, projectOrder]);
 
   const isAllTasksView = activeProjectId === ALL_TASKS_ID;
 
@@ -82,5 +95,6 @@ export function useProjectStore() {
     getAllTasksByColumn,
     getTaskSession,
     getProjectName,
+    reorderProjects,
   };
 }

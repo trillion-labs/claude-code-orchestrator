@@ -54,6 +54,9 @@ interface SessionState {
   activeProjectId: string | null;
   tasks: Map<string, Task[]>; // projectId → Task[]
   viewMode: "sessions" | "kanban";
+  // Custom ordering for sidebar lists (array of IDs)
+  sessionOrder: string[];
+  projectOrder: string[];
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -126,6 +129,9 @@ interface SessionState {
   removeTask: (projectId: string, taskId: string) => void;
   updateSessionLink: (sessionId: string, projectId: string, taskId: string) => void;
   setViewMode: (mode: "sessions" | "kanban") => void;
+  // Sidebar ordering
+  reorderSessions: (orderedIds: string[]) => void;
+  reorderProjects: (orderedIds: string[]) => void;
 
   // Split panel
   splitSession: (sessionId: string) => void;
@@ -164,6 +170,8 @@ export const useStore = create<SessionState>((set) => ({
   splitPanelWidths: new Map(),
   focusedPanelId: null,
   viewMode: "sessions" as const,
+  sessionOrder: [],
+  projectOrder: [],
 
   setSessions: (sessions) =>
     set(() => {
@@ -665,6 +673,9 @@ export const useStore = create<SessionState>((set) => ({
     }),
 
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  reorderSessions: (orderedIds) => set({ sessionOrder: orderedIds }),
+  reorderProjects: (orderedIds) => set({ projectOrder: orderedIds }),
 
   // ── Split Panel ──
 

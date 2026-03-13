@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { StatusBadge } from "./StatusBadge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useStore } from "@/store";
 import type { Session } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
-import { Monitor, Server, GitBranch, FolderOpen, X, PanelRight } from "lucide-react";
+import { Monitor, Server, GitBranch, FolderOpen, X, PanelRight, GripVertical } from "lucide-react";
 import { TimeAgo } from "./TimeAgo";
 
 interface SessionCardProps {
@@ -33,6 +35,22 @@ export function SessionCard({
   const isLocal = session.machineId === "local";
   const hasAttention = !isActive && attentionCount > 0;
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: session.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : undefined,
+    zIndex: isDragging ? 50 : undefined,
+  };
+
   const projects = useStore((s) => s.projects);
   const linkedProject = session.projectId ? projects.get(session.projectId) : undefined;
   const [projectPopoverOpen, setProjectPopoverOpen] = useState(false);
@@ -58,6 +76,10 @@ export function SessionCard({
     const trimmed = editValue.trim();
     if (trimmed && trimmed !== displayName) {
       onRename(trimmed);
+      // Sync to linked task
+      if (session.projectId && session.taskId) {
+        send({ type: "task.update", projectId: session.projectId, taskId: session.taskId, updates: { title: trimmed } });
+      }
     }
     setIsEditing(false);
   };
@@ -76,7 +98,7 @@ export function SessionCard({
   };
 
   return (
-    <div className="relative">
+    <div ref={setNodeRef} style={style} className="relative">
       {/* Attention pulse dot — outside button to avoid overflow-hidden clipping */}
       {hasAttention && (
         <span className="absolute -top-1 -right-1 flex h-3 w-3 z-10">
@@ -100,6 +122,14 @@ export function SessionCard({
 
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 min-w-0 flex-1">
+          <button
+            className="cursor-grab active:cursor-grabbing p-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors touch-none shrink-0"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="w-3.5 h-3.5" />
+          </button>
           {isLocal ? (
             <Monitor className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           ) : (
@@ -214,4 +244,3 @@ export function SessionCard({
     </div>
   );
 }
-
