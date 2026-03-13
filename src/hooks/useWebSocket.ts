@@ -59,6 +59,7 @@ export function useWebSocket() {
     setGlobalConfig,
     setSessionConfig,
     setPlanContent,
+    setShowUserContent,
     setWorktrees,
     // Projects & Kanban
     setProjects,
@@ -185,6 +186,10 @@ export function useWebSocket() {
           setPlanContent(msg.sessionId, msg.content);
           break;
 
+        case "session.showUser":
+          setShowUserContent(msg.sessionId, msg.title, msg.html);
+          break;
+
         case "session.config.data":
           setSessionConfig(msg.sessionId, msg.settings, msg.claudemd);
           break;
@@ -284,7 +289,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setShowUserContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName]
   );
 
   const connect = useCallback(() => {
