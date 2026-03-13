@@ -33,6 +33,7 @@ interface ManagedSession {
   currentAssistantMessage: string;
   messages: ConversationMessage[];
   firstUserMessage?: string; // Cached for display name
+  explicitDisplayName?: string; // Overrides firstUserMessage (e.g. task title)
   // Whether text was streamed via content_block_delta for the current message
   hasStreamedText: boolean;
 }
@@ -271,9 +272,10 @@ export class SessionManager extends EventEmitter {
         }
       }
 
-      // Emit display name from first user message (for session card title)
-      if (managed.firstUserMessage) {
-        this.emit("session:displayName", sessionId, managed.firstUserMessage);
+      // Emit display name (explicit name takes priority over first user message)
+      const displayName = managed.explicitDisplayName || managed.firstUserMessage;
+      if (displayName) {
+        this.emit("session:displayName", sessionId, displayName);
       }
 
       // Restore plan panel if history contained a plan file Write/Edit
@@ -1416,12 +1418,24 @@ for line in sys.stdin:
   }
 
   /**
-   * Extract a display name from the session's first user message.
-   * Returns the first 80 chars of the first user message, or a fallback.
+   * Set an explicit display name for a session (e.g. from task title).
+   * This overrides the auto-derived name from the first user message.
+   */
+  setSessionDisplayName(sessionId: string, name: string): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return;
+    managed.explicitDisplayName = name;
+    this.emit("session:displayName", sessionId, name);
+  }
+
+  /**
+   * Extract a display name from the session.
+   * Priority: explicitDisplayName > firstUserMessage > first user message in history.
    */
   getSessionDisplayName(sessionId: string): string {
     const managed = this.sessions.get(sessionId);
     if (!managed) return "Imported session";
+    if (managed.explicitDisplayName) return managed.explicitDisplayName;
     const content = managed.firstUserMessage
       || managed.messages.find((m) => m.role === "user")?.content;
     if (content) {

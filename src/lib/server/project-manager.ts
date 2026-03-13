@@ -169,6 +169,9 @@ export class ProjectManager {
       task.id,
     );
 
+    // Set session display name to task title
+    this.sessionManager.setSessionDisplayName(session.id, task.title);
+
     // Move task to in-progress and link session
     await this.store.updateTask(projectId, taskId, {
       column: "in-progress",
@@ -212,6 +215,9 @@ export class ProjectManager {
       project.id,
       task.id,
     );
+
+    // Set session display name to task title
+    this.sessionManager.setSessionDisplayName(session.id, task.title);
 
     // Update the task's sessionId to the new orchestrator session
     await this.store.updateTask(projectId, taskId, {
@@ -308,6 +314,9 @@ export class ProjectManager {
     // Link both sides
     await this.store.updateTask(projectId, taskId, { sessionId });
     this.sessionManager.linkSessionToProject(sessionId, projectId, taskId);
+
+    // Set session display name to task title
+    this.sessionManager.setSessionDisplayName(sessionId, task.title);
 
     const updatedTask = this.store.getTask(projectId, taskId)!;
     return { task: updatedTask, session: this.sessionManager.getSession(sessionId)! };
