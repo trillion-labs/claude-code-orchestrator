@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X, ExternalLink, Play, Pencil, Check, Link, Unplug, RotateCcw, Trash2 } from "lucide-react";
+import { X, ExternalLink, Play, Pencil, Check, CheckCircle2, Link, Unplug, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,6 +30,7 @@ interface TaskDetailProps {
   onClose: () => void;
   onUpdate: (updates: { title?: string; description?: string }) => void;
   onSubmit: () => void;
+  onDone: () => void;
   onLinkSession: (sessionId: string) => void;
   onResume: () => void;
   onViewSession: () => void;
@@ -47,6 +48,7 @@ export function TaskDetail({
   onClose,
   onUpdate,
   onSubmit,
+  onDone,
   onLinkSession,
   onResume,
   onViewSession,
@@ -170,6 +172,16 @@ export function TaskDetail({
                 </span>
                 <div className="ml-auto flex items-center gap-1.5">
                   <DeleteTaskButton onDelete={onDelete} taskTitle={task.title} />
+                  {task.column === "in-review" && (
+                    <Button
+                      size="sm"
+                      className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={onDone}
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      Mark Done
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"

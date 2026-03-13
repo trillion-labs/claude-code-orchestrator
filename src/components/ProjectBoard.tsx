@@ -236,6 +236,11 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     handleCloseTaskTab(taskId);
   };
 
+  const handleDoneTask = (task: Task) => {
+    const doneTasks = getTasksByColumn(project.id, "done");
+    send({ type: "task.move", projectId: project.id, taskId: task.id, column: "done", order: doneTasks.length });
+  };
+
   const handleResumeTask = (task: Task) => {
     send({ type: "task.resume", projectId: project.id, taskId: task.id });
   };
@@ -328,6 +333,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   getSession={getTaskSession}
                   onTaskClick={(task) => handleOpenTask(task.id)}
                   onTaskSubmit={handleSubmitTask}
+                  onTaskDone={handleDoneTask}
                   onViewSession={onViewSession}
                   onEditTitle={handleEditTitle}
                 />
@@ -367,6 +373,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                 onUpdate={(updates) => handleUpdateTask(task.id, updates)}
                 onDelete={() => handleDeleteTask(task.id)}
                 onSubmit={() => handleSubmitTask(task)}
+                onDone={() => handleDoneTask(task)}
                 onLinkSession={(sessionId) => handleLinkSession(task.id, sessionId)}
                 onResume={() => handleResumeTask(task)}
                 onViewSession={onViewSession.bind(null, task.sessionId!)}
