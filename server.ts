@@ -29,6 +29,12 @@ async function main() {
       return;
     }
 
+    // Handle show_user requests from the MCP server (fire-and-forget)
+    if (parsedUrl.pathname === "/api/show-user" && req.method === "POST") {
+      await wsHandler.handleShowUserHTTP(req, res);
+      return;
+    }
+
     handle(req, res, parsedUrl);
   });
 

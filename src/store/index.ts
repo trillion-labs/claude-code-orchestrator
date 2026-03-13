@@ -47,6 +47,9 @@ interface SessionState {
   // File preview panel
   filePreview: Map<string, { filePath: string; content: string; language: string; truncated: boolean; loading: boolean; error?: string }>;
   filePreviewOpen: Map<string, boolean>;
+  // Show user panel (visual content from Claude)
+  showUserContent: Map<string, { title: string; html: string }>;
+  showUserPanelOpen: Map<string, boolean>;
   // Existing worktrees per machine (from worktrees.list)
   worktrees: Map<string, Array<{ name: string; path: string; branch: string }>>
   // Projects & Kanban
@@ -54,6 +57,9 @@ interface SessionState {
   activeProjectId: string | null;
   tasks: Map<string, Task[]>; // projectId → Task[]
   viewMode: "sessions" | "kanban";
+  // Custom ordering for sidebar lists (array of IDs)
+  sessionOrder: string[];
+  projectOrder: string[];
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -112,6 +118,10 @@ interface SessionState {
   setFilePreviewError: (sessionId: string, error: string) => void;
   setFilePreviewOpen: (sessionId: string, open: boolean) => void;
   clearFilePreview: (sessionId: string) => void;
+  // Show user panel
+  setShowUserContent: (sessionId: string, title: string, html: string) => void;
+  setShowUserPanelOpen: (sessionId: string, open: boolean) => void;
+  clearShowUserContent: (sessionId: string) => void;
   // Worktrees
   setWorktrees: (machineId: string, worktrees: Array<{ name: string; path: string; branch: string }>) => void;
   // Projects & Kanban
@@ -126,6 +136,9 @@ interface SessionState {
   removeTask: (projectId: string, taskId: string) => void;
   updateSessionLink: (sessionId: string, projectId: string, taskId: string) => void;
   setViewMode: (mode: "sessions" | "kanban") => void;
+  // Sidebar ordering
+  reorderSessions: (orderedIds: string[]) => void;
+  reorderProjects: (orderedIds: string[]) => void;
 
   // Split panel
   splitSession: (sessionId: string) => void;
@@ -156,6 +169,8 @@ export const useStore = create<SessionState>((set) => ({
   planPanelOpen: new Map(),
   filePreview: new Map(),
   filePreviewOpen: new Map(),
+  showUserContent: new Map(),
+  showUserPanelOpen: new Map(),
   worktrees: new Map(),
   projects: new Map(),
   activeProjectId: null,
@@ -164,6 +179,8 @@ export const useStore = create<SessionState>((set) => ({
   splitPanelWidths: new Map(),
   focusedPanelId: null,
   viewMode: "sessions" as const,
+  sessionOrder: [],
+  projectOrder: [],
 
   setSessions: (sessions) =>
     set(() => {
@@ -249,6 +266,10 @@ export const useStore = create<SessionState>((set) => ({
       filePreview.delete(sessionId);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.delete(sessionId);
+      const showUserContent = new Map(state.showUserContent);
+      showUserContent.delete(sessionId);
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.delete(sessionId);
       // Clean up split panels referencing this session
       let splitPanels = state.splitPanels.filter((p) => p.sessionId !== sessionId);
       const splitPanelWidths = new Map(state.splitPanelWidths);
@@ -265,7 +286,7 @@ export const useStore = create<SessionState>((set) => ({
         return {
           sessions, messages, hasMoreMessages, loadingHistory, streamingText,
           pendingAttention, pendingRequests, sessionNames, sessionConfig,
-          planContent, planPanelOpen, filePreview, filePreviewOpen,
+          planContent, planPanelOpen, filePreview, filePreviewOpen, showUserContent, showUserPanelOpen,
           splitPanels, splitPanelWidths, focusedPanelId,
           activeSessionId: state.activeSessionId === sessionId
             ? remainingSessionId
@@ -500,10 +521,12 @@ export const useStore = create<SessionState>((set) => ({
       planContent.set(sessionId, content);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, true); // Auto-open panel when plan content arrives
-      // Mutual exclusion: close file preview
+      // Mutual exclusion: close file preview and show-user panel
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, false);
-      return { planContent, planPanelOpen, filePreviewOpen };
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.set(sessionId, false);
+      return { planContent, planPanelOpen, filePreviewOpen, showUserPanelOpen };
     }),
 
   setPlanPanelOpen: (sessionId, open) =>
@@ -528,10 +551,12 @@ export const useStore = create<SessionState>((set) => ({
       filePreview.set(sessionId, { ...data, loading: false });
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, true);
-      // Mutual exclusion: close plan panel
+      // Mutual exclusion: close plan panel and show-user panel
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, false);
-      return { filePreview, filePreviewOpen, planPanelOpen };
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.set(sessionId, false);
+      return { filePreview, filePreviewOpen, planPanelOpen, showUserPanelOpen };
     }),
 
   setFilePreviewLoading: (sessionId, filePath) =>
@@ -540,10 +565,12 @@ export const useStore = create<SessionState>((set) => ({
       filePreview.set(sessionId, { filePath, content: "", language: "text", truncated: false, loading: true });
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, true);
-      // Mutual exclusion: close plan panel
+      // Mutual exclusion: close plan panel and show-user panel
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, false);
-      return { filePreview, filePreviewOpen, planPanelOpen };
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.set(sessionId, false);
+      return { filePreview, filePreviewOpen, planPanelOpen, showUserPanelOpen };
     }),
 
   setFilePreviewError: (sessionId, error) =>
@@ -570,6 +597,36 @@ export const useStore = create<SessionState>((set) => ({
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.delete(sessionId);
       return { filePreview, filePreviewOpen };
+    }),
+
+  setShowUserContent: (sessionId, title, html) =>
+    set((state) => {
+      const showUserContent = new Map(state.showUserContent);
+      showUserContent.set(sessionId, { title, html });
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.set(sessionId, true); // Auto-open panel
+      // Mutual exclusion: close plan and file preview panels
+      const planPanelOpen = new Map(state.planPanelOpen);
+      planPanelOpen.set(sessionId, false);
+      const filePreviewOpen = new Map(state.filePreviewOpen);
+      filePreviewOpen.set(sessionId, false);
+      return { showUserContent, showUserPanelOpen, planPanelOpen, filePreviewOpen };
+    }),
+
+  setShowUserPanelOpen: (sessionId, open) =>
+    set((state) => {
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.set(sessionId, open);
+      return { showUserPanelOpen };
+    }),
+
+  clearShowUserContent: (sessionId) =>
+    set((state) => {
+      const showUserContent = new Map(state.showUserContent);
+      showUserContent.delete(sessionId);
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.delete(sessionId);
+      return { showUserContent, showUserPanelOpen };
     }),
 
   setWorktrees: (machineId, worktrees) =>
@@ -665,6 +722,9 @@ export const useStore = create<SessionState>((set) => ({
     }),
 
   setViewMode: (mode) => set({ viewMode: mode }),
+
+  reorderSessions: (orderedIds) => set({ sessionOrder: orderedIds }),
+  reorderProjects: (orderedIds) => set({ projectOrder: orderedIds }),
 
   // ── Split Panel ──
 

@@ -35,6 +35,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
   const { projects, getAllTasksByColumn, getTaskSession, getProjectName } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
   const tasks = useStore((s) => s.tasks);
+  const setSessionName = useStore((s) => s.setSessionName);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -152,7 +153,15 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
     const task = findTask(taskId);
     if (task) {
       send({ type: "task.update", projectId: task.projectId, taskId, updates });
+      // Sync title to linked session
+      if (updates.title && task.sessionId) {
+        setSessionName(task.sessionId, updates.title);
+      }
     }
+  };
+
+  const handleEditTitle = (taskId: string, newTitle: string) => {
+    handleUpdateTask(taskId, { title: newTitle });
   };
 
   const handleDeleteTask = (task: Task) => {
@@ -265,6 +274,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                   onTaskClick={(task) => setSelectedTaskId(task.id)}
                   onTaskSubmit={handleSubmitTask}
                   onViewSession={onViewSession}
+                  onEditTitle={handleEditTitle}
                   getProjectName={getProjectName}
                 />
               ))}

@@ -33,6 +33,7 @@ interface ManagedSession {
   currentAssistantMessage: string;
   messages: ConversationMessage[];
   firstUserMessage?: string; // Cached for display name
+  explicitDisplayName?: string; // Overrides firstUserMessage (e.g. task title)
   // Whether text was streamed via content_block_delta for the current message
   hasStreamedText: boolean;
 }
@@ -271,9 +272,10 @@ export class SessionManager extends EventEmitter {
         }
       }
 
-      // Emit display name from first user message (for session card title)
-      if (managed.firstUserMessage) {
-        this.emit("session:displayName", sessionId, managed.firstUserMessage);
+      // Emit display name (explicit name takes priority over first user message)
+      const displayName = managed.explicitDisplayName || managed.firstUserMessage;
+      if (displayName) {
+        this.emit("session:displayName", sessionId, displayName);
       }
 
       // Restore plan panel if history contained a plan file Write/Edit
@@ -1121,45 +1123,85 @@ for line in sys.stdin:
     elif method == "notifications/initialized":
         pass
     elif method == "tools/list":
-        send({"jsonrpc": "2.0", "id": mid, "result": {"tools": [{
-            "name": "check_permission",
-            "description": "Check if a tool use is allowed",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tool_name": {"type": "string"},
-                    "input": {"type": "object"}
-                },
-                "required": ["tool_name", "input"]
+        send({"jsonrpc": "2.0", "id": mid, "result": {"tools": [
+            {
+                "name": "check_permission",
+                "description": "Check if a tool use is allowed",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {"type": "string"},
+                        "input": {"type": "object"}
+                    },
+                    "required": ["tool_name", "input"]
+                }
+            },
+            {
+                "name": "show_user",
+                "description": "Show visual HTML content to the user in a side panel next to the chat. Use this proactively whenever your response would benefit from visual presentation — especially when the user asks you to explain, show, visualize, or demonstrate something. Great for: charts and data visualizations (use Chart.js, D3.js, Mermaid via CDN), interactive UI mockups or previews, visual explanations of concepts or architecture, formatted tables, timelines, diagrams, or any rich content beyond plain text. The html parameter must be a complete, self-contained HTML document (inline style and script tags are supported). External CDN libraries can be loaded via script src. Note: Content renders in a sandboxed iframe without same-origin access, so localStorage, cookies, and fetch to parent origin are unavailable. This is fire-and-forget.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Title shown in the panel header"},
+                        "html": {"type": "string", "description": "Complete, self-contained HTML document with inline style/script. CDN libraries can be loaded via script src."}
+                    },
+                    "required": ["html"]
+                }
             }
-        }]}})
+        ]}})
     elif method == "tools/call":
         args = msg.get("params", {}).get("arguments", {})
-        tool_name = args.get("tool_name", "unknown")
-        tool_input = args.get("input", {})
-        try:
-            data = json.dumps({
-                "sessionId": SESSION_ID,
-                "toolName": tool_name,
-                "input": tool_input
-            }).encode()
-            req = urllib.request.Request(
-                ORCHESTRATOR_URL + "/api/permission",
-                data=data,
-                headers={"Content-Type": "application/json"},
-                method="POST"
-            )
-            resp = urllib.request.urlopen(req, timeout=300)
-            result = json.loads(resp.read())
-            send({"jsonrpc": "2.0", "id": mid, "result": {
-                "content": [{"type": "text", "text": json.dumps(result)}]
-            }})
-        except Exception as e:
-            send({"jsonrpc": "2.0", "id": mid, "result": {
-                "content": [{"type": "text", "text": json.dumps({
-                    "behavior": "deny", "message": str(e)
-                })}]
-            }})
+        name = msg.get("params", {}).get("name", "")
+        if name == "show_user":
+            title = args.get("title", "Preview")
+            html = args.get("html", "")
+            try:
+                data = json.dumps({
+                    "sessionId": SESSION_ID,
+                    "title": title,
+                    "html": html
+                }).encode()
+                req = urllib.request.Request(
+                    ORCHESTRATOR_URL + "/api/show-user",
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                urllib.request.urlopen(req, timeout=30)
+                send({"jsonrpc": "2.0", "id": mid, "result": {
+                    "content": [{"type": "text", "text": "Content displayed to user in side panel."}]
+                }})
+            except Exception as e:
+                send({"jsonrpc": "2.0", "id": mid, "result": {
+                    "content": [{"type": "text", "text": "Failed to show content: " + str(e)}],
+                    "isError": True
+                }})
+        else:
+            tool_name = args.get("tool_name", "unknown")
+            tool_input = args.get("input", {})
+            try:
+                data = json.dumps({
+                    "sessionId": SESSION_ID,
+                    "toolName": tool_name,
+                    "input": tool_input
+                }).encode()
+                req = urllib.request.Request(
+                    ORCHESTRATOR_URL + "/api/permission",
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                resp = urllib.request.urlopen(req, timeout=300)
+                result = json.loads(resp.read())
+                send({"jsonrpc": "2.0", "id": mid, "result": {
+                    "content": [{"type": "text", "text": json.dumps(result)}]
+                }})
+            except Exception as e:
+                send({"jsonrpc": "2.0", "id": mid, "result": {
+                    "content": [{"type": "text", "text": json.dumps({
+                        "behavior": "deny", "message": str(e)
+                    })}]
+                }})
 `;
 
     // Step 1: Set up reverse port forward
@@ -1185,6 +1227,27 @@ for line in sys.stdin:
 
     console.log(`[Session ${sessionId}] Remote MCP permission: port ${remotePort}, script ${scriptPath}`);
     return configPath;
+  }
+
+  /**
+   * Called by the HTTP endpoint when the MCP show_user tool is invoked.
+   * Fire-and-forget: injects a tool block into the stream and emits an event.
+   */
+  handleShowUser(sessionId: string, title: string, html: string): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return;
+
+    // Inject a show-user tool card into the stream
+    const block = `\n\`\`\`tool-show-user\n${JSON.stringify({ title })}\n\`\`\`\n`;
+    if (managed.currentAssistantMessage && !managed.currentAssistantMessage.endsWith("\n\n")) {
+      managed.currentAssistantMessage += "\n\n";
+      this.emit("session:stream", sessionId, "\n\n");
+    }
+    managed.currentAssistantMessage += block;
+    this.emit("session:stream", sessionId, block);
+
+    // Broadcast to clients
+    this.emit("session:showUser", sessionId, title, html);
   }
 
   /**
@@ -1416,12 +1479,24 @@ for line in sys.stdin:
   }
 
   /**
-   * Extract a display name from the session's first user message.
-   * Returns the first 80 chars of the first user message, or a fallback.
+   * Set an explicit display name for a session (e.g. from task title).
+   * This overrides the auto-derived name from the first user message.
+   */
+  setSessionDisplayName(sessionId: string, name: string): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return;
+    managed.explicitDisplayName = name;
+    this.emit("session:displayName", sessionId, name);
+  }
+
+  /**
+   * Extract a display name from the session.
+   * Priority: explicitDisplayName > firstUserMessage > first user message in history.
    */
   getSessionDisplayName(sessionId: string): string {
     const managed = this.sessions.get(sessionId);
     if (!managed) return "Imported session";
+    if (managed.explicitDisplayName) return managed.explicitDisplayName;
     const content = managed.firstUserMessage
       || managed.messages.find((m) => m.role === "user")?.content;
     if (content) {

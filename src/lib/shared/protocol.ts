@@ -225,5 +225,7 @@ export type ServerMessage =
   | { type: "session.projectChanged"; sessionId: string; projectId: string | null }
   // ── Display name ──
   | { type: "session.displayName"; sessionId: string; name: string }
+  // ── Show user (visual content panel) ──
+  | { type: "session.showUser"; sessionId: string; title: string; html: string }
   // ── Message history pagination ──
   | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean };

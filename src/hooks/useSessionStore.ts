@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useStore } from "@/store";
 import type { Session, ConversationMessage } from "@/lib/shared/types";
 
@@ -15,15 +15,30 @@ export function useSessionStore() {
     pendingAttention,
     sessionNames,
     worktrees,
+    sessionOrder,
     setActiveSession,
     setSessionName,
     removeAttention,
     clearAttention,
+    reorderSessions,
   } = useStore();
 
-  const sessionsArray = Array.from(sessions.values()).sort(
-    (a, b) => b.createdAt - a.createdAt
-  );
+  const sessionsArray = useMemo(() => {
+    const all = Array.from(sessions.values());
+    if (sessionOrder.length === 0) {
+      return all.sort((a, b) => b.createdAt - a.createdAt);
+    }
+    const orderMap = new Map(sessionOrder.map((id, i) => [id, i]));
+    return all.sort((a, b) => {
+      const oa = orderMap.get(a.id);
+      const ob = orderMap.get(b.id);
+      // New sessions not in order go to the front
+      if (oa === undefined && ob === undefined) return b.createdAt - a.createdAt;
+      if (oa === undefined) return -1;
+      if (ob === undefined) return -1;
+      return oa - ob;
+    });
+  }, [sessions, sessionOrder]);
 
   const activeSession: Session | undefined = activeSessionId
     ? sessions.get(activeSessionId)
@@ -74,5 +89,6 @@ export function useSessionStore() {
     removeAttention,
     clearAttention,
     getSessionDisplayName,
+    reorderSessions,
   };
 }
