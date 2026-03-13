@@ -39,6 +39,7 @@ import {
   ClipboardList,
   Play,
   RotateCcw,
+  AppWindow,
 } from "lucide-react";
 import { useStore } from "@/store";
 
@@ -864,9 +865,30 @@ function ToolBlock({ toolType, data }: { toolType: string; data: unknown }) {
     }
     case "permission-denied":
       return <PermissionDeniedCard data={data as { tool?: string; error?: string }} />;
+    case "show-user":
+      return <ShowUserCard data={data as { title?: string }} />;
     default:
       return <GenericToolCard data={data as { name?: string }} />;
   }
+}
+
+function ShowUserCard({ data }: { data: { title?: string } }) {
+  const sessionId = useContext(SessionIdContext);
+  const showUserPanelOpen = useStore((s) => sessionId ? s.showUserPanelOpen.get(sessionId) ?? false : false);
+  const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
+
+  return (
+    <button
+      onClick={() => sessionId && setShowUserPanelOpen(sessionId, !showUserPanelOpen)}
+      className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-teal-500/20 bg-teal-500/[0.04] hover:bg-teal-500/[0.08] hover:border-teal-500/30 transition-colors cursor-pointer w-full text-left"
+    >
+      <AppWindow className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
+      <span className="text-xs text-teal-300 font-medium">Visual Content</span>
+      <span className="text-xs text-gray-400 truncate">
+        {data.title || "Preview"}
+      </span>
+    </button>
+  );
 }
 
 // ── Copy Button ──
@@ -1012,6 +1034,7 @@ interface StreamOutputProps {
   messages: ConversationMessage[];
   streamingText: string;
   sessionId?: string;
+  isBusy?: boolean;
   hasMoreMessages?: boolean;
   loadingHistory?: boolean;
   onLoadHistory?: () => void;
@@ -1024,6 +1047,7 @@ export function StreamOutput({
   messages,
   streamingText,
   sessionId,
+  isBusy,
   hasMoreMessages,
   loadingHistory,
   onLoadHistory,
@@ -1130,6 +1154,19 @@ export function StreamOutput({
                 <MessageBubble message={msg} />
               </ToolInteractiveContext.Provider>
             ))}
+
+            {isBusy && !streamingText && (
+              <div className="flex gap-4 py-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-violet-500/15 flex items-center justify-center mt-0.5">
+                  <Bot className="w-4 h-4 text-violet-400" />
+                </div>
+                <div className="flex items-center gap-1.5 pt-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.3s]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.15s]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-bounce" />
+                </div>
+              </div>
+            )}
 
             {streamingText && (
               <ToolInteractiveContext.Provider value={true}>

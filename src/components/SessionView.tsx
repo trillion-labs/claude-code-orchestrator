@@ -8,12 +8,13 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2 } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2, AppWindow } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
 import { PlanPanel } from "./PlanPanel";
 import { FilePreviewPanel } from "./FilePreviewPanel";
+import { ShowUserPanel } from "./ShowUserPanel";
 import { useStore } from "@/store";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import type { FileReadResult } from "@/hooks/useWebSocket";
@@ -63,6 +64,10 @@ export function SessionView({
     const oldestTimestamp = messages[0].timestamp;
     send({ type: "session.history", sessionId: session.id, before: oldestTimestamp, limit: 20 });
   }, [loadingHistory, hasMoreMessages, messages, session.id, setLoadingHistory, send]);
+
+  const showUserContent = useStore((s) => s.showUserContent.get(session.id));
+  const showUserPanelOpen = useStore((s) => s.showUserPanelOpen.get(session.id) ?? false);
+  const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
 
   const filePreview = useStore((s) => s.filePreview.get(session.id));
   const filePreviewOpen = useStore((s) => s.filePreviewOpen.get(session.id) ?? false);
@@ -192,6 +197,17 @@ export function SessionView({
               Total: ${session.totalCostUsd.toFixed(4)}
             </span>
           )}
+          {showUserContent && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowUserPanelOpen(session.id, !showUserPanelOpen)}
+              className={`h-8 w-8 transition-colors ${showUserPanelOpen ? "text-teal-400 hover:text-teal-300" : "text-muted-foreground hover:text-foreground"}`}
+              title="Show user content"
+            >
+              <AppWindow className="w-4 h-4" />
+            </Button>
+          )}
           {filePreview && !filePreview.loading && (
             <Button
               variant="ghost"
@@ -268,6 +284,7 @@ export function SessionView({
               messages={messages}
               streamingText={streamingText}
               sessionId={session.id}
+              isBusy={isBusy}
               hasMoreMessages={hasMoreMessages}
               loadingHistory={loadingHistory}
               onLoadHistory={handleLoadHistory}
@@ -290,6 +307,15 @@ export function SessionView({
           <PlanPanel
             content={planContent}
             onClose={() => setPlanPanelOpen(session.id, false)}
+          />
+        )}
+
+        {/* Show user panel */}
+        {showUserContent && showUserPanelOpen && (
+          <ShowUserPanel
+            title={showUserContent.title}
+            html={showUserContent.html}
+            onClose={() => setShowUserPanelOpen(session.id, false)}
           />
         )}
 

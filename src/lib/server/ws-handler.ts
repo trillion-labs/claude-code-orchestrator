@@ -142,6 +142,40 @@ export class WebSocketHandler {
     }
   }
 
+  /**
+   * HTTP handler for /api/show-user — called by the MCP server.
+   * Fire-and-forget: returns immediately after broadcasting content.
+   */
+  async handleShowUserHTTP(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(chunk as Buffer);
+    }
+
+    let body: { sessionId?: string; title?: string; html?: string };
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString());
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      return;
+    }
+
+    const { sessionId, title, html } = body;
+    if (!sessionId || !html) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Missing sessionId or html" }));
+      return;
+    }
+
+    console.log(`[ShowUser] Content for session ${sessionId}: "${title || "Preview"}"`);
+
+    this.sessionManager.handleShowUser(sessionId, title || "Preview", html);
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  }
+
   private async handleMessage(ws: WebSocket, msg: ClientMessage) {
     switch (msg.type) {
       case "session.create": {
@@ -671,6 +705,10 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:displayName", (sessionId: string, name: string) => {
       this.broadcast({ type: "session.displayName", sessionId, name });
+    });
+
+    this.sessionManager.on("session:showUser", (sessionId: string, title: string, html: string) => {
+      this.broadcast({ type: "session.showUser", sessionId, title, html });
     });
   }
 
