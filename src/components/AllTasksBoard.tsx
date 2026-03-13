@@ -145,6 +145,9 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
   const handleDoneTask = (task: Task) => {
     const doneTasks = getAllTasksByColumn("done", excludedProjects);
     send({ type: "task.move", projectId: task.projectId, taskId: task.id, column: "done", order: doneTasks.length });
+    if (task.sessionId) {
+      send({ type: "session.terminate", sessionId: task.sessionId });
+    }
   };
 
   const handleLinkSession = (taskId: string, sessionId: string) => {

@@ -239,6 +239,9 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const handleDoneTask = (task: Task) => {
     const doneTasks = getTasksByColumn(project.id, "done");
     send({ type: "task.move", projectId: project.id, taskId: task.id, column: "done", order: doneTasks.length });
+    if (task.sessionId) {
+      send({ type: "session.terminate", sessionId: task.sessionId });
+    }
   };
 
   const handleResumeTask = (task: Task) => {
