@@ -55,6 +55,15 @@ function injectCaptureScript(html: string): string {
   return html + CAPTURE_SCRIPT;
 }
 
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(",");
+  const mime = header.match(/:(.*?);/)?.[1] || "image/png";
+  const binary = atob(base64);
+  const array = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) array[i] = binary.charCodeAt(i);
+  return new Blob([array], { type: mime });
+}
+
 interface ShowUserPanelProps {
   title: string;
   html: string;
@@ -165,11 +174,10 @@ export function ShowUserPanel({ title, html, onClose }: ShowUserPanelProps) {
   const handleCopy = useCallback(async () => {
     setCopyState("capturing");
     try {
-      const dataUrl = await requestCapture();
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
+      // Pass Promise<Blob> directly to ClipboardItem to preserve user activation
+      const blobPromise = requestCapture().then((dataUrl) => dataUrlToBlob(dataUrl));
       await navigator.clipboard.write([
-        new ClipboardItem({ "image/png": blob }),
+        new ClipboardItem({ "image/png": blobPromise }),
       ]);
       setCopyState("copied");
       setTimeout(() => setCopyState("idle"), 2000);
@@ -183,12 +191,40 @@ export function ShowUserPanel({ title, html, onClose }: ShowUserPanelProps) {
     setDownloadState("capturing");
     try {
       const dataUrl = await requestCapture();
+      const blob = dataUrlToBlob(dataUrl);
+      const filename = `${title.replace(/[^a-zA-Z0-9-_ ]/g, "").trim() || "export"}.png`;
+
+      // Try File System Access API (lets user pick save location)
+      if ("showSaveFilePicker" in window) {
+        try {
+          const handle = await (window as unknown as { showSaveFilePicker: (opts: Record<string, unknown>) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+            suggestedName: filename,
+            types: [{ description: "PNG Image", accept: { "image/png": [".png"] } }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setDownloadState("copied");
+          setTimeout(() => setDownloadState("idle"), 2000);
+          return;
+        } catch (e) {
+          // User cancelled picker — not an error
+          if (e instanceof DOMException && e.name === "AbortError") {
+            setDownloadState("idle");
+            return;
+          }
+          // Fallback to anchor download
+        }
+      }
+
+      // Fallback: anchor download (goes to browser's default Downloads folder)
       const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = `${title.replace(/[^a-zA-Z0-9-_ ]/g, "").trim() || "export"}.png`;
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
       setDownloadState("copied");
       setTimeout(() => setDownloadState("idle"), 2000);
     } catch {
