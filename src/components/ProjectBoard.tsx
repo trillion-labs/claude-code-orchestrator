@@ -24,7 +24,7 @@ import { KANBAN_COLUMNS } from "@/lib/shared/types";
 import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Button } from "@/components/ui/button";
-import { Server, FolderOpen, Link, GripVertical } from "lucide-react";
+import { Server, FolderOpen, Link, GripVertical, Wand2 } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
@@ -39,6 +39,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const removeAttention = useStore((s) => s.removeAttention);
   const setSessionName = useStore((s) => s.setSessionName);
   const removePendingRequest = useStore((s) => s.removePendingRequest);
+  const orchestratorSessionId = useStore((s) => s.orchestratorSessions.get(project.id));
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailWidth, setDetailWidth] = useState(780);
@@ -154,6 +155,16 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.importSession", projectId: project.id, sessionId });
   };
 
+  const handleManagerClick = () => {
+    if (orchestratorSessionId) {
+      // Focus existing orchestrator session
+      onViewSession(orchestratorSessionId);
+    } else {
+      // Create new orchestrator session
+      send({ type: "orchestrator.create", projectId: project.id });
+    }
+  };
+
   const handleSubmitTask = (task: Task) => {
     send({ type: "task.submit", projectId: project.id, taskId: task.id });
   };
@@ -215,6 +226,15 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
           </span>
         </div>
         <div className="flex-shrink-0 flex items-center gap-1.5">
+          <Button
+            variant={orchestratorSessionId ? "default" : "outline"}
+            size="sm"
+            className="gap-1.5"
+            onClick={handleManagerClick}
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            Manager
+          </Button>
           <SessionPickerDialog
             title="Import Session as Task"
             onSelectSession={handleImportSession}

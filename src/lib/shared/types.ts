@@ -87,6 +87,7 @@ export interface Project {
   machineId: string;
   workDir: string;
   permissionMode: PermissionMode;
+  orchestratorSessionId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -119,6 +120,7 @@ export interface Session {
   worktree?: WorktreeInfo;
   projectId?: string;
   taskId?: string;
+  isOrchestrator?: boolean;
 }
 
 // ── Claude Stream JSON Types ──
