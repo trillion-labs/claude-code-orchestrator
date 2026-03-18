@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { AppWindow, X, GripVertical, Copy, Download, Check, Loader2, Rows2 } from "lucide-react";
+import { AppWindow, X, GripVertical, Copy, Download, Check, Loader2 } from "lucide-react";
 import html2canvas from "html2canvas";
 import type { ShowUserTab } from "@/store";
 
@@ -31,7 +31,6 @@ interface ShowUserPanelProps {
   onSetActiveTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onClose: () => void;
-  onMerge?: () => void;
 }
 
 export function ShowUserPanel({
@@ -41,7 +40,6 @@ export function ShowUserPanel({
   onSetActiveTab,
   onCloseTab,
   onClose,
-  onMerge,
 }: ShowUserPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -230,15 +228,6 @@ export function ShowUserPanel({
           >
             {downloadIcon}
           </button>
-          {onMerge && (
-            <button
-              onClick={onMerge}
-              className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-              title="Merge into unified panel"
-            >
-              <Rows2 className="w-3.5 h-3.5" />
-            </button>
-          )}
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"

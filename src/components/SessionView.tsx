@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
 import { PromptInput } from "./PromptInput";
@@ -8,7 +8,7 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2, AppWindow, Rows2 } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2, AppWindow, Rows2, Columns2 } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
@@ -63,8 +63,9 @@ export function SessionView({
   const setLoadingHistory = useStore((s) => s.setLoadingHistory);
 
   // File preview tabs
-  const filePreviewTabs = useStore((s) => s.filePreviewTabs.get(session.id) || []);
-  const activeFilePreviewTabId = useStore((s) => s.activeFilePreviewTabId.get(session.id) || "");
+  const filePreviewTabsRaw = useStore((s) => s.filePreviewTabs.get(session.id));
+  const filePreviewTabs = useMemo(() => filePreviewTabsRaw ?? [], [filePreviewTabsRaw]);
+  const activeFilePreviewTabId = useStore((s) => s.activeFilePreviewTabId.get(session.id) ?? "");
   const filePreviewOpen = useStore((s) => s.filePreviewOpen.get(session.id) ?? false);
   const setFilePreviewOpen = useStore((s) => s.setFilePreviewOpen);
   const setFilePreviewLoading = useStore((s) => s.setFilePreviewLoading);
@@ -74,8 +75,9 @@ export function SessionView({
   const setActiveFilePreviewTab = useStore((s) => s.setActiveFilePreviewTab);
 
   // Show user tabs
-  const showUserTabs = useStore((s) => s.showUserTabs.get(session.id) || []);
-  const activeShowUserTabId = useStore((s) => s.activeShowUserTabId.get(session.id) || "");
+  const showUserTabsRaw = useStore((s) => s.showUserTabs.get(session.id));
+  const showUserTabs = useMemo(() => showUserTabsRaw ?? [], [showUserTabsRaw]);
+  const activeShowUserTabId = useStore((s) => s.activeShowUserTabId.get(session.id) ?? "");
   const showUserPanelOpen = useStore((s) => s.showUserPanelOpen.get(session.id) ?? false);
   const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
   const closeShowUserTab = useStore((s) => s.closeShowUserTab);
@@ -264,15 +266,15 @@ export function SessionView({
               <ClipboardList className="w-4 h-4" />
             </Button>
           )}
-          {hasAnySidePanelContent && !sidePanelMerged && (
+          {hasAnySidePanelContent && (
             <Button
               variant="ghost"
               size="icon"
-              onClick={handleMerge}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              title="Merge side panels"
+              onClick={() => setSidePanelMerged(session.id, !sidePanelMerged)}
+              className={`h-8 w-8 transition-colors ${sidePanelMerged ? "text-violet-400 hover:text-violet-300" : "text-muted-foreground hover:text-foreground"}`}
+              title={sidePanelMerged ? "Split side panels" : "Merge side panels"}
             >
-              <Rows2 className="w-4 h-4" />
+              {sidePanelMerged ? <Columns2 className="w-4 h-4" /> : <Rows2 className="w-4 h-4" />}
             </Button>
           )}
           {onSplitRight && (
@@ -350,10 +352,7 @@ export function SessionView({
         {/* Side panels */}
         {sidePanelMerged && hasAnyPanelOpen ? (
           /* Merged mode: single unified panel with tabs */
-          <SidePanel
-            sessionId={session.id}
-            onClose={handleCloseAllPanels}
-          />
+          <SidePanel sessionId={session.id} />
         ) : (
           /* Split mode: individual panels (mutual exclusion) */
           <>
@@ -372,7 +371,6 @@ export function SessionView({
                 onSetActiveTab={(tabId) => setActiveShowUserTab(session.id, tabId)}
                 onCloseTab={(tabId) => closeShowUserTab(session.id, tabId)}
                 onClose={() => setShowUserPanelOpen(session.id, false)}
-                onMerge={hasAnySidePanelContent ? handleMerge : undefined}
               />
             )}
 
@@ -384,7 +382,6 @@ export function SessionView({
                 onSetActiveTab={(tabId) => setActiveFilePreviewTab(session.id, tabId)}
                 onCloseTab={(tabId) => closeFilePreviewTab(session.id, tabId)}
                 onClose={() => setFilePreviewOpen(session.id, false)}
-                onMerge={hasAnySidePanelContent ? handleMerge : undefined}
               />
             )}
           </>

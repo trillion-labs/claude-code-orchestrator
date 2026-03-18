@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { ClipboardList, FileText, AppWindow, X, GripVertical, Columns2, Rows2 } from "lucide-react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { ClipboardList, FileText, AppWindow, X, GripVertical } from "lucide-react";
 import { useStore } from "@/store";
 import type { FilePreviewTab, ShowUserTab } from "@/store";
 import { PlanPanelContent } from "./PlanPanel";
@@ -13,7 +13,6 @@ const MAX_WIDTH_FALLBACK = 800;
 
 interface SidePanelProps {
   sessionId: string;
-  onClose: () => void;
 }
 
 interface TabItem {
@@ -24,7 +23,7 @@ interface TabItem {
   color: string;
 }
 
-export function SidePanel({ sessionId, onClose }: SidePanelProps) {
+export function SidePanel({ sessionId }: SidePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState<number | null>(null);
   const isResizing = useRef(false);
@@ -32,13 +31,14 @@ export function SidePanel({ sessionId, onClose }: SidePanelProps) {
   const startWidth = useRef(0);
 
   const planContent = useStore((s) => s.planContent.get(sessionId));
-  const filePreviewTabs = useStore((s) => s.filePreviewTabs.get(sessionId) || []);
-  const showUserTabs = useStore((s) => s.showUserTabs.get(sessionId) || []);
-  const activeMergedTabId = useStore((s) => s.activeMergedTabId.get(sessionId) || "");
+  const filePreviewTabsRaw = useStore((s) => s.filePreviewTabs.get(sessionId));
+  const filePreviewTabs = useMemo(() => filePreviewTabsRaw ?? [], [filePreviewTabsRaw]);
+  const showUserTabsRaw = useStore((s) => s.showUserTabs.get(sessionId));
+  const showUserTabs = useMemo(() => showUserTabsRaw ?? [], [showUserTabsRaw]);
+  const activeMergedTabId = useStore((s) => s.activeMergedTabId.get(sessionId) ?? "");
   const setActiveMergedTab = useStore((s) => s.setActiveMergedTab);
   const closeFilePreviewTab = useStore((s) => s.closeFilePreviewTab);
   const closeShowUserTab = useStore((s) => s.closeShowUserTab);
-  const setSidePanelMerged = useStore((s) => s.setSidePanelMerged);
 
   // Initialize width to 50% of parent container
   useEffect(() => {
@@ -156,26 +156,6 @@ export function SidePanel({ sessionId, onClose }: SidePanelProps) {
         onMouseDown={handleMouseDown}
       >
         <GripVertical className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 transition-colors -ml-0.5" />
-      </div>
-
-      {/* Header with merge/split toggle */}
-      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
-        <span className="text-xs font-medium text-muted-foreground">Side Panel</span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setSidePanelMerged(sessionId, false)}
-            className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-            title="Split into separate panels"
-          >
-            <Columns2 className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
 
       {/* Tab bar */}

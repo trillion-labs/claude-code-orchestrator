@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FileText, X, GripVertical, Loader2, AlertCircle, Rows2 } from "lucide-react";
+import { FileText, X, GripVertical, Loader2, AlertCircle } from "lucide-react";
 import type { FilePreviewTab } from "@/store";
 
 const MIN_WIDTH = 320;
@@ -64,7 +64,6 @@ interface FilePreviewPanelProps {
   onSetActiveTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onClose: () => void;
-  onMerge?: () => void;
 }
 
 export function FilePreviewPanel({
@@ -74,7 +73,6 @@ export function FilePreviewPanel({
   onSetActiveTab,
   onCloseTab,
   onClose,
-  onMerge,
 }: FilePreviewPanelProps) {
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const isResizing = useRef(false);
@@ -154,23 +152,12 @@ export function FilePreviewPanel({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          {onMerge && (
-            <button
-              onClick={onMerge}
-              className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-              title="Merge into unified panel"
-            >
-              <Rows2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors shrink-0 ml-2"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Tab bar (shown when multiple tabs) */}
