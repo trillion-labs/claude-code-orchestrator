@@ -569,10 +569,14 @@ export const useStore = create<SessionState>((set) => ({
       planPanelOpen.set(sessionId, true);
       const isMerged = state.sidePanelMerged.get(sessionId) ?? false;
       if (isMerged) {
-        // In merged mode, set active tab to plan
+        // In merged mode, set active tab to plan and ensure all panels open
         const activeMergedTabId = new Map(state.activeMergedTabId);
         activeMergedTabId.set(sessionId, "plan");
-        return { planContent, planPanelOpen, activeMergedTabId };
+        const filePreviewOpen = new Map(state.filePreviewOpen);
+        if ((state.filePreviewTabs.get(sessionId) || []).length > 0) filePreviewOpen.set(sessionId, true);
+        const showUserPanelOpen = new Map(state.showUserPanelOpen);
+        if ((state.showUserTabs.get(sessionId) || []).length > 0) showUserPanelOpen.set(sessionId, true);
+        return { planContent, planPanelOpen, filePreviewOpen, showUserPanelOpen, activeMergedTabId };
       }
       // Split mode: mutual exclusion
       const filePreviewOpen = new Map(state.filePreviewOpen);
@@ -621,7 +625,11 @@ export const useStore = create<SessionState>((set) => ({
       if (isMerged) {
         const activeMergedTabId = new Map(state.activeMergedTabId);
         activeMergedTabId.set(sessionId, `file:${tabId}`);
-        return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, activeMergedTabId };
+        const planPanelOpen = new Map(state.planPanelOpen);
+        if (state.planContent.has(sessionId)) planPanelOpen.set(sessionId, true);
+        const showUserPanelOpen = new Map(state.showUserPanelOpen);
+        if ((state.showUserTabs.get(sessionId) || []).length > 0) showUserPanelOpen.set(sessionId, true);
+        return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, planPanelOpen, showUserPanelOpen, activeMergedTabId };
       }
       // Split mode: mutual exclusion
       const planPanelOpen = new Map(state.planPanelOpen);
@@ -653,7 +661,11 @@ export const useStore = create<SessionState>((set) => ({
       if (isMerged) {
         const activeMergedTabId = new Map(state.activeMergedTabId);
         activeMergedTabId.set(sessionId, `file:${tabId}`);
-        return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, activeMergedTabId };
+        const planPanelOpen = new Map(state.planPanelOpen);
+        if (state.planContent.has(sessionId)) planPanelOpen.set(sessionId, true);
+        const showUserPanelOpen = new Map(state.showUserPanelOpen);
+        if ((state.showUserTabs.get(sessionId) || []).length > 0) showUserPanelOpen.set(sessionId, true);
+        return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, planPanelOpen, showUserPanelOpen, activeMergedTabId };
       }
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, false);
@@ -731,7 +743,11 @@ export const useStore = create<SessionState>((set) => ({
       if (isMerged) {
         const activeMergedTabId = new Map(state.activeMergedTabId);
         activeMergedTabId.set(sessionId, `show:${tabId}`);
-        return { showUserTabs, activeShowUserTabId, showUserPanelOpen, activeMergedTabId };
+        const planPanelOpen = new Map(state.planPanelOpen);
+        if (state.planContent.has(sessionId)) planPanelOpen.set(sessionId, true);
+        const filePreviewOpen = new Map(state.filePreviewOpen);
+        if ((state.filePreviewTabs.get(sessionId) || []).length > 0) filePreviewOpen.set(sessionId, true);
+        return { showUserTabs, activeShowUserTabId, showUserPanelOpen, planPanelOpen, filePreviewOpen, activeMergedTabId };
       }
       // Split mode: mutual exclusion
       const planPanelOpen = new Map(state.planPanelOpen);

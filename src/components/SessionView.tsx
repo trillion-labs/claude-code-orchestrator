@@ -86,6 +86,12 @@ export function SessionView({
   // Merged side panel
   const sidePanelMerged = useStore((s) => s.sidePanelMerged.get(session.id) ?? false);
   const setSidePanelMerged = useStore((s) => s.setSidePanelMerged);
+  const setActiveMergedTab = useStore((s) => s.setActiveMergedTab);
+
+  // Derived state
+  const hasAnySidePanelContent = !!planContent || filePreviewTabs.length > 0 || showUserTabs.length > 0;
+  const hasAnyPanelOpen = planPanelOpen || filePreviewOpen || showUserPanelOpen;
+  const hasNonLoadingFileTabs = filePreviewTabs.some((t) => !t.loading);
 
   const handleLoadHistory = useCallback(() => {
     if (loadingHistory || !hasMoreMessages || messages.length === 0) return;
@@ -95,11 +101,26 @@ export function SessionView({
   }, [loadingHistory, hasMoreMessages, messages, session.id, setLoadingHistory, send]);
 
   const handleFilePreview = useCallback(async (filePath: string) => {
-    // If same file is active and panel is open, toggle off
-    const activeTab = filePreviewTabs.find((t) => t.id === activeFilePreviewTabId);
-    if (activeTab?.filePath === filePath && filePreviewOpen) {
-      setFilePreviewOpen(session.id, false);
-      return;
+    if (sidePanelMerged) {
+      // Merged mode: if tab already exists, focus it; otherwise load it
+      const existingTab = filePreviewTabs.find((t) => t.filePath === filePath);
+      if (existingTab) {
+        setActiveMergedTab(session.id, `file:${existingTab.id}`);
+        // Ensure panel is open
+        if (!hasAnyPanelOpen) {
+          if (planContent) setPlanPanelOpen(session.id, true);
+          setFilePreviewOpen(session.id, true);
+          if (showUserTabs.length > 0) setShowUserPanelOpen(session.id, true);
+        }
+        return;
+      }
+    } else {
+      // Split mode: toggle off if same file is active and panel is open
+      const activeTab = filePreviewTabs.find((t) => t.id === activeFilePreviewTabId);
+      if (activeTab?.filePath === filePath && filePreviewOpen) {
+        setFilePreviewOpen(session.id, false);
+        return;
+      }
     }
 
     setFilePreviewLoading(session.id, filePath);
@@ -116,7 +137,7 @@ export function SessionView({
         truncated: result.truncated,
       });
     }
-  }, [session.id, session.machineId, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, requestFileRead, addFilePreviewTab, setFilePreviewLoading, setFilePreviewError, setFilePreviewOpen]);
+  }, [session.id, session.machineId, sidePanelMerged, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, hasAnyPanelOpen, planContent, showUserTabs.length, requestFileRead, addFilePreviewTab, setFilePreviewLoading, setFilePreviewError, setFilePreviewOpen, setActiveMergedTab, setPlanPanelOpen, setShowUserPanelOpen]);
 
   const handleSessionSettingsOpen = (open: boolean) => {
     setSessionSettingsOpen(open);
@@ -125,24 +146,13 @@ export function SessionView({
     }
   };
 
-  // Check if any side panel content exists (for merge button visibility)
-  const hasAnySidePanelContent = !!planContent || filePreviewTabs.length > 0 || showUserTabs.length > 0;
-  const hasAnyPanelOpen = planPanelOpen || filePreviewOpen || showUserPanelOpen;
-
-  // Handler to switch to merged mode
-  const handleMerge = useCallback(() => {
-    setSidePanelMerged(session.id, true);
-  }, [session.id, setSidePanelMerged]);
-
-  // Close all side panels
-  const handleCloseAllPanels = useCallback(() => {
-    setPlanPanelOpen(session.id, false);
-    setFilePreviewOpen(session.id, false);
-    setShowUserPanelOpen(session.id, false);
-  }, [session.id, setPlanPanelOpen, setFilePreviewOpen, setShowUserPanelOpen]);
-
-  // Determine which non-loading file preview tabs exist
-  const hasNonLoadingFileTabs = filePreviewTabs.some((t) => !t.loading);
+  // In merged mode, toggle all panels open/close together
+  const toggleMergedPanel = useCallback(() => {
+    const newState = !hasAnyPanelOpen;
+    if (planContent) setPlanPanelOpen(session.id, newState);
+    if (filePreviewTabs.length > 0) setFilePreviewOpen(session.id, newState);
+    if (showUserTabs.length > 0) setShowUserPanelOpen(session.id, newState);
+  }, [session.id, hasAnyPanelOpen, planContent, filePreviewTabs.length, showUserTabs.length, setPlanPanelOpen, setFilePreviewOpen, setShowUserPanelOpen]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -239,8 +249,8 @@ export function SessionView({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setShowUserPanelOpen(session.id, !showUserPanelOpen)}
-              className={`h-8 w-8 transition-colors ${showUserPanelOpen ? "text-teal-400 hover:text-teal-300" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => sidePanelMerged ? toggleMergedPanel() : setShowUserPanelOpen(session.id, !showUserPanelOpen)}
+              className={`h-8 w-8 transition-colors ${(sidePanelMerged ? hasAnyPanelOpen : showUserPanelOpen) ? "text-teal-400 hover:text-teal-300" : "text-muted-foreground hover:text-foreground"}`}
               title="Show user content"
             >
               <AppWindow className="w-4 h-4" />
@@ -250,8 +260,8 @@ export function SessionView({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setFilePreviewOpen(session.id, !filePreviewOpen)}
-              className={`h-8 w-8 transition-colors ${filePreviewOpen ? "text-sky-400 hover:text-sky-300" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => sidePanelMerged ? toggleMergedPanel() : setFilePreviewOpen(session.id, !filePreviewOpen)}
+              className={`h-8 w-8 transition-colors ${(sidePanelMerged ? hasAnyPanelOpen : filePreviewOpen) ? "text-sky-400 hover:text-sky-300" : "text-muted-foreground hover:text-foreground"}`}
             >
               <FileText className="w-4 h-4" />
             </Button>
@@ -260,8 +270,8 @@ export function SessionView({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setPlanPanelOpen(session.id, !planPanelOpen)}
-              className={`h-8 w-8 transition-colors ${planPanelOpen ? "text-violet-400 hover:text-violet-300" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => sidePanelMerged ? toggleMergedPanel() : setPlanPanelOpen(session.id, !planPanelOpen)}
+              className={`h-8 w-8 transition-colors ${(sidePanelMerged ? hasAnyPanelOpen : planPanelOpen) ? "text-violet-400 hover:text-violet-300" : "text-muted-foreground hover:text-foreground"}`}
             >
               <ClipboardList className="w-4 h-4" />
             </Button>
