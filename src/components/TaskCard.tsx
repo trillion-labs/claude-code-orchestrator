@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Play, ExternalLink, AlertCircle, RotateCcw, Pencil } from "lucide-react";
+import { Play, ExternalLink, AlertCircle, RotateCcw, Pencil, CheckCircle2 } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { TimeAgo } from "./TimeAgo";
 import type { Task, Session } from "@/lib/shared/types";
@@ -13,12 +13,13 @@ interface TaskCardProps {
   session?: Session;
   onClick: () => void;
   onSubmit?: () => void;
+  onDone?: () => void;
   onViewSession?: () => void;
   onEditTitle?: (taskId: string, newTitle: string) => void;
   projectName?: string;
 }
 
-export function TaskCard({ task, session, onClick, onSubmit, onViewSession, onEditTitle, projectName }: TaskCardProps) {
+export function TaskCard({ task, session, onClick, onSubmit, onDone, onViewSession, onEditTitle, projectName }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -178,6 +179,22 @@ export function TaskCard({ task, session, onClick, onSubmit, onViewSession, onEd
             >
               <Play className="w-2.5 h-2.5" />
               Submit
+            </button>
+          )}
+
+          {/* Done button — only in In Review */}
+          {task.column === "in-review" && onDone && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDone();
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium
+                bg-emerald-500/15 text-emerald-400 border border-emerald-500/25
+                hover:bg-emerald-500/25 transition-colors"
+            >
+              <CheckCircle2 className="w-2.5 h-2.5" />
+              Done
             </button>
           )}
 

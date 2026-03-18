@@ -142,6 +142,14 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
     send({ type: "task.submit", projectId: task.projectId, taskId: task.id });
   };
 
+  const handleDoneTask = (task: Task) => {
+    const doneTasks = getAllTasksByColumn("done", excludedProjects);
+    send({ type: "task.move", projectId: task.projectId, taskId: task.id, column: "done", order: doneTasks.length });
+    if (task.sessionId) {
+      send({ type: "session.terminate", sessionId: task.sessionId });
+    }
+  };
+
   const handleLinkSession = (taskId: string, sessionId: string) => {
     const task = findTask(taskId);
     if (task) {
@@ -273,6 +281,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                   getSession={getTaskSession}
                   onTaskClick={(task) => setSelectedTaskId(task.id)}
                   onTaskSubmit={handleSubmitTask}
+                  onTaskDone={handleDoneTask}
                   onViewSession={onViewSession}
                   onEditTitle={handleEditTitle}
                   getProjectName={getProjectName}
@@ -319,6 +328,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                 onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
                 onDelete={() => handleDeleteTask(selectedTask)}
                 onSubmit={() => handleSubmitTask(selectedTask)}
+                onDone={() => handleDoneTask(selectedTask)}
                 onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
                 onResume={() => handleResumeTask(selectedTask)}
                 onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
