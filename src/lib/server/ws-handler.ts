@@ -9,6 +9,7 @@ import { join } from "path";
 import { homedir } from "os";
 import type { MachineConfig, PermissionMode, PermissionRequest } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
+import { buildOrchestratorPrompt } from "./orchestrator-prompt";
 
 const EXT_LANG_MAP: Record<string, string> = {
   ts: "typescript", tsx: "tsx", js: "javascript", jsx: "jsx",
@@ -174,6 +175,146 @@ export class WebSocketHandler {
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
+  }
+
+  /**
+   * HTTP handler for /api/orchestrator — called by the orchestrator MCP server.
+   * Dispatches task management tool calls to ProjectManager.
+   */
+  async handleOrchestratorHTTP(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(chunk as Buffer);
+    }
+
+    let body: { sessionId?: string; projectId?: string; tool?: string; args?: Record<string, unknown> };
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString());
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid JSON" }));
+      return;
+    }
+
+    const { sessionId, projectId, tool, args } = body;
+    if (!sessionId || !projectId || !tool) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Missing sessionId, projectId, or tool" }));
+      return;
+    }
+
+    console.log(`[Orchestrator] Tool call: ${tool} for project ${projectId}`);
+
+    try {
+      const result = await this.handleOrchestratorTool(projectId, tool, args || {});
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      console.error(`[Orchestrator] Tool error:`, (err as Error).message);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: (err as Error).message }));
+    }
+  }
+
+  private async handleOrchestratorTool(
+    projectId: string,
+    tool: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    switch (tool) {
+      case "list_tasks": {
+        const tasks = this.projectManager.getProjectTasks(projectId);
+        const column = args.column as string | undefined;
+        const filtered = column ? tasks.filter((t) => t.column === column) : tasks;
+        return { tasks: filtered.map((t) => ({ id: t.id, title: t.title, column: t.column, order: t.order })) };
+      }
+
+      case "get_tasks": {
+        const taskIds = args.taskIds as string[];
+        const allTasks = this.projectManager.getProjectTasks(projectId);
+        const found = taskIds
+          .map((id) => allTasks.find((t) => t.id === id))
+          .filter(Boolean)
+          .map((t) => ({ id: t!.id, title: t!.title, description: t!.description, column: t!.column, order: t!.order }));
+        return { tasks: found };
+      }
+
+      case "create_task": {
+        const task = await this.projectManager.createTask(
+          projectId,
+          args.title as string,
+          args.description as string,
+        );
+        this.broadcast({ type: "task.created", task });
+        return { task: { id: task.id, title: task.title, column: task.column } };
+      }
+
+      case "create_tasks": {
+        const taskInputs = args.tasks as Array<{ title: string; description: string }>;
+        const created = [];
+        for (const input of taskInputs) {
+          const task = await this.projectManager.createTask(projectId, input.title, input.description);
+          this.broadcast({ type: "task.created", task });
+          created.push({ id: task.id, title: task.title, column: task.column });
+        }
+        return { tasks: created };
+      }
+
+      case "update_task": {
+        const updates: { title?: string; description?: string } = {};
+        if (args.title) updates.title = args.title as string;
+        if (args.description) updates.description = args.description as string;
+        const task = await this.projectManager.updateTask(projectId, args.taskId as string, updates);
+        this.broadcast({ type: "task.updated", task });
+        return { task: { id: task.id, title: task.title, column: task.column } };
+      }
+
+      case "move_task": {
+        const task = await this.projectManager.moveTask(
+          projectId,
+          args.taskId as string,
+          args.column as import("../shared/types").KanbanColumn,
+          0,
+        );
+        this.broadcast({ type: "task.moved", task });
+        return { task: { id: task.id, title: task.title, column: task.column } };
+      }
+
+      case "delete_task": {
+        await this.projectManager.deleteTask(projectId, args.taskId as string);
+        this.broadcast({ type: "task.deleted", projectId, taskId: args.taskId as string });
+        return { success: true };
+      }
+
+      case "submit_task": {
+        const project = this.projectManager.getProject(projectId);
+        if (!project) throw new Error(`Project ${projectId} not found`);
+        const submitMachine = this.machines.find((m) => m.id === project.machineId);
+        if (!submitMachine) throw new Error("Machine not found for project");
+        const { task, session } = await this.projectManager.submitTask(projectId, args.taskId as string, submitMachine);
+        this.broadcast({ type: "task.submitted", task, session });
+        this.broadcast({ type: "session.created", session });
+        return { task: { id: task.id, title: task.title, column: task.column }, session: { id: session.id, status: session.status } };
+      }
+
+      case "get_project_info": {
+        const project = this.projectManager.getProject(projectId);
+        if (!project) throw new Error(`Project ${projectId} not found`);
+        const machine = this.machines.find((m) => m.id === project.machineId);
+        return {
+          project: {
+            id: project.id,
+            name: project.name,
+            workDir: project.workDir,
+            machineName: machine?.name || "Unknown",
+            permissionMode: project.permissionMode,
+          },
+        };
+      }
+
+      default:
+        throw new Error(`Unknown orchestrator tool: ${tool}`);
+    }
   }
 
   private async handleMessage(ws: WebSocket, msg: ClientMessage) {
@@ -649,6 +790,71 @@ export class WebSocketHandler {
         }
         break;
       }
+
+      case "orchestrator.create": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project) {
+            this.send(ws, { type: "error", error: `Project ${msg.projectId} not found` });
+            return;
+          }
+          if (project.orchestratorSessionId) {
+            // Already has an orchestrator — check if it's still alive
+            const existing = this.sessionManager.getSession(project.orchestratorSessionId);
+            if (existing && existing.status !== "terminated" && existing.status !== "error") {
+              this.send(ws, { type: "orchestrator.created", projectId: project.id, session: existing });
+              return;
+            }
+          }
+          const machine = this.machines.find((m) => m.id === project.machineId);
+          if (!machine) {
+            this.send(ws, { type: "error", error: "Machine not found for project" });
+            return;
+          }
+
+          // Build system prompt (board state is fetched via list_tasks tool, not embedded)
+          const systemPrompt = buildOrchestratorPrompt(project);
+
+          // Resume previous orchestrator session if available
+          const resumeId = project.orchestratorClaudeSessionId || undefined;
+
+          const session = await this.sessionManager.createSession(
+            machine,
+            project.workDir,
+            resumeId,
+            project.permissionMode,
+            undefined, // no worktree
+            project.id,
+            undefined, // no taskId
+            { isOrchestrator: true, orchestratorProjectId: project.id, systemPrompt },
+          );
+
+          this.sessionManager.setSessionDisplayName(session.id, `Manager: ${project.name}`);
+
+          // Store orchestrator session on project (including claudeSessionId for future resume)
+          await this.projectManager.setOrchestratorSession(project.id, session.id, session.claudeSessionId);
+
+          this.broadcast({ type: "session.created", session });
+          this.broadcast({ type: "orchestrator.created", projectId: project.id, session });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "orchestrator.prompt": {
+        try {
+          const project = this.projectManager.getProject(msg.projectId);
+          if (!project?.orchestratorSessionId) {
+            this.send(ws, { type: "error", error: "No orchestrator session for this project" });
+            return;
+          }
+          await this.sessionManager.sendPrompt(project.orchestratorSessionId, msg.prompt);
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
     }
   }
 
@@ -683,6 +889,19 @@ export class WebSocketHandler {
         const updatedTask = this.projectManager.handleSessionCompleted(sessionId);
         if (updatedTask) {
           this.broadcast({ type: "task.sessionCompleted", task: updatedTask });
+        }
+      }
+
+      // Clean up orchestrator session reference when terminated or errored
+      if (status === "error" || status === "terminated") {
+        if (this.sessionManager.isOrchestratorSession(sessionId)) {
+          for (const project of this.projectManager.getAllProjects()) {
+            if (project.orchestratorSessionId === sessionId) {
+              this.projectManager.clearOrchestratorSession(project.id).catch(() => {});
+              this.broadcast({ type: "orchestrator.terminated", projectId: project.id });
+              break;
+            }
+          }
         }
       }
     });

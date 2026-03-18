@@ -35,6 +35,12 @@ async function main() {
       return;
     }
 
+    // Handle orchestrator MCP tool calls (task management)
+    if (parsedUrl.pathname === "/api/orchestrator" && req.method === "POST") {
+      await wsHandler.handleOrchestratorHTTP(req, res);
+      return;
+    }
+
     handle(req, res, parsedUrl);
   });
 

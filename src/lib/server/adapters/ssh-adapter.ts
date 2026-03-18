@@ -63,9 +63,37 @@ export class SSHAdapter extends ProcessAdapter {
   }
 
   interrupt(): void {
-    if (this.channel) {
+    if (!this.channel) return;
+
+    // 1. Try SSH protocol signal (ignored by OpenSSH, but works on some servers)
+    try {
       this.channel.signal("INT");
+    } catch {
+      // signal() may throw if channel is already closing
     }
+
+    // 2. Write Ctrl+C to stdin as backup (works if remote has PTY)
+    try {
+      if (this.channel.writable) {
+        this.channel.write("\x03");
+      }
+    } catch {
+      // ignore write errors
+    }
+
+    // 3. Force-close channel after timeout if process didn't exit
+    //    Channel close sends SIGHUP to the remote process
+    const channel = this.channel;
+    setTimeout(() => {
+      if (this._isRunning && this.channel === channel) {
+        console.log("[SSH] Interrupt timeout — force closing channel");
+        try {
+          channel.close();
+        } catch {
+          // ignore
+        }
+      }
+    }, 3000);
   }
 
   kill(): void {

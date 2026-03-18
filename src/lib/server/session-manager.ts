@@ -36,6 +36,8 @@ interface ManagedSession {
   explicitDisplayName?: string; // Overrides firstUserMessage (e.g. task title)
   // Whether text was streamed via content_block_delta for the current message
   hasStreamedText: boolean;
+  isOrchestrator?: boolean; // Orchestrator manager session
+  orchestratorProjectId?: string; // Project ID for orchestrator MCP
 }
 
 const MAX_RECENT_MESSAGES = 20; // Keep last 10 turns (user + assistant)
@@ -52,7 +54,7 @@ export class SessionManager extends EventEmitter {
     this.orchestratorPort = orchestratorPort;
   }
 
-  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }, projectId?: string, taskId?: string): Promise<Session> {
+  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }, projectId?: string, taskId?: string, options?: { isOrchestrator?: boolean; orchestratorProjectId?: string; systemPrompt?: string }): Promise<Session> {
     const sessionId = uuidv4();
     const claudeSessionId = resumeSessionId || uuidv4();
 
@@ -69,6 +71,7 @@ export class SessionManager extends EventEmitter {
       permissionMode,
       ...(projectId && { projectId }),
       ...(taskId && { taskId }),
+      ...(options?.isOrchestrator && { isOrchestrator: true }),
     };
 
     // Create the appropriate adapter
@@ -89,6 +92,7 @@ export class SessionManager extends EventEmitter {
       currentAssistantMessage: "",
       messages: [],
       hasStreamedText: false,
+      ...(options?.isOrchestrator && { isOrchestrator: true, orchestratorProjectId: options.orchestratorProjectId }),
     };
 
     this.sessions.set(sessionId, managed);
@@ -229,7 +233,7 @@ export class SessionManager extends EventEmitter {
     // dynamically in handlePermissionRequest() via resolvePermissionByMode()
     try {
       if (machine.type === "local") {
-        const mcpConfigPath = await this.writeMcpConfig(sessionId);
+        const mcpConfigPath = await this.writeMcpConfig(sessionId, managed.orchestratorProjectId);
         managed.mcpConfigPath = mcpConfigPath;
         args.push(
           "--permission-prompt-tool", "mcp__perm__check_permission",
@@ -254,6 +258,12 @@ export class SessionManager extends EventEmitter {
       }
     } catch (err) {
       console.warn(`[Session ${sessionId}] Could not set up MCP permission tool:`, (err as Error).message);
+    }
+
+    // Orchestrator manager: restrict tools to read-only + inject system prompt
+    if (options?.isOrchestrator && options.systemPrompt) {
+      args.push("--allowedTools", "Read,Glob,Grep,mcp__orch__*,mcp__perm__*");
+      args.push("--append-system-prompt", options.systemPrompt);
     }
 
     if (resumeSessionId) {
@@ -1046,13 +1056,13 @@ except:
 
   // ── MCP Permission Prompt Tool ──
 
-  private async writeMcpConfig(sessionId: string): Promise<string> {
+  private async writeMcpConfig(sessionId: string, orchestratorProjectId?: string): Promise<string> {
     const srcPath = join(process.cwd(), "scripts", "permission-mcp-server.mjs");
     // Copy MCP server script to /tmp to avoid issues with .claude/ worktree paths
     const mcpServerPath = join(tmpdir(), `claude-orch-${sessionId}.mcp.mjs`);
     await copyFile(srcPath, mcpServerPath);
     const configPath = join(tmpdir(), `claude-orch-${sessionId}.mcp.json`);
-    const config = {
+    const config: Record<string, unknown> = {
       mcpServers: {
         perm: {
           command: "node",
@@ -1062,8 +1072,28 @@ except:
             SESSION_ID: sessionId,
           },
         },
+        // Orchestrator MCP server — only included for manager sessions
+        ...(orchestratorProjectId && {
+          orch: {
+            command: "node",
+            args: [join(tmpdir(), `claude-orch-${sessionId}.orchestrator.mjs`)],
+            env: {
+              ORCHESTRATOR_URL: `http://localhost:${this.orchestratorPort}`,
+              SESSION_ID: sessionId,
+              PROJECT_ID: orchestratorProjectId,
+            },
+          },
+        }),
       },
     };
+
+    // Copy orchestrator MCP server script if needed
+    if (orchestratorProjectId) {
+      const orchSrcPath = join(process.cwd(), "scripts", "orchestrator-mcp-server.mjs");
+      const orchDestPath = join(tmpdir(), `claude-orch-${sessionId}.orchestrator.mjs`);
+      await copyFile(orchSrcPath, orchDestPath);
+    }
+
     await writeFile(configPath, JSON.stringify(config), "utf-8");
     return configPath;
   }
@@ -1074,6 +1104,7 @@ except:
       try { await unlink(managed.mcpConfigPath); } catch { /* ignore */ }
       // Also clean up copied MCP server script
       try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".mcp.mjs")); } catch { /* ignore */ }
+      try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".orchestrator.mjs")); } catch { /* ignore */ }
     } else {
       // Remote: clean up remote temp files
       try {
@@ -1504,6 +1535,11 @@ for line in sys.stdin:
       return text.length > 80 ? text.slice(0, 77) + "..." : text;
     }
     return "Imported session";
+  }
+
+  isOrchestratorSession(sessionId: string): boolean {
+    const managed = this.sessions.get(sessionId);
+    return managed?.isOrchestrator === true;
   }
 
   private async loadSessionHistory(managed: ManagedSession, claudeSessionId: string): Promise<void> {
