@@ -4,13 +4,15 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  pointerWithin,
+  closestCenter,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
+  type CollisionDetection,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useStore } from "@/store";
@@ -97,6 +99,25 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+
+  const columnIds = useMemo(() => new Set<string | number>(KANBAN_COLUMNS.map((c) => c.id)), []);
+
+  const collisionDetection: CollisionDetection = useCallback((args) => {
+    // First: check if pointer is within any droppable (columns included)
+    const pointerCollisions = pointerWithin(args);
+    if (pointerCollisions.length > 0) {
+      // Prefer column-level droppable when pointer is inside it
+      const columnHit = pointerCollisions.find((c) => columnIds.has(c.id as string));
+      if (columnHit) {
+        // Also check for task-level hits within the same column for reordering
+        const taskHits = pointerCollisions.filter((c) => !columnIds.has(c.id as string));
+        return taskHits.length > 0 ? taskHits : [columnHit];
+      }
+      return pointerCollisions;
+    }
+    // Fallback: closest center for edge cases
+    return closestCenter(args);
+  }, [columnIds]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event;
@@ -323,7 +344,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
           <div className="flex gap-3 p-4 w-max">
             <DndContext
               sensors={sensors}
-              collisionDetection={closestCorners}
+              collisionDetection={collisionDetection}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
             >
