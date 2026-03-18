@@ -6,6 +6,22 @@ export interface SplitPanel {
   sessionId: string;
 }
 
+export interface FilePreviewTab {
+  id: string;
+  filePath: string;
+  content: string;
+  language: string;
+  truncated: boolean;
+  loading: boolean;
+  error?: string;
+}
+
+export interface ShowUserTab {
+  id: string;
+  title: string;
+  html: string;
+}
+
 const MAX_SPLIT_PANELS = 4;
 
 interface SessionState {
@@ -44,12 +60,17 @@ interface SessionState {
   // Plan panel
   planContent: Map<string, string>; // sessionId → plan markdown
   planPanelOpen: Map<string, boolean>; // sessionId → panel open state
-  // File preview panel
-  filePreview: Map<string, { filePath: string; content: string; language: string; truncated: boolean; loading: boolean; error?: string }>;
+  // File preview tabs (multiple files per session)
+  filePreviewTabs: Map<string, FilePreviewTab[]>;
+  activeFilePreviewTabId: Map<string, string>;
   filePreviewOpen: Map<string, boolean>;
-  // Show user panel (visual content from Claude)
-  showUserContent: Map<string, { title: string; html: string }>;
+  // Show user tabs (multiple show_user contents per session)
+  showUserTabs: Map<string, ShowUserTab[]>;
+  activeShowUserTabId: Map<string, string>;
   showUserPanelOpen: Map<string, boolean>;
+  // Merged side panel mode (plan + file + show_user in one panel)
+  sidePanelMerged: Map<string, boolean>;
+  activeMergedTabId: Map<string, string>; // active tab in merged mode
   // Existing worktrees per machine (from worktrees.list)
   worktrees: Map<string, Array<{ name: string; path: string; branch: string }>>
   // Projects & Kanban
@@ -114,16 +135,23 @@ interface SessionState {
   setPlanContent: (sessionId: string, content: string) => void;
   setPlanPanelOpen: (sessionId: string, open: boolean) => void;
   clearPlanContent: (sessionId: string) => void;
-  // File preview
-  setFilePreview: (sessionId: string, data: { filePath: string; content: string; language: string; truncated: boolean }) => void;
+  // File preview tabs
+  addFilePreviewTab: (sessionId: string, data: { filePath: string; content: string; language: string; truncated: boolean }) => void;
   setFilePreviewLoading: (sessionId: string, filePath: string) => void;
-  setFilePreviewError: (sessionId: string, error: string) => void;
+  setFilePreviewError: (sessionId: string, filePath: string, error: string) => void;
+  closeFilePreviewTab: (sessionId: string, tabId: string) => void;
+  setActiveFilePreviewTab: (sessionId: string, tabId: string) => void;
   setFilePreviewOpen: (sessionId: string, open: boolean) => void;
   clearFilePreview: (sessionId: string) => void;
-  // Show user panel
-  setShowUserContent: (sessionId: string, title: string, html: string) => void;
+  // Show user tabs
+  addShowUserTab: (sessionId: string, title: string, html: string) => void;
+  closeShowUserTab: (sessionId: string, tabId: string) => void;
+  setActiveShowUserTab: (sessionId: string, tabId: string) => void;
   setShowUserPanelOpen: (sessionId: string, open: boolean) => void;
   clearShowUserContent: (sessionId: string) => void;
+  // Merged side panel
+  setSidePanelMerged: (sessionId: string, merged: boolean) => void;
+  setActiveMergedTab: (sessionId: string, tabId: string) => void;
   // Worktrees
   setWorktrees: (machineId: string, worktrees: Array<{ name: string; path: string; branch: string }>) => void;
   // Projects & Kanban
@@ -172,10 +200,14 @@ export const useStore = create<SessionState>((set) => ({
   sessionConfig: new Map(),
   planContent: new Map(),
   planPanelOpen: new Map(),
-  filePreview: new Map(),
+  filePreviewTabs: new Map(),
+  activeFilePreviewTabId: new Map(),
   filePreviewOpen: new Map(),
-  showUserContent: new Map(),
+  showUserTabs: new Map(),
+  activeShowUserTabId: new Map(),
   showUserPanelOpen: new Map(),
+  sidePanelMerged: new Map(),
+  activeMergedTabId: new Map(),
   worktrees: new Map(),
   projects: new Map(),
   activeProjectId: null,
@@ -268,14 +300,22 @@ export const useStore = create<SessionState>((set) => ({
       planContent.delete(sessionId);
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.delete(sessionId);
-      const filePreview = new Map(state.filePreview);
-      filePreview.delete(sessionId);
+      const filePreviewTabs = new Map(state.filePreviewTabs);
+      filePreviewTabs.delete(sessionId);
+      const activeFilePreviewTabId = new Map(state.activeFilePreviewTabId);
+      activeFilePreviewTabId.delete(sessionId);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.delete(sessionId);
-      const showUserContent = new Map(state.showUserContent);
-      showUserContent.delete(sessionId);
+      const showUserTabs = new Map(state.showUserTabs);
+      showUserTabs.delete(sessionId);
+      const activeShowUserTabId = new Map(state.activeShowUserTabId);
+      activeShowUserTabId.delete(sessionId);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
       showUserPanelOpen.delete(sessionId);
+      const sidePanelMerged = new Map(state.sidePanelMerged);
+      sidePanelMerged.delete(sessionId);
+      const activeMergedTabId = new Map(state.activeMergedTabId);
+      activeMergedTabId.delete(sessionId);
       // Clean up split panels referencing this session
       let splitPanels = state.splitPanels.filter((p) => p.sessionId !== sessionId);
       const splitPanelWidths = new Map(state.splitPanelWidths);
@@ -292,7 +332,7 @@ export const useStore = create<SessionState>((set) => ({
         return {
           sessions, messages, hasMoreMessages, loadingHistory, streamingText,
           pendingAttention, pendingRequests, sessionNames, sessionConfig,
-          planContent, planPanelOpen, filePreview, filePreviewOpen, showUserContent, showUserPanelOpen,
+          planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, showUserTabs, activeShowUserTabId, showUserPanelOpen, sidePanelMerged, activeMergedTabId,
           splitPanels, splitPanelWidths, focusedPanelId,
           activeSessionId: state.activeSessionId === sessionId
             ? remainingSessionId
@@ -306,7 +346,7 @@ export const useStore = create<SessionState>((set) => ({
       return {
         sessions, messages, hasMoreMessages, loadingHistory, streamingText,
         pendingAttention, pendingRequests, sessionNames, sessionConfig,
-        planContent, planPanelOpen, filePreview, filePreviewOpen,
+        planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen,
         splitPanels, splitPanelWidths, focusedPanelId,
         activeSessionId: focusedPanelId
           ? splitPanels.find((p) => p.id === focusedPanelId)?.sessionId ?? state.activeSessionId
@@ -526,8 +566,15 @@ export const useStore = create<SessionState>((set) => ({
       const planContent = new Map(state.planContent);
       planContent.set(sessionId, content);
       const planPanelOpen = new Map(state.planPanelOpen);
-      planPanelOpen.set(sessionId, true); // Auto-open panel when plan content arrives
-      // Mutual exclusion: close file preview and show-user panel
+      planPanelOpen.set(sessionId, true);
+      const isMerged = state.sidePanelMerged.get(sessionId) ?? false;
+      if (isMerged) {
+        // In merged mode, set active tab to plan
+        const activeMergedTabId = new Map(state.activeMergedTabId);
+        activeMergedTabId.set(sessionId, "plan");
+        return { planContent, planPanelOpen, activeMergedTabId };
+      }
+      // Split mode: mutual exclusion
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, false);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
@@ -551,42 +598,104 @@ export const useStore = create<SessionState>((set) => ({
       return { planContent, planPanelOpen };
     }),
 
-  setFilePreview: (sessionId, data) =>
+  addFilePreviewTab: (sessionId, data) =>
     set((state) => {
-      const filePreview = new Map(state.filePreview);
-      filePreview.set(sessionId, { ...data, loading: false });
+      const filePreviewTabs = new Map(state.filePreviewTabs);
+      const tabs = [...(filePreviewTabs.get(sessionId) || [])];
+      // Check if same file already open — update it
+      const existingIdx = tabs.findIndex((t) => t.filePath === data.filePath);
+      let tabId: string;
+      if (existingIdx !== -1) {
+        tabId = tabs[existingIdx].id;
+        tabs[existingIdx] = { ...tabs[existingIdx], ...data, loading: false, error: undefined };
+      } else {
+        tabId = crypto.randomUUID();
+        tabs.push({ id: tabId, ...data, loading: false });
+      }
+      filePreviewTabs.set(sessionId, tabs);
+      const activeFilePreviewTabId = new Map(state.activeFilePreviewTabId);
+      activeFilePreviewTabId.set(sessionId, tabId);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, true);
-      // Mutual exclusion: close plan panel and show-user panel
+      const isMerged = state.sidePanelMerged.get(sessionId) ?? false;
+      if (isMerged) {
+        const activeMergedTabId = new Map(state.activeMergedTabId);
+        activeMergedTabId.set(sessionId, `file:${tabId}`);
+        return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, activeMergedTabId };
+      }
+      // Split mode: mutual exclusion
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, false);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
       showUserPanelOpen.set(sessionId, false);
-      return { filePreview, filePreviewOpen, planPanelOpen, showUserPanelOpen };
+      return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, planPanelOpen, showUserPanelOpen };
     }),
 
   setFilePreviewLoading: (sessionId, filePath) =>
     set((state) => {
-      const filePreview = new Map(state.filePreview);
-      filePreview.set(sessionId, { filePath, content: "", language: "text", truncated: false, loading: true });
+      const filePreviewTabs = new Map(state.filePreviewTabs);
+      const tabs = [...(filePreviewTabs.get(sessionId) || [])];
+      const existingIdx = tabs.findIndex((t) => t.filePath === filePath);
+      let tabId: string;
+      if (existingIdx !== -1) {
+        tabId = tabs[existingIdx].id;
+        tabs[existingIdx] = { ...tabs[existingIdx], loading: true, error: undefined };
+      } else {
+        tabId = crypto.randomUUID();
+        tabs.push({ id: tabId, filePath, content: "", language: "text", truncated: false, loading: true });
+      }
+      filePreviewTabs.set(sessionId, tabs);
+      const activeFilePreviewTabId = new Map(state.activeFilePreviewTabId);
+      activeFilePreviewTabId.set(sessionId, tabId);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, true);
-      // Mutual exclusion: close plan panel and show-user panel
+      const isMerged = state.sidePanelMerged.get(sessionId) ?? false;
+      if (isMerged) {
+        const activeMergedTabId = new Map(state.activeMergedTabId);
+        activeMergedTabId.set(sessionId, `file:${tabId}`);
+        return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, activeMergedTabId };
+      }
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, false);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
       showUserPanelOpen.set(sessionId, false);
-      return { filePreview, filePreviewOpen, planPanelOpen, showUserPanelOpen };
+      return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, planPanelOpen, showUserPanelOpen };
     }),
 
-  setFilePreviewError: (sessionId, error) =>
+  setFilePreviewError: (sessionId, filePath, error) =>
     set((state) => {
-      const filePreview = new Map(state.filePreview);
-      const existing = filePreview.get(sessionId);
-      if (existing) {
-        filePreview.set(sessionId, { ...existing, loading: false, error });
+      const filePreviewTabs = new Map(state.filePreviewTabs);
+      const tabs = [...(filePreviewTabs.get(sessionId) || [])];
+      const idx = tabs.findIndex((t) => t.filePath === filePath);
+      if (idx !== -1) {
+        tabs[idx] = { ...tabs[idx], loading: false, error };
+        filePreviewTabs.set(sessionId, tabs);
       }
-      return { filePreview };
+      return { filePreviewTabs };
+    }),
+
+  closeFilePreviewTab: (sessionId, tabId) =>
+    set((state) => {
+      const filePreviewTabs = new Map(state.filePreviewTabs);
+      const tabs = (filePreviewTabs.get(sessionId) || []).filter((t) => t.id !== tabId);
+      filePreviewTabs.set(sessionId, tabs);
+      const activeFilePreviewTabId = new Map(state.activeFilePreviewTabId);
+      if (activeFilePreviewTabId.get(sessionId) === tabId) {
+        activeFilePreviewTabId.set(sessionId, tabs[tabs.length - 1]?.id || "");
+      }
+      if (tabs.length === 0) {
+        const filePreviewOpen = new Map(state.filePreviewOpen);
+        filePreviewOpen.set(sessionId, false);
+        return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen };
+      }
+      return { filePreviewTabs, activeFilePreviewTabId };
+    }),
+
+  setActiveFilePreviewTab: (sessionId, tabId) =>
+    set((state) => {
+      const activeFilePreviewTabId = new Map(state.activeFilePreviewTabId);
+      activeFilePreviewTabId.set(sessionId, tabId);
+      return { activeFilePreviewTabId };
     }),
 
   setFilePreviewOpen: (sessionId, open) =>
@@ -598,25 +707,62 @@ export const useStore = create<SessionState>((set) => ({
 
   clearFilePreview: (sessionId) =>
     set((state) => {
-      const filePreview = new Map(state.filePreview);
-      filePreview.delete(sessionId);
+      const filePreviewTabs = new Map(state.filePreviewTabs);
+      filePreviewTabs.delete(sessionId);
+      const activeFilePreviewTabId = new Map(state.activeFilePreviewTabId);
+      activeFilePreviewTabId.delete(sessionId);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.delete(sessionId);
-      return { filePreview, filePreviewOpen };
+      return { filePreviewTabs, activeFilePreviewTabId, filePreviewOpen };
     }),
 
-  setShowUserContent: (sessionId, title, html) =>
+  addShowUserTab: (sessionId, title, html) =>
     set((state) => {
-      const showUserContent = new Map(state.showUserContent);
-      showUserContent.set(sessionId, { title, html });
+      const showUserTabs = new Map(state.showUserTabs);
+      const tabs = [...(showUserTabs.get(sessionId) || [])];
+      const tabId = crypto.randomUUID();
+      tabs.push({ id: tabId, title, html });
+      showUserTabs.set(sessionId, tabs);
+      const activeShowUserTabId = new Map(state.activeShowUserTabId);
+      activeShowUserTabId.set(sessionId, tabId);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
-      showUserPanelOpen.set(sessionId, true); // Auto-open panel
-      // Mutual exclusion: close plan and file preview panels
+      showUserPanelOpen.set(sessionId, true);
+      const isMerged = state.sidePanelMerged.get(sessionId) ?? false;
+      if (isMerged) {
+        const activeMergedTabId = new Map(state.activeMergedTabId);
+        activeMergedTabId.set(sessionId, `show:${tabId}`);
+        return { showUserTabs, activeShowUserTabId, showUserPanelOpen, activeMergedTabId };
+      }
+      // Split mode: mutual exclusion
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, false);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, false);
-      return { showUserContent, showUserPanelOpen, planPanelOpen, filePreviewOpen };
+      return { showUserTabs, activeShowUserTabId, showUserPanelOpen, planPanelOpen, filePreviewOpen };
+    }),
+
+  closeShowUserTab: (sessionId, tabId) =>
+    set((state) => {
+      const showUserTabs = new Map(state.showUserTabs);
+      const tabs = (showUserTabs.get(sessionId) || []).filter((t) => t.id !== tabId);
+      showUserTabs.set(sessionId, tabs);
+      const activeShowUserTabId = new Map(state.activeShowUserTabId);
+      if (activeShowUserTabId.get(sessionId) === tabId) {
+        activeShowUserTabId.set(sessionId, tabs[tabs.length - 1]?.id || "");
+      }
+      if (tabs.length === 0) {
+        const showUserPanelOpen = new Map(state.showUserPanelOpen);
+        showUserPanelOpen.set(sessionId, false);
+        return { showUserTabs, activeShowUserTabId, showUserPanelOpen };
+      }
+      return { showUserTabs, activeShowUserTabId };
+    }),
+
+  setActiveShowUserTab: (sessionId, tabId) =>
+    set((state) => {
+      const activeShowUserTabId = new Map(state.activeShowUserTabId);
+      activeShowUserTabId.set(sessionId, tabId);
+      return { activeShowUserTabId };
     }),
 
   setShowUserPanelOpen: (sessionId, open) =>
@@ -628,11 +774,37 @@ export const useStore = create<SessionState>((set) => ({
 
   clearShowUserContent: (sessionId) =>
     set((state) => {
-      const showUserContent = new Map(state.showUserContent);
-      showUserContent.delete(sessionId);
+      const showUserTabs = new Map(state.showUserTabs);
+      showUserTabs.delete(sessionId);
+      const activeShowUserTabId = new Map(state.activeShowUserTabId);
+      activeShowUserTabId.delete(sessionId);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
       showUserPanelOpen.delete(sessionId);
-      return { showUserContent, showUserPanelOpen };
+      return { showUserTabs, activeShowUserTabId, showUserPanelOpen };
+    }),
+
+  setSidePanelMerged: (sessionId, merged) =>
+    set((state) => {
+      const sidePanelMerged = new Map(state.sidePanelMerged);
+      sidePanelMerged.set(sessionId, merged);
+      if (merged) {
+        // When merging, open all panels that have content
+        const planPanelOpen = new Map(state.planPanelOpen);
+        const filePreviewOpen = new Map(state.filePreviewOpen);
+        const showUserPanelOpen = new Map(state.showUserPanelOpen);
+        if (state.planContent.has(sessionId)) planPanelOpen.set(sessionId, true);
+        if ((state.filePreviewTabs.get(sessionId) || []).length > 0) filePreviewOpen.set(sessionId, true);
+        if ((state.showUserTabs.get(sessionId) || []).length > 0) showUserPanelOpen.set(sessionId, true);
+        return { sidePanelMerged, planPanelOpen, filePreviewOpen, showUserPanelOpen };
+      }
+      return { sidePanelMerged };
+    }),
+
+  setActiveMergedTab: (sessionId, tabId) =>
+    set((state) => {
+      const activeMergedTabId = new Map(state.activeMergedTabId);
+      activeMergedTabId.set(sessionId, tabId);
+      return { activeMergedTabId };
     }),
 
   setWorktrees: (machineId, worktrees) =>

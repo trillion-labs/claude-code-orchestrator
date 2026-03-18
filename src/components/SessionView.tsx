@@ -8,13 +8,14 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2, AppWindow } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2, AppWindow, Rows2 } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
 import { PlanPanel } from "./PlanPanel";
 import { FilePreviewPanel } from "./FilePreviewPanel";
 import { ShowUserPanel } from "./ShowUserPanel";
+import { SidePanel } from "./SidePanel";
 import { useStore } from "@/store";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import type { FileReadResult } from "@/hooks/useWebSocket";
@@ -51,12 +52,38 @@ export function SessionView({
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [modePopoverOpen, setModePopoverOpen] = useState(false);
 
+  // Plan panel
   const planContent = useStore((s) => s.planContent.get(session.id));
   const planPanelOpen = useStore((s) => s.planPanelOpen.get(session.id) ?? false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
+
+  // History
   const hasMoreMessages = useStore((s) => s.hasMoreMessages.get(session.id) ?? true);
   const loadingHistory = useStore((s) => s.loadingHistory.get(session.id) ?? false);
   const setLoadingHistory = useStore((s) => s.setLoadingHistory);
+
+  // File preview tabs
+  const filePreviewTabs = useStore((s) => s.filePreviewTabs.get(session.id) || []);
+  const activeFilePreviewTabId = useStore((s) => s.activeFilePreviewTabId.get(session.id) || "");
+  const filePreviewOpen = useStore((s) => s.filePreviewOpen.get(session.id) ?? false);
+  const setFilePreviewOpen = useStore((s) => s.setFilePreviewOpen);
+  const setFilePreviewLoading = useStore((s) => s.setFilePreviewLoading);
+  const addFilePreviewTab = useStore((s) => s.addFilePreviewTab);
+  const setFilePreviewError = useStore((s) => s.setFilePreviewError);
+  const closeFilePreviewTab = useStore((s) => s.closeFilePreviewTab);
+  const setActiveFilePreviewTab = useStore((s) => s.setActiveFilePreviewTab);
+
+  // Show user tabs
+  const showUserTabs = useStore((s) => s.showUserTabs.get(session.id) || []);
+  const activeShowUserTabId = useStore((s) => s.activeShowUserTabId.get(session.id) || "");
+  const showUserPanelOpen = useStore((s) => s.showUserPanelOpen.get(session.id) ?? false);
+  const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
+  const closeShowUserTab = useStore((s) => s.closeShowUserTab);
+  const setActiveShowUserTab = useStore((s) => s.setActiveShowUserTab);
+
+  // Merged side panel
+  const sidePanelMerged = useStore((s) => s.sidePanelMerged.get(session.id) ?? false);
+  const setSidePanelMerged = useStore((s) => s.setSidePanelMerged);
 
   const handleLoadHistory = useCallback(() => {
     if (loadingHistory || !hasMoreMessages || messages.length === 0) return;
@@ -65,20 +92,10 @@ export function SessionView({
     send({ type: "session.history", sessionId: session.id, before: oldestTimestamp, limit: 20 });
   }, [loadingHistory, hasMoreMessages, messages, session.id, setLoadingHistory, send]);
 
-  const showUserContent = useStore((s) => s.showUserContent.get(session.id));
-  const showUserPanelOpen = useStore((s) => s.showUserPanelOpen.get(session.id) ?? false);
-  const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
-
-  const filePreview = useStore((s) => s.filePreview.get(session.id));
-  const filePreviewOpen = useStore((s) => s.filePreviewOpen.get(session.id) ?? false);
-  const setFilePreviewOpen = useStore((s) => s.setFilePreviewOpen);
-  const setFilePreviewLoading = useStore((s) => s.setFilePreviewLoading);
-  const setFilePreview = useStore((s) => s.setFilePreview);
-  const setFilePreviewError = useStore((s) => s.setFilePreviewError);
-
   const handleFilePreview = useCallback(async (filePath: string) => {
-    // Toggle off if same file already shown
-    if (filePreview?.filePath === filePath && filePreviewOpen) {
+    // If same file is active and panel is open, toggle off
+    const activeTab = filePreviewTabs.find((t) => t.id === activeFilePreviewTabId);
+    if (activeTab?.filePath === filePath && filePreviewOpen) {
       setFilePreviewOpen(session.id, false);
       return;
     }
@@ -88,16 +105,16 @@ export function SessionView({
     const result = await requestFileRead(session.machineId, filePath);
 
     if (result.error) {
-      setFilePreviewError(session.id, result.error);
+      setFilePreviewError(session.id, filePath, result.error);
     } else {
-      setFilePreview(session.id, {
+      addFilePreviewTab(session.id, {
         filePath: result.filePath,
         content: result.content,
         language: result.language,
         truncated: result.truncated,
       });
     }
-  }, [session.id, session.machineId, filePreview?.filePath, filePreviewOpen, requestFileRead, setFilePreview, setFilePreviewLoading, setFilePreviewError, setFilePreviewOpen]);
+  }, [session.id, session.machineId, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, requestFileRead, addFilePreviewTab, setFilePreviewLoading, setFilePreviewError, setFilePreviewOpen]);
 
   const handleSessionSettingsOpen = (open: boolean) => {
     setSessionSettingsOpen(open);
@@ -105,6 +122,25 @@ export function SessionView({
       send({ type: "session.config.read", sessionId: session.id });
     }
   };
+
+  // Check if any side panel content exists (for merge button visibility)
+  const hasAnySidePanelContent = !!planContent || filePreviewTabs.length > 0 || showUserTabs.length > 0;
+  const hasAnyPanelOpen = planPanelOpen || filePreviewOpen || showUserPanelOpen;
+
+  // Handler to switch to merged mode
+  const handleMerge = useCallback(() => {
+    setSidePanelMerged(session.id, true);
+  }, [session.id, setSidePanelMerged]);
+
+  // Close all side panels
+  const handleCloseAllPanels = useCallback(() => {
+    setPlanPanelOpen(session.id, false);
+    setFilePreviewOpen(session.id, false);
+    setShowUserPanelOpen(session.id, false);
+  }, [session.id, setPlanPanelOpen, setFilePreviewOpen, setShowUserPanelOpen]);
+
+  // Determine which non-loading file preview tabs exist
+  const hasNonLoadingFileTabs = filePreviewTabs.some((t) => !t.loading);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -197,7 +233,7 @@ export function SessionView({
               Total: ${session.totalCostUsd.toFixed(4)}
             </span>
           )}
-          {showUserContent && (
+          {showUserTabs.length > 0 && (
             <Button
               variant="ghost"
               size="icon"
@@ -208,7 +244,7 @@ export function SessionView({
               <AppWindow className="w-4 h-4" />
             </Button>
           )}
-          {filePreview && !filePreview.loading && (
+          {hasNonLoadingFileTabs && (
             <Button
               variant="ghost"
               size="icon"
@@ -226,6 +262,17 @@ export function SessionView({
               className={`h-8 w-8 transition-colors ${planPanelOpen ? "text-violet-400 hover:text-violet-300" : "text-muted-foreground hover:text-foreground"}`}
             >
               <ClipboardList className="w-4 h-4" />
+            </Button>
+          )}
+          {hasAnySidePanelContent && !sidePanelMerged && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleMerge}
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              title="Merge side panels"
+            >
+              <Rows2 className="w-4 h-4" />
             </Button>
           )}
           {onSplitRight && (
@@ -270,11 +317,10 @@ export function SessionView({
 
       <Separator />
 
-      {/* Content area: chat + optional plan panel */}
+      {/* Content area: chat + optional side panels */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Chat area */}
         <div className="flex flex-col flex-1 min-w-0">
-          {/* Messages */}
           {messages.length === 0 && !streamingText ? (
             <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
               Send a prompt to start the conversation
@@ -294,7 +340,6 @@ export function SessionView({
             />
           )}
 
-          {/* Input */}
           <PromptInput
             onSend={onSendPrompt}
             disabled={isBusy}
@@ -302,34 +347,47 @@ export function SessionView({
           />
         </div>
 
-        {/* Plan panel */}
-        {planContent && planPanelOpen && (
-          <PlanPanel
-            content={planContent}
-            onClose={() => setPlanPanelOpen(session.id, false)}
+        {/* Side panels */}
+        {sidePanelMerged && hasAnyPanelOpen ? (
+          /* Merged mode: single unified panel with tabs */
+          <SidePanel
+            sessionId={session.id}
+            onClose={handleCloseAllPanels}
           />
-        )}
+        ) : (
+          /* Split mode: individual panels (mutual exclusion) */
+          <>
+            {planContent && planPanelOpen && (
+              <PlanPanel
+                content={planContent}
+                onClose={() => setPlanPanelOpen(session.id, false)}
+              />
+            )}
 
-        {/* Show user panel */}
-        {showUserContent && showUserPanelOpen && (
-          <ShowUserPanel
-            title={showUserContent.title}
-            html={showUserContent.html}
-            onClose={() => setShowUserPanelOpen(session.id, false)}
-          />
-        )}
+            {showUserTabs.length > 0 && showUserPanelOpen && (
+              <ShowUserPanel
+                sessionId={session.id}
+                tabs={showUserTabs}
+                activeTabId={activeShowUserTabId}
+                onSetActiveTab={(tabId) => setActiveShowUserTab(session.id, tabId)}
+                onCloseTab={(tabId) => closeShowUserTab(session.id, tabId)}
+                onClose={() => setShowUserPanelOpen(session.id, false)}
+                onMerge={hasAnySidePanelContent ? handleMerge : undefined}
+              />
+            )}
 
-        {/* File preview panel */}
-        {filePreview && filePreviewOpen && (
-          <FilePreviewPanel
-            filePath={filePreview.filePath}
-            content={filePreview.content}
-            language={filePreview.language}
-            truncated={filePreview.truncated}
-            loading={filePreview.loading}
-            error={filePreview.error}
-            onClose={() => setFilePreviewOpen(session.id, false)}
-          />
+            {filePreviewTabs.length > 0 && filePreviewOpen && (
+              <FilePreviewPanel
+                sessionId={session.id}
+                tabs={filePreviewTabs}
+                activeTabId={activeFilePreviewTabId}
+                onSetActiveTab={(tabId) => setActiveFilePreviewTab(session.id, tabId)}
+                onCloseTab={(tabId) => closeFilePreviewTab(session.id, tabId)}
+                onClose={() => setFilePreviewOpen(session.id, false)}
+                onMerge={hasAnySidePanelContent ? handleMerge : undefined}
+              />
+            )}
+          </>
         )}
       </div>
 
