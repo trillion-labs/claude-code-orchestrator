@@ -905,14 +905,17 @@ function ShowUserCard({ data }: { data: { title?: string } }) {
   const planContent = useStore((s) => sessionId ? s.planContent.get(sessionId) : undefined);
   const filePreviewTabs = useStore((s) => sessionId ? s.filePreviewTabs.get(sessionId) : undefined);
 
+  // Check availability: in open tabs or in cache
+  const isOpen = showUserTabs?.some((t) => t.title === data.title) ?? false;
+  const isCached = showUserCache?.some((t) => t.title === data.title) ?? false;
+  const isExpired = !isOpen && !isCached;
+
   const handleClick = () => {
-    if (!sessionId) return;
-    // Find in open tabs first, then in cache
+    if (!sessionId || isExpired) return;
     const openTab = showUserTabs?.find((t) => t.title === data.title);
     const cachedTab = !openTab ? showUserCache?.find((t) => t.title === data.title) : null;
 
     if (cachedTab) {
-      // Reopen from cache
       reopenShowUserTab(sessionId, cachedTab.id);
     }
 
@@ -920,16 +923,13 @@ function ShowUserCard({ data }: { data: { title?: string } }) {
 
     if (isMerged) {
       if (tab) setActiveMergedTab(sessionId, `show:${tab.id}`);
-      // Ensure merged panel is open
       setShowUserPanelOpen(sessionId, true);
       if (planContent) setPlanPanelOpenGlobal(sessionId, true);
       if ((filePreviewTabs || []).length > 0) setFilePreviewOpen(sessionId, true);
     } else {
       if (openTab && showUserPanelOpen) {
-        // Already open and visible → toggle off
         setShowUserPanelOpen(sessionId, false);
       } else {
-        // Open or reopen
         setShowUserPanelOpen(sessionId, true);
       }
     }
@@ -938,10 +938,17 @@ function ShowUserCard({ data }: { data: { title?: string } }) {
   return (
     <button
       onClick={handleClick}
-      className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-teal-500/20 bg-teal-500/[0.04] hover:bg-teal-500/[0.08] hover:border-teal-500/30 transition-colors cursor-pointer w-full text-left"
+      disabled={isExpired}
+      className={`not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border w-full text-left transition-colors ${
+        isExpired
+          ? "border-white/5 bg-white/[0.02] cursor-not-allowed opacity-50"
+          : "border-teal-500/20 bg-teal-500/[0.04] hover:bg-teal-500/[0.08] hover:border-teal-500/30 cursor-pointer"
+      }`}
     >
-      <AppWindow className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
-      <span className="text-xs text-teal-300 font-medium">Visual Content</span>
+      <AppWindow className={`w-3.5 h-3.5 flex-shrink-0 ${isExpired ? "text-gray-500" : "text-teal-400"}`} />
+      <span className={`text-xs font-medium ${isExpired ? "text-gray-500" : "text-teal-300"}`}>
+        {isExpired ? "Expired" : "Visual Content"}
+      </span>
       <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
         {data.title || "Preview"}
       </span>
