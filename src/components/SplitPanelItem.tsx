@@ -7,6 +7,8 @@ import type { SplitPanel } from "@/store";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import type { FileReadResult } from "@/hooks/useWebSocket";
 
+const EMPTY_MESSAGES: never[] = [];
+
 interface SplitPanelItemProps {
   panel: SplitPanel;
   isFocused: boolean;
@@ -25,7 +27,7 @@ export function SplitPanelItem({
   requestFileRead,
 }: SplitPanelItemProps) {
   const session = useStore((s) => s.sessions.get(panel.sessionId));
-  const messages = useStore((s) => s.messages.get(panel.sessionId) || []);
+  const messages = useStore((s) => s.messages.get(panel.sessionId) ?? EMPTY_MESSAGES);
   const streamingText = useStore((s) => s.streamingText.get(panel.sessionId) || "");
   const sessionNames = useStore((s) => s.sessionNames);
   const sessionMessages = useStore((s) => s.messages);
