@@ -588,14 +588,14 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
         <div className="flex gap-2 px-4 pb-3 pt-1">
           <button
             onClick={handleAllow}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-medium text-emerald-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-semibold text-emerald-800 dark:text-emerald-200 transition-colors"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             Allow
           </button>
           <button
             onClick={handleDeny}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-sm font-medium text-red-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-sm font-semibold text-red-800 dark:text-red-200 transition-colors"
           >
             <ShieldX className="w-3.5 h-3.5" />
             Deny
@@ -683,14 +683,14 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
         <div className="flex gap-2 px-4 pb-3 pt-1">
           <button
             onClick={handleApprove}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-medium text-emerald-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-semibold text-emerald-800 dark:text-emerald-200 transition-colors"
           >
             <Play className="w-3.5 h-3.5" />
             Approve &amp; Implement
           </button>
           <button
             onClick={handleIterate}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-sm font-medium text-blue-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-sm font-semibold text-blue-800 dark:text-blue-200 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Request Changes
