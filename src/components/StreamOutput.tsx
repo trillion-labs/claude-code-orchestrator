@@ -617,6 +617,25 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
   const hasPlanContent = useStore((s) => sessionId ? s.planContent.has(sessionId) : false);
   const planPanelOpen = useStore((s) => sessionId ? s.planPanelOpen.get(sessionId) ?? false : false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
+  const isMerged = useStore((s) => sessionId ? s.sidePanelMerged.get(sessionId) ?? false : false);
+  const setActiveMergedTab = useStore((s) => s.setActiveMergedTab);
+  const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
+  const setFilePreviewOpen = useStore((s) => s.setFilePreviewOpen);
+  const showUserTabs = useStore((s) => sessionId ? s.showUserTabs.get(sessionId) : undefined);
+  const filePreviewTabs = useStore((s) => sessionId ? s.filePreviewTabs.get(sessionId) : undefined);
+
+  const handleTogglePlan = () => {
+    if (!sessionId) return;
+    if (isMerged) {
+      setActiveMergedTab(sessionId, "plan");
+      // Ensure merged panel is open
+      setPlanPanelOpen(sessionId, true);
+      if ((showUserTabs || []).length > 0) setShowUserPanelOpen(sessionId, true);
+      if ((filePreviewTabs || []).length > 0) setFilePreviewOpen(sessionId, true);
+    } else {
+      setPlanPanelOpen(sessionId, !planPanelOpen);
+    }
+  };
   const responded = data.resolved || storeDecision || null;
 
   const readOnly = !interactive || responded !== null;
@@ -697,7 +716,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
           </button>
           {hasPlanContent && sessionId && (
             <button
-              onClick={() => setPlanPanelOpen(sessionId, !planPanelOpen)}
+              onClick={handleTogglePlan}
               className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
                 planPanelOpen
                   ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
@@ -715,7 +734,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
       {readOnly && hasPlanContent && sessionId && (
         <div className="flex gap-2 px-4 pb-3 pt-1">
           <button
-            onClick={() => setPlanPanelOpen(sessionId, !planPanelOpen)}
+            onClick={handleTogglePlan}
             className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
               planPanelOpen
                 ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
@@ -876,14 +895,60 @@ function ShowUserCard({ data }: { data: { title?: string } }) {
   const sessionId = useContext(SessionIdContext);
   const showUserPanelOpen = useStore((s) => sessionId ? s.showUserPanelOpen.get(sessionId) ?? false : false);
   const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
+  const isMerged = useStore((s) => sessionId ? s.sidePanelMerged.get(sessionId) ?? false : false);
+  const showUserTabs = useStore((s) => sessionId ? s.showUserTabs.get(sessionId) : undefined);
+  const showUserCache = useStore((s) => sessionId ? s.showUserCache.get(sessionId) : undefined);
+  const reopenShowUserTab = useStore((s) => s.reopenShowUserTab);
+  const setActiveMergedTab = useStore((s) => s.setActiveMergedTab);
+  const setPlanPanelOpenGlobal = useStore((s) => s.setPlanPanelOpen);
+  const setFilePreviewOpen = useStore((s) => s.setFilePreviewOpen);
+  const planContent = useStore((s) => sessionId ? s.planContent.get(sessionId) : undefined);
+  const filePreviewTabs = useStore((s) => sessionId ? s.filePreviewTabs.get(sessionId) : undefined);
+
+  // Check availability: in open tabs or in cache
+  const isOpen = showUserTabs?.some((t) => t.title === data.title) ?? false;
+  const isCached = showUserCache?.some((t) => t.title === data.title) ?? false;
+  const isExpired = !isOpen && !isCached;
+
+  const handleClick = () => {
+    if (!sessionId || isExpired) return;
+    const openTab = showUserTabs?.find((t) => t.title === data.title);
+    const cachedTab = !openTab ? showUserCache?.find((t) => t.title === data.title) : null;
+
+    if (cachedTab) {
+      reopenShowUserTab(sessionId, cachedTab.id);
+    }
+
+    const tab = openTab || cachedTab;
+
+    if (isMerged) {
+      if (tab) setActiveMergedTab(sessionId, `show:${tab.id}`);
+      setShowUserPanelOpen(sessionId, true);
+      if (planContent) setPlanPanelOpenGlobal(sessionId, true);
+      if ((filePreviewTabs || []).length > 0) setFilePreviewOpen(sessionId, true);
+    } else {
+      if (openTab && showUserPanelOpen) {
+        setShowUserPanelOpen(sessionId, false);
+      } else {
+        setShowUserPanelOpen(sessionId, true);
+      }
+    }
+  };
 
   return (
     <button
-      onClick={() => sessionId && setShowUserPanelOpen(sessionId, !showUserPanelOpen)}
-      className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-teal-500/20 bg-teal-500/[0.04] hover:bg-teal-500/[0.08] hover:border-teal-500/30 transition-colors cursor-pointer w-full text-left"
+      onClick={handleClick}
+      disabled={isExpired}
+      className={`not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border w-full text-left transition-colors ${
+        isExpired
+          ? "border-white/5 bg-white/[0.02] cursor-not-allowed opacity-50"
+          : "border-teal-500/20 bg-teal-500/[0.04] hover:bg-teal-500/[0.08] hover:border-teal-500/30 cursor-pointer"
+      }`}
     >
-      <AppWindow className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
-      <span className="text-xs text-teal-300 font-medium">Visual Content</span>
+      <AppWindow className={`w-3.5 h-3.5 flex-shrink-0 ${isExpired ? "text-gray-500" : "text-teal-400"}`} />
+      <span className={`text-xs font-medium ${isExpired ? "text-gray-500" : "text-teal-300"}`}>
+        {isExpired ? "Expired" : "Visual Content"}
+      </span>
       <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
         {data.title || "Preview"}
       </span>
