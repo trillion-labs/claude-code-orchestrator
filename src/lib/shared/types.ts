@@ -87,6 +87,8 @@ export interface Project {
   machineId: string;
   workDir: string;
   permissionMode: PermissionMode;
+  orchestratorSessionId?: string;
+  orchestratorClaudeSessionId?: string; // Claude CLI session ID (for --resume)
   createdAt: number;
   updatedAt: number;
 }
@@ -119,6 +121,7 @@ export interface Session {
   worktree?: WorktreeInfo;
   projectId?: string;
   taskId?: string;
+  isOrchestrator?: boolean;
 }
 
 // ── Claude Stream JSON Types ──

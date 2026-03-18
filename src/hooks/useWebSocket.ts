@@ -73,6 +73,7 @@ export function useWebSocket() {
     updateSessionLink,
     updateSessionProject,
     setSessionName,
+    setOrchestratorSession,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -287,9 +288,19 @@ export function useWebSocket() {
         case "session.displayName":
           setSessionName(msg.sessionId, msg.name);
           break;
+
+        // ── Orchestrator Manager ──
+
+        case "orchestrator.created":
+          setOrchestratorSession(msg.projectId, msg.session.id);
+          break;
+
+        case "orchestrator.terminated":
+          setOrchestratorSession(msg.projectId, null);
+          break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setShowUserContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, setShowUserContent, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setOrchestratorSession]
   );
 
   const connect = useCallback(() => {

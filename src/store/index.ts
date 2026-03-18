@@ -57,6 +57,8 @@ interface SessionState {
   activeProjectId: string | null;
   tasks: Map<string, Task[]>; // projectId → Task[]
   viewMode: "sessions" | "kanban";
+  // Orchestrator manager sessions (projectId → sessionId)
+  orchestratorSessions: Map<string, string>;
   // Custom ordering for sidebar lists (array of IDs)
   sessionOrder: string[];
   projectOrder: string[];
@@ -140,6 +142,8 @@ interface SessionState {
   // Sidebar ordering
   reorderSessions: (orderedIds: string[]) => void;
   reorderProjects: (orderedIds: string[]) => void;
+  // Orchestrator sessions
+  setOrchestratorSession: (projectId: string, sessionId: string | null) => void;
 
   // Split panel
   splitSession: (sessionId: string) => void;
@@ -179,6 +183,7 @@ export const useStore = create<SessionState>((set) => ({
   splitPanels: [],
   splitPanelWidths: new Map(),
   focusedPanelId: null,
+  orchestratorSessions: new Map(),
   viewMode: "sessions" as const,
   sessionOrder: [],
   projectOrder: [],
@@ -775,6 +780,17 @@ export const useStore = create<SessionState>((set) => ({
 
   reorderSessions: (orderedIds) => set({ sessionOrder: orderedIds }),
   reorderProjects: (orderedIds) => set({ projectOrder: orderedIds }),
+
+  setOrchestratorSession: (projectId, sessionId) =>
+    set((state) => {
+      const orchestratorSessions = new Map(state.orchestratorSessions);
+      if (sessionId) {
+        orchestratorSessions.set(projectId, sessionId);
+      } else {
+        orchestratorSessions.delete(projectId);
+      }
+      return { orchestratorSessions };
+    }),
 
   // ── Split Panel ──
 

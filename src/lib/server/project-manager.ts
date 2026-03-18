@@ -371,4 +371,15 @@ export class ProjectManager {
     }
     return null;
   }
+
+  // ── Orchestrator Session Management ──
+
+  async setOrchestratorSession(projectId: string, sessionId: string, claudeSessionId: string): Promise<void> {
+    await this.store.updateProject(projectId, { orchestratorSessionId: sessionId, orchestratorClaudeSessionId: claudeSessionId } as any);
+  }
+
+  async clearOrchestratorSession(projectId: string): Promise<void> {
+    // Clear the live session ID but keep claudeSessionId for resume
+    await this.store.updateProject(projectId, { orchestratorSessionId: undefined } as any);
+  }
 }

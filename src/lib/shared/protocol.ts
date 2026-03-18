@@ -75,7 +75,10 @@ export type ClientMessage =
   // ── Session-Project linking ──
   | { type: "session.setProject"; sessionId: string; projectId: string | null }
   // ── Message history pagination ──
-  | { type: "session.history"; sessionId: string; before: number; limit?: number };
+  | { type: "session.history"; sessionId: string; before: number; limit?: number }
+  // ── Orchestrator Manager ──
+  | { type: "orchestrator.create"; projectId: string }
+  | { type: "orchestrator.prompt"; projectId: string; prompt: string };
 
 // ── Server → Client Messages ──
 
@@ -228,4 +231,7 @@ export type ServerMessage =
   // ── Show user (visual content panel) ──
   | { type: "session.showUser"; sessionId: string; title: string; html: string }
   // ── Message history pagination ──
-  | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean };
+  | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean }
+  // ── Orchestrator Manager ──
+  | { type: "orchestrator.created"; projectId: string; session: Session }
+  | { type: "orchestrator.terminated"; projectId: string };
