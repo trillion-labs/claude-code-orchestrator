@@ -22,6 +22,8 @@ export interface ShowUserTab {
   html: string;
 }
 
+const MAX_SHOW_USER_CACHE = 20;
+
 const MAX_SPLIT_PANELS = 4;
 
 interface SessionState {
@@ -65,7 +67,8 @@ interface SessionState {
   activeFilePreviewTabId: Map<string, string>;
   filePreviewOpen: Map<string, boolean>;
   // Show user tabs (multiple show_user contents per session)
-  showUserTabs: Map<string, ShowUserTab[]>;
+  showUserTabs: Map<string, ShowUserTab[]>;       // open tabs
+  showUserCache: Map<string, ShowUserTab[]>;       // all received content (max 20)
   activeShowUserTabId: Map<string, string>;
   showUserPanelOpen: Map<string, boolean>;
   // Merged side panel mode (plan + file + show_user in one panel)
@@ -146,6 +149,7 @@ interface SessionState {
   // Show user tabs
   addShowUserTab: (sessionId: string, title: string, html: string) => void;
   closeShowUserTab: (sessionId: string, tabId: string) => void;
+  reopenShowUserTab: (sessionId: string, tabId: string) => void;
   setActiveShowUserTab: (sessionId: string, tabId: string) => void;
   setShowUserPanelOpen: (sessionId: string, open: boolean) => void;
   clearShowUserContent: (sessionId: string) => void;
@@ -204,6 +208,7 @@ export const useStore = create<SessionState>((set) => ({
   activeFilePreviewTabId: new Map(),
   filePreviewOpen: new Map(),
   showUserTabs: new Map(),
+  showUserCache: new Map(),
   activeShowUserTabId: new Map(),
   showUserPanelOpen: new Map(),
   sidePanelMerged: new Map(),
@@ -308,6 +313,8 @@ export const useStore = create<SessionState>((set) => ({
       filePreviewOpen.delete(sessionId);
       const showUserTabs = new Map(state.showUserTabs);
       showUserTabs.delete(sessionId);
+      const showUserCache = new Map(state.showUserCache);
+      showUserCache.delete(sessionId);
       const activeShowUserTabId = new Map(state.activeShowUserTabId);
       activeShowUserTabId.delete(sessionId);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
@@ -332,7 +339,7 @@ export const useStore = create<SessionState>((set) => ({
         return {
           sessions, messages, hasMoreMessages, loadingHistory, streamingText,
           pendingAttention, pendingRequests, sessionNames, sessionConfig,
-          planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, showUserTabs, activeShowUserTabId, showUserPanelOpen, sidePanelMerged, activeMergedTabId,
+          planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, showUserTabs, showUserCache, activeShowUserTabId, showUserPanelOpen, sidePanelMerged, activeMergedTabId,
           splitPanels, splitPanelWidths, focusedPanelId,
           activeSessionId: state.activeSessionId === sessionId
             ? remainingSessionId
@@ -730,11 +737,17 @@ export const useStore = create<SessionState>((set) => ({
 
   addShowUserTab: (sessionId, title, html) =>
     set((state) => {
+      const newTab: ShowUserTab = { id: crypto.randomUUID(), title, html };
+      // Add to cache (capped)
+      const showUserCache = new Map(state.showUserCache);
+      const cache = [...(showUserCache.get(sessionId) || []), newTab];
+      if (cache.length > MAX_SHOW_USER_CACHE) cache.splice(0, cache.length - MAX_SHOW_USER_CACHE);
+      showUserCache.set(sessionId, cache);
+      // Add to open tabs
       const showUserTabs = new Map(state.showUserTabs);
-      const tabs = [...(showUserTabs.get(sessionId) || [])];
-      const tabId = crypto.randomUUID();
-      tabs.push({ id: tabId, title, html });
+      const tabs = [...(showUserTabs.get(sessionId) || []), newTab];
       showUserTabs.set(sessionId, tabs);
+      const tabId = newTab.id;
       const activeShowUserTabId = new Map(state.activeShowUserTabId);
       activeShowUserTabId.set(sessionId, tabId);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
@@ -747,14 +760,14 @@ export const useStore = create<SessionState>((set) => ({
         if (state.planContent.has(sessionId)) planPanelOpen.set(sessionId, true);
         const filePreviewOpen = new Map(state.filePreviewOpen);
         if ((state.filePreviewTabs.get(sessionId) || []).length > 0) filePreviewOpen.set(sessionId, true);
-        return { showUserTabs, activeShowUserTabId, showUserPanelOpen, planPanelOpen, filePreviewOpen, activeMergedTabId };
+        return { showUserTabs, showUserCache, activeShowUserTabId, showUserPanelOpen, planPanelOpen, filePreviewOpen, activeMergedTabId };
       }
       // Split mode: mutual exclusion
       const planPanelOpen = new Map(state.planPanelOpen);
       planPanelOpen.set(sessionId, false);
       const filePreviewOpen = new Map(state.filePreviewOpen);
       filePreviewOpen.set(sessionId, false);
-      return { showUserTabs, activeShowUserTabId, showUserPanelOpen, planPanelOpen, filePreviewOpen };
+      return { showUserTabs, showUserCache, activeShowUserTabId, showUserPanelOpen, planPanelOpen, filePreviewOpen };
     }),
 
   closeShowUserTab: (sessionId, tabId) =>
@@ -772,6 +785,31 @@ export const useStore = create<SessionState>((set) => ({
         return { showUserTabs, activeShowUserTabId, showUserPanelOpen };
       }
       return { showUserTabs, activeShowUserTabId };
+    }),
+
+  reopenShowUserTab: (sessionId, tabId) =>
+    set((state) => {
+      const cache = state.showUserCache.get(sessionId) || [];
+      const cached = cache.find((t) => t.id === tabId);
+      if (!cached) return {};
+      // Check if already open
+      const existingTabs = state.showUserTabs.get(sessionId) || [];
+      if (existingTabs.some((t) => t.id === tabId)) {
+        // Already open, just focus it
+        const activeShowUserTabId = new Map(state.activeShowUserTabId);
+        activeShowUserTabId.set(sessionId, tabId);
+        const showUserPanelOpen = new Map(state.showUserPanelOpen);
+        showUserPanelOpen.set(sessionId, true);
+        return { activeShowUserTabId, showUserPanelOpen };
+      }
+      // Reopen from cache
+      const showUserTabs = new Map(state.showUserTabs);
+      showUserTabs.set(sessionId, [...existingTabs, cached]);
+      const activeShowUserTabId = new Map(state.activeShowUserTabId);
+      activeShowUserTabId.set(sessionId, tabId);
+      const showUserPanelOpen = new Map(state.showUserPanelOpen);
+      showUserPanelOpen.set(sessionId, true);
+      return { showUserTabs, activeShowUserTabId, showUserPanelOpen };
     }),
 
   setActiveShowUserTab: (sessionId, tabId) =>
@@ -792,11 +830,13 @@ export const useStore = create<SessionState>((set) => ({
     set((state) => {
       const showUserTabs = new Map(state.showUserTabs);
       showUserTabs.delete(sessionId);
+      const showUserCache = new Map(state.showUserCache);
+      showUserCache.delete(sessionId);
       const activeShowUserTabId = new Map(state.activeShowUserTabId);
       activeShowUserTabId.delete(sessionId);
       const showUserPanelOpen = new Map(state.showUserPanelOpen);
       showUserPanelOpen.delete(sessionId);
-      return { showUserTabs, activeShowUserTabId, showUserPanelOpen };
+      return { showUserTabs, showUserCache, activeShowUserTabId, showUserPanelOpen };
     }),
 
   setSidePanelMerged: (sessionId, merged) =>

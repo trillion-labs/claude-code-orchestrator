@@ -897,6 +897,8 @@ function ShowUserCard({ data }: { data: { title?: string } }) {
   const setShowUserPanelOpen = useStore((s) => s.setShowUserPanelOpen);
   const isMerged = useStore((s) => sessionId ? s.sidePanelMerged.get(sessionId) ?? false : false);
   const showUserTabs = useStore((s) => sessionId ? s.showUserTabs.get(sessionId) : undefined);
+  const showUserCache = useStore((s) => sessionId ? s.showUserCache.get(sessionId) : undefined);
+  const reopenShowUserTab = useStore((s) => s.reopenShowUserTab);
   const setActiveMergedTab = useStore((s) => s.setActiveMergedTab);
   const setPlanPanelOpenGlobal = useStore((s) => s.setPlanPanelOpen);
   const setFilePreviewOpen = useStore((s) => s.setFilePreviewOpen);
@@ -905,18 +907,31 @@ function ShowUserCard({ data }: { data: { title?: string } }) {
 
   const handleClick = () => {
     if (!sessionId) return;
+    // Find in open tabs first, then in cache
+    const openTab = showUserTabs?.find((t) => t.title === data.title);
+    const cachedTab = !openTab ? showUserCache?.find((t) => t.title === data.title) : null;
+
+    if (cachedTab) {
+      // Reopen from cache
+      reopenShowUserTab(sessionId, cachedTab.id);
+    }
+
+    const tab = openTab || cachedTab;
+
     if (isMerged) {
-      // Find matching tab by title
-      const tab = showUserTabs?.find((t) => t.title === data.title);
-      if (tab) {
-        setActiveMergedTab(sessionId, `show:${tab.id}`);
-      }
+      if (tab) setActiveMergedTab(sessionId, `show:${tab.id}`);
       // Ensure merged panel is open
       setShowUserPanelOpen(sessionId, true);
       if (planContent) setPlanPanelOpenGlobal(sessionId, true);
       if ((filePreviewTabs || []).length > 0) setFilePreviewOpen(sessionId, true);
     } else {
-      setShowUserPanelOpen(sessionId, !showUserPanelOpen);
+      if (openTab && showUserPanelOpen) {
+        // Already open and visible → toggle off
+        setShowUserPanelOpen(sessionId, false);
+      } else {
+        // Open or reopen
+        setShowUserPanelOpen(sessionId, true);
+      }
     }
   };
 
