@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest, KanbanColumn } from "@/lib/shared/types";
 
 export interface SplitPanel {
   id: string;
@@ -134,6 +134,7 @@ interface SessionState {
   addTask: (task: Task) => void;
   updateTask: (task: Task) => void;
   removeTask: (projectId: string, taskId: string) => void;
+  moveTaskLocal: (projectId: string, taskId: string, destColumn: KanbanColumn, destOrder: number) => void;
   updateSessionLink: (sessionId: string, projectId: string, taskId: string) => void;
   setViewMode: (mode: "sessions" | "kanban") => void;
   // Sidebar ordering
@@ -708,6 +709,55 @@ export const useStore = create<SessionState>((set) => ({
         projectId,
         existing.filter((t) => t.id !== taskId)
       );
+      return { tasks };
+    }),
+
+  moveTaskLocal: (projectId, taskId, destColumn, destOrder) =>
+    set((state) => {
+      const tasks = new Map(state.tasks);
+      const existing = tasks.get(projectId) || [];
+      const taskIdx = existing.findIndex((t) => t.id === taskId);
+      if (taskIdx === -1) return state;
+
+      const task = existing[taskIdx];
+      const srcColumn = task.column;
+      const srcOrder = task.order;
+
+      let updated: Task[];
+
+      if (srcColumn === destColumn) {
+        // Same-column reorder
+        updated = existing.map((t) => {
+          if (t.column !== srcColumn) return t;
+          if (t.id === taskId) return { ...t, order: destOrder };
+          if (srcOrder < destOrder) {
+            if (t.order > srcOrder && t.order <= destOrder) {
+              return { ...t, order: t.order - 1 };
+            }
+          } else {
+            if (t.order >= destOrder && t.order < srcOrder) {
+              return { ...t, order: t.order + 1 };
+            }
+          }
+          return t;
+        });
+      } else {
+        // Cross-column move
+        updated = existing.map((t) => {
+          if (t.id === taskId) {
+            return { ...t, column: destColumn, order: destOrder };
+          }
+          if (t.column === srcColumn && t.order > srcOrder) {
+            return { ...t, order: t.order - 1 };
+          }
+          if (t.column === destColumn && t.order >= destOrder) {
+            return { ...t, order: t.order + 1 };
+          }
+          return t;
+        });
+      }
+
+      tasks.set(projectId, updated);
       return { tasks };
     }),
 

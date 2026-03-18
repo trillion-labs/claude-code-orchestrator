@@ -99,7 +99,7 @@ export function FilePreviewPanel({
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <FileText className="w-4 h-4 text-sky-400 shrink-0" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-gray-200 truncate">
+            <div className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">
               {basename}
             </div>
             <div className="text-[10px] text-muted-foreground font-mono truncate">

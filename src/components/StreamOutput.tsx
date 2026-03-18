@@ -291,7 +291,7 @@ function QuestionCard({ data, resolvedSelections, isResolved, selectionsRef }: {
 
           {/* Question */}
           <div className="px-4 pt-3 pb-2">
-            <p className={`text-sm leading-relaxed ${readOnly && !submitted ? "text-gray-400" : "text-gray-200"}`}>
+            <p className={`text-sm leading-relaxed ${readOnly && !submitted ? "text-gray-500 dark:text-gray-400" : "text-gray-700 dark:text-gray-200"}`}>
               {q.question}
             </p>
           </div>
@@ -333,7 +333,7 @@ function QuestionCard({ data, resolvedSelections, isResolved, selectionsRef }: {
                     )}
                     <div className="min-w-0">
                       <span className={`text-sm font-medium ${
-                        submitted && selected ? "text-emerald-200" : readOnly || submitted ? "text-gray-500" : selected ? "text-gray-100" : "text-gray-300"
+                        submitted && selected ? "text-emerald-200" : readOnly || submitted ? "text-gray-500" : selected ? "text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-300"
                       }`}>
                         {opt.label}
                       </span>
@@ -365,7 +365,7 @@ function QuestionCard({ data, resolvedSelections, isResolved, selectionsRef }: {
                     />
                     <span
                       className={`text-sm font-medium ${
-                        isOtherSelected(qIdx) ? "text-gray-100" : "text-gray-400"
+                        isOtherSelected(qIdx) ? "text-gray-900 dark:text-gray-100" : "text-gray-500 dark:text-gray-400"
                       }`}
                     >
                       Other
@@ -389,7 +389,7 @@ function QuestionCard({ data, resolvedSelections, isResolved, selectionsRef }: {
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && hasAllSelections) handleSubmit();
                         }}
-                        className="w-full px-3 py-1.5 rounded-md bg-white/[0.05] border border-amber-500/20 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-amber-500/40 font-mono"
+                        className="w-full px-3 py-1.5 rounded-md bg-black/[0.03] dark:bg-white/[0.05] border border-amber-500/20 text-sm text-gray-700 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-600 focus:outline-none focus:border-amber-500/40 font-mono"
                       />
                     </div>
                   )}
@@ -430,7 +430,7 @@ function BashCard({ data }: { data: { command?: string; description?: string } }
       </div>
       {data.command && (
         <div className="px-3 py-2">
-          <code className="text-xs font-mono text-gray-300 break-all">
+          <code className="text-xs font-mono text-gray-600 dark:text-gray-300 break-all">
             {data.command}
           </code>
         </div>
@@ -455,7 +455,7 @@ function FileCard({ data }: { data: { action?: string; file_path?: string } }) {
     >
       <FileText className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
       <span className="text-xs text-sky-300 font-medium">{data.action}</span>
-      <code className="text-xs font-mono text-gray-400 truncate">
+      <code className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">
         {data.file_path}
       </code>
     </button>
@@ -467,7 +467,7 @@ function SearchCard({ data }: { data: { action?: string; pattern?: string; path?
     <div className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-purple-500/20 bg-purple-500/[0.04]">
       <Search className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
       <span className="text-xs text-purple-300 font-medium">{data.action}</span>
-      <code className="text-xs font-mono text-gray-400 truncate">
+      <code className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">
         {data.pattern}
       </code>
       {data.path && (
@@ -482,7 +482,7 @@ function WebCard({ data }: { data: { action?: string; query?: string; url?: stri
     <div className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-500/20 bg-blue-500/[0.04]">
       <Globe className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
       <span className="text-xs text-blue-300 font-medium">{data.action}</span>
-      <span className="text-xs text-gray-400 truncate">
+      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
         {data.query || data.url}
       </span>
     </div>
@@ -494,7 +494,7 @@ function TaskCard({ data }: { data: { description?: string } }) {
     <div className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-orange-500/20 bg-orange-500/[0.04]">
       <Cpu className="w-3.5 h-3.5 text-orange-400 flex-shrink-0" />
       <span className="text-xs text-orange-300 font-medium">Agent</span>
-      <span className="text-xs text-gray-400 truncate">
+      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
         {data.description}
       </span>
     </div>
@@ -505,7 +505,7 @@ function GenericToolCard({ data }: { data: { name?: string } }) {
   return (
     <div className="not-prose my-2 flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-500/20 bg-gray-500/[0.04]">
       <Wrench className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-      <span className="text-xs text-gray-300 font-medium">
+      <span className="text-xs text-gray-600 dark:text-gray-300 font-medium">
         {data.name || "Tool"}
       </span>
     </div>
@@ -573,13 +573,13 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
         }`}>
           {responded === "allow" ? "Allowed" : responded === "deny" ? "Denied" : "Permission Request"}
         </span>
-        <code className="text-xs font-mono text-gray-400 ml-auto">{data.toolName}</code>
+        <code className="text-xs font-mono text-gray-500 dark:text-gray-400 ml-auto">{data.toolName}</code>
       </div>
 
       {/* Tool details */}
       {toolSummary && (
         <div className="px-4 py-2.5">
-          <code className="text-xs font-mono text-gray-300 break-all">{toolSummary}</code>
+          <code className="text-xs font-mono text-gray-600 dark:text-gray-300 break-all">{toolSummary}</code>
         </div>
       )}
 
@@ -588,14 +588,14 @@ function PermissionRequestCard({ data }: { data: { requestId?: string; toolName?
         <div className="flex gap-2 px-4 pb-3 pt-1">
           <button
             onClick={handleAllow}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-medium text-emerald-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-semibold text-emerald-800 dark:text-emerald-200 transition-colors"
           >
             <ShieldCheck className="w-3.5 h-3.5" />
             Allow
           </button>
           <button
             onClick={handleDeny}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-sm font-medium text-red-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-sm font-semibold text-red-800 dark:text-red-200 transition-colors"
           >
             <ShieldX className="w-3.5 h-3.5" />
             Deny
@@ -669,7 +669,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
 
       {/* Description */}
       <div className="px-4 py-3">
-        <p className={`text-sm ${readOnly ? "text-gray-500" : "text-gray-300"}`}>
+        <p className={`text-sm ${readOnly ? "text-gray-500" : "text-gray-600 dark:text-gray-300"}`}>
           {responded === "allow"
             ? "Plan approved. Proceeding with implementation."
             : responded === "deny"
@@ -683,14 +683,14 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
         <div className="flex gap-2 px-4 pb-3 pt-1">
           <button
             onClick={handleApprove}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-medium text-emerald-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-sm font-semibold text-emerald-800 dark:text-emerald-200 transition-colors"
           >
             <Play className="w-3.5 h-3.5" />
             Approve &amp; Implement
           </button>
           <button
             onClick={handleIterate}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-sm font-medium text-blue-200 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-sm font-semibold text-blue-800 dark:text-blue-200 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Request Changes
@@ -701,7 +701,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
               className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
                 planPanelOpen
                   ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
-                  : "bg-white/[0.05] border-white/10 text-gray-400 hover:bg-white/[0.1] hover:text-gray-200"
+                  : "bg-black/[0.03] dark:bg-white/[0.05] border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-black/[0.06] dark:hover:bg-white/[0.1] hover:text-gray-700 dark:hover:text-gray-200"
               }`}
             >
               <ClipboardList className="w-3.5 h-3.5" />
@@ -719,7 +719,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
             className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
               planPanelOpen
                 ? "bg-violet-500/20 border-violet-500/30 text-violet-200"
-                : "bg-white/[0.05] border-white/10 text-gray-400 hover:bg-white/[0.1] hover:text-gray-200"
+                : "bg-black/[0.03] dark:bg-white/[0.05] border-black/10 dark:border-white/10 text-gray-500 dark:text-gray-400 hover:bg-black/[0.06] dark:hover:bg-white/[0.1] hover:text-gray-700 dark:hover:text-gray-200"
             }`}
           >
             <ClipboardList className="w-3.5 h-3.5" />
@@ -738,7 +738,7 @@ function PlanApprovalCard({ data }: { data: { requestId?: string; resolved?: "al
             onChange={(e) => setFeedback(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && feedback.trim()) handleSendFeedback(); }}
             autoFocus
-            className="w-full px-3 py-2 rounded-md bg-white/[0.05] border border-blue-500/20 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/40 font-mono"
+            className="w-full px-3 py-2 rounded-md bg-black/[0.03] dark:bg-white/[0.05] border border-blue-500/20 text-sm text-gray-700 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-600 focus:outline-none focus:border-blue-500/40 font-mono"
           />
           <div className="flex gap-2">
             <button
@@ -884,7 +884,7 @@ function ShowUserCard({ data }: { data: { title?: string } }) {
     >
       <AppWindow className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
       <span className="text-xs text-teal-300 font-medium">Visual Content</span>
-      <span className="text-xs text-gray-400 truncate">
+      <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
         {data.title || "Preview"}
       </span>
     </button>
@@ -937,7 +937,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
       if (isInline) {
         return (
           <code
-            className="px-1.5 py-0.5 rounded bg-white/10 text-[0.8125rem] font-mono text-orange-300"
+            className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/10 text-[0.8125rem] font-mono text-orange-600 dark:text-orange-300"
             {...props}
           >
             {children}
@@ -951,7 +951,7 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
     return (
       <div className="relative group not-prose my-4">
         <div className="flex items-center justify-between px-4 py-1.5 bg-[#1e1e1e] rounded-t-lg border-b border-white/10">
-          <span className="text-xs text-gray-400 font-mono">{language}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{language}</span>
         </div>
         <CopyButton text={codeString} />
         <SyntaxHighlighter
@@ -979,11 +979,11 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
   hr() {
     return (
       <div className="my-4 flex items-center gap-3">
-        <div className="flex-1 border-t border-white/[0.06]" />
-        <span className="text-[10px] text-gray-600 uppercase tracking-widest">
+        <div className="flex-1 border-t border-black/[0.06] dark:border-white/[0.06]" />
+        <span className="text-[10px] text-gray-400 dark:text-gray-600 uppercase tracking-widest">
           continued
         </span>
-        <div className="flex-1 border-t border-white/[0.06]" />
+        <div className="flex-1 border-t border-black/[0.06] dark:border-white/[0.06]" />
       </div>
     );
   },
@@ -998,10 +998,10 @@ const markdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
     return <thead className="border-b border-white/10">{children}</thead>;
   },
   th({ children }) {
-    return <th className="text-left px-3 py-2 text-xs font-semibold text-gray-300 uppercase tracking-wider">{children}</th>;
+    return <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">{children}</th>;
   },
   td({ children }) {
-    return <td className="px-3 py-2 text-gray-300 border-t border-white/[0.04]">{children}</td>;
+    return <td className="px-3 py-2 text-gray-600 dark:text-gray-300 border-t border-black/[0.04] dark:border-white/[0.04]">{children}</td>;
   },
 };
 
@@ -1013,7 +1013,7 @@ function MarkdownContent({ content }: { content: string }) {
   const segments = useMemo(() => parseContentSegments(content), [content]);
 
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-7 prose-li:leading-7 prose-headings:text-gray-100 prose-p:text-gray-300 prose-li:text-gray-300 prose-strong:text-gray-100 prose-a:text-blue-400">
+    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-7 prose-li:leading-7 prose-headings:text-gray-800 dark:prose-headings:text-gray-100 prose-p:text-gray-600 dark:prose-p:text-gray-300 prose-li:text-gray-600 dark:prose-li:text-gray-300 prose-strong:text-gray-800 dark:prose-strong:text-gray-100 prose-a:text-blue-600 dark:prose-a:text-blue-400">
       {segments.map((seg, i) => {
         if (seg.type === "text") {
           return (
@@ -1198,7 +1198,7 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
   return (
     <div
       className={`flex gap-4 rounded-xl px-4 py-4 ${
-        isUser ? "bg-white/[0.03]" : ""
+        isUser ? "bg-black/[0.02] dark:bg-white/[0.03]" : ""
       }`}
     >
       <div
@@ -1221,7 +1221,7 @@ function MessageBubble({ message }: { message: ConversationMessage }) {
           {isUser ? "You" : "Claude"}
         </div>
         {isUser ? (
-          <p className="text-sm leading-7 whitespace-pre-wrap text-gray-200">
+          <p className="text-sm leading-7 whitespace-pre-wrap text-gray-700 dark:text-gray-200">
             {message.content}
           </p>
         ) : (

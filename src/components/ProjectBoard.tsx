@@ -36,6 +36,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const { getTasksByColumn, getTaskSession } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
   const tasks = useStore((s) => s.tasks);
+  const moveTaskLocal = useStore((s) => s.moveTaskLocal);
   const removeAttention = useStore((s) => s.removeAttention);
   const setSessionName = useStore((s) => s.setSessionName);
   const removePendingRequest = useStore((s) => s.removePendingRequest);
@@ -135,6 +136,9 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
       if (!sourceTask) return;
       if (sourceTask.column === destColumn && sourceTask.order === destOrder) return;
 
+      // Optimistic local update
+      moveTaskLocal(project.id, taskId, destColumn, destOrder);
+
       send({
         type: "task.move",
         projectId: project.id,
@@ -143,7 +147,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
         order: destOrder,
       });
     },
-    [getTasksByColumn, project.id, send]
+    [getTasksByColumn, project.id, send, moveTaskLocal]
   );
 
   const handleCreateTask = (title: string, description: string) => {

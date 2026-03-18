@@ -30,7 +30,7 @@ const planMarkdownComponents: ComponentProps<typeof ReactMarkdown>["components"]
       const isInline = !codeString.includes("\n");
       if (isInline) {
         return (
-          <code className="px-1.5 py-0.5 rounded bg-white/10 text-[0.8125rem] font-mono text-orange-300">
+          <code className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/10 text-[0.8125rem] font-mono text-orange-600 dark:text-orange-300">
             {children}
           </code>
         );
@@ -42,7 +42,7 @@ const planMarkdownComponents: ComponentProps<typeof ReactMarkdown>["components"]
     return (
       <div className="relative group not-prose my-3 max-w-full overflow-hidden">
         <div className="flex items-center px-3 py-1 bg-[#1e1e1e] rounded-t-lg border-b border-white/10">
-          <span className="text-xs text-gray-400 font-mono">{language}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{language}</span>
         </div>
         <SyntaxHighlighter
           style={oneDark}
@@ -78,10 +78,10 @@ const planMarkdownComponents: ComponentProps<typeof ReactMarkdown>["components"]
     return <thead className="border-b border-white/10">{children}</thead>;
   },
   th({ children }) {
-    return <th className="text-left px-3 py-1.5 text-xs font-semibold text-gray-300 uppercase tracking-wider">{children}</th>;
+    return <th className="text-left px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">{children}</th>;
   },
   td({ children }) {
-    return <td className="px-3 py-1.5 text-gray-300 border-t border-white/[0.04]">{children}</td>;
+    return <td className="px-3 py-1.5 text-gray-600 dark:text-gray-300 border-t border-black/[0.04] dark:border-white/[0.04]">{children}</td>;
   },
 };
 
@@ -151,7 +151,7 @@ export function PlanPanel({ content, onClose }: PlanPanelProps) {
       <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-violet-400" />
-          <span className="text-sm font-medium text-gray-200">Plan</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Plan</span>
         </div>
         <button
           onClick={onClose}
@@ -163,7 +163,7 @@ export function PlanPanel({ content, onClose }: PlanPanelProps) {
 
       {/* Plan Content — ScrollArea provides independent y-scroll */}
       <ScrollArea className="flex-1 min-h-0">
-        <div className="px-4 py-4 overflow-x-hidden prose prose-sm dark:prose-invert max-w-none prose-p:leading-7 prose-li:leading-7 prose-headings:text-gray-100 prose-p:text-gray-300 prose-li:text-gray-300 prose-strong:text-gray-100 prose-a:text-blue-400">
+        <div className="px-4 py-4 overflow-x-hidden prose prose-sm dark:prose-invert max-w-none prose-p:leading-7 prose-li:leading-7 prose-headings:text-gray-800 dark:prose-headings:text-gray-100 prose-p:text-gray-600 dark:prose-p:text-gray-300 prose-li:text-gray-600 dark:prose-li:text-gray-300 prose-strong:text-gray-800 dark:prose-strong:text-gray-100 prose-a:text-blue-600 dark:prose-a:text-blue-400">
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={planMarkdownComponents}>
             {content}
           </ReactMarkdown>

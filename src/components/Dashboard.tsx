@@ -32,6 +32,7 @@ import { SplitPanelContainer } from "./SplitPanelContainer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 import { useStore } from "@/store";
 import type { PermissionMode } from "@/lib/shared/types";
 
@@ -154,6 +155,7 @@ export function Dashboard() {
           <div className="flex items-center gap-2 mb-3">
             <Terminal className="w-5 h-5" />
             <h1 className="font-semibold text-sm flex-1">Claude Orchestrator</h1>
+            <ThemeToggle />
             <button
               onClick={() => handleSettingsOpen(true)}
               className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

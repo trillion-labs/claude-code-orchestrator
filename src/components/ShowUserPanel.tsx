@@ -188,7 +188,7 @@ export function ShowUserPanel({ title, html, onClose }: ShowUserPanelProps) {
       <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <AppWindow className="w-4 h-4 text-teal-400 shrink-0" />
-          <span className="text-sm font-medium text-gray-200 truncate">{title}</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate">{title}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button
