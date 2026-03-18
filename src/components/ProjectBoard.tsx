@@ -19,6 +19,7 @@ import { KanbanColumn } from "./KanbanColumn";
 import { TaskCard } from "./TaskCard";
 import { TaskDialog } from "./TaskDialog";
 import { TaskDetail } from "./TaskDetail";
+import { ManagerChatPanel } from "./ManagerChatPanel";
 import { SessionPickerDialog } from "./SessionPickerDialog";
 import { KANBAN_COLUMNS } from "@/lib/shared/types";
 import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
@@ -42,6 +43,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const orchestratorSessionId = useStore((s) => s.orchestratorSessions.get(project.id));
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [managerPanelOpen, setManagerPanelOpen] = useState(false);
   const [detailWidth, setDetailWidth] = useState(780);
 
   // Derive selectedTask from store so it stays in sync with updates
@@ -156,12 +158,15 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   };
 
   const handleManagerClick = () => {
-    if (orchestratorSessionId) {
-      // Focus existing orchestrator session
-      onViewSession(orchestratorSessionId);
+    if (managerPanelOpen) {
+      setManagerPanelOpen(false);
     } else {
-      // Create new orchestrator session
-      send({ type: "orchestrator.create", projectId: project.id });
+      setManagerPanelOpen(true);
+      setSelectedTaskId(null); // Close task detail if open
+      if (!orchestratorSessionId) {
+        // Auto-create/resume orchestrator session
+        send({ type: "orchestrator.create", projectId: project.id });
+      }
     }
   };
 
@@ -210,6 +215,22 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     ? streamingText.get(selectedTask.sessionId) || ""
     : "";
 
+  // Manager session data
+  const managerSession = orchestratorSessionId
+    ? sessions.get(orchestratorSessionId)
+    : undefined;
+
+  const managerMessages = orchestratorSessionId
+    ? messages.get(orchestratorSessionId) || []
+    : [];
+
+  const managerStreamingText = orchestratorSessionId
+    ? streamingText.get(orchestratorSessionId) || ""
+    : "";
+
+  // Whether we can resume a previous manager session (has claudeSessionId but no live session)
+  const hasResumableManager = !orchestratorSessionId && !!project.orchestratorClaudeSessionId;
+
   return (
     <div className="flex flex-col h-full min-w-0">
       {/* Board header */}
@@ -227,7 +248,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
         </div>
         <div className="flex-shrink-0 flex items-center gap-1.5">
           <Button
-            variant={orchestratorSessionId ? "default" : "outline"}
+            variant={managerPanelOpen || orchestratorSessionId ? "default" : "outline"}
             size="sm"
             className="gap-1.5"
             onClick={handleManagerClick}
@@ -267,7 +288,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   label={col.label}
                   tasks={getTasksByColumn(project.id, col.id)}
                   getSession={getTaskSession}
-                  onTaskClick={(task) => setSelectedTaskId(task.id)}
+                  onTaskClick={(task) => { setSelectedTaskId(task.id); setManagerPanelOpen(false); }}
                   onTaskSubmit={handleSubmitTask}
                   onViewSession={onViewSession}
                   onEditTitle={handleEditTitle}
@@ -289,8 +310,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
           </div>
         </div>
 
-        {/* Task detail panel */}
-        {selectedTask && (
+        {/* Side panel (Task detail OR Manager chat — mutually exclusive) */}
+        {(selectedTask || managerPanelOpen) && (
           <div className="flex-shrink-0 flex" style={{ width: detailWidth }}>
             {/* Resize handle */}
             <div
@@ -305,44 +326,77 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               <GripVertical className="w-3 h-3 text-muted-foreground/30 group-hover:text-violet-400 transition-colors" />
             </div>
             <div className="flex-1 min-w-0">
-            <TaskDetail
-              task={selectedTask}
-              session={selectedSession}
-              messages={selectedMessages}
-              streamingText={selectedStreamingText}
-              onClose={() => setSelectedTaskId(null)}
-              onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
-              onDelete={() => handleDeleteTask(selectedTask.id)}
-              onSubmit={() => handleSubmitTask(selectedTask)}
-              onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
-              onResume={() => handleResumeTask(selectedTask)}
-              onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
-              onSendPrompt={(prompt) => {
-                if (selectedTask.sessionId) {
-                  send({ type: "session.prompt", sessionId: selectedTask.sessionId, prompt });
-                }
-              }}
-              onCancelPrompt={() => {
-                if (selectedTask.sessionId) {
-                  send({ type: "session.interrupt", sessionId: selectedTask.sessionId });
-                }
-              }}
-              onPermissionResponse={(requestId, allow, answers, message) => {
-                if (selectedTask.sessionId) {
-                  send({
-                    type: "session.permissionResponse",
-                    sessionId: selectedTask.sessionId,
-                    requestId,
-                    allow,
-                    answers,
-                    message,
-                  });
-                  removeAttention(selectedTask.sessionId, `perm:${requestId}`);
-                  removeAttention(selectedTask.sessionId, "question");
-                  removePendingRequest(selectedTask.sessionId, requestId);
-                }
-              }}
-            />
+            {selectedTask ? (
+              <TaskDetail
+                task={selectedTask}
+                session={selectedSession}
+                messages={selectedMessages}
+                streamingText={selectedStreamingText}
+                onClose={() => setSelectedTaskId(null)}
+                onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
+                onDelete={() => handleDeleteTask(selectedTask.id)}
+                onSubmit={() => handleSubmitTask(selectedTask)}
+                onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
+                onResume={() => handleResumeTask(selectedTask)}
+                onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
+                onSendPrompt={(prompt) => {
+                  if (selectedTask.sessionId) {
+                    send({ type: "session.prompt", sessionId: selectedTask.sessionId, prompt });
+                  }
+                }}
+                onCancelPrompt={() => {
+                  if (selectedTask.sessionId) {
+                    send({ type: "session.interrupt", sessionId: selectedTask.sessionId });
+                  }
+                }}
+                onPermissionResponse={(requestId, allow, answers, message) => {
+                  if (selectedTask.sessionId) {
+                    send({
+                      type: "session.permissionResponse",
+                      sessionId: selectedTask.sessionId,
+                      requestId,
+                      allow,
+                      answers,
+                      message,
+                    });
+                    removeAttention(selectedTask.sessionId, `perm:${requestId}`);
+                    removeAttention(selectedTask.sessionId, "question");
+                    removePendingRequest(selectedTask.sessionId, requestId);
+                  }
+                }}
+              />
+            ) : (
+              <ManagerChatPanel
+                session={managerSession}
+                messages={managerMessages}
+                streamingText={managerStreamingText}
+                hasResumableSession={hasResumableManager}
+                onClose={() => setManagerPanelOpen(false)}
+                onViewSession={() => orchestratorSessionId && onViewSession(orchestratorSessionId)}
+                onCreateOrResume={() => send({ type: "orchestrator.create", projectId: project.id })}
+                onSendPrompt={(prompt) => send({ type: "orchestrator.prompt", projectId: project.id, prompt })}
+                onCancelPrompt={() => {
+                  if (orchestratorSessionId) {
+                    send({ type: "session.interrupt", sessionId: orchestratorSessionId });
+                  }
+                }}
+                onPermissionResponse={(requestId, allow, answers, message) => {
+                  if (orchestratorSessionId) {
+                    send({
+                      type: "session.permissionResponse",
+                      sessionId: orchestratorSessionId,
+                      requestId,
+                      allow,
+                      answers,
+                      message,
+                    });
+                    removeAttention(orchestratorSessionId, `perm:${requestId}`);
+                    removeAttention(orchestratorSessionId, "question");
+                    removePendingRequest(orchestratorSessionId, requestId);
+                  }
+                }}
+              />
+            )}
             </div>
           </div>
         )}

@@ -23,7 +23,7 @@ function respond(id, result) {
 const TOOLS = [
   {
     name: "list_tasks",
-    description: "List all tasks in the current project. Optionally filter by Kanban column.",
+    description: "List task summaries (id, title, column, order) in the current project. Does NOT include descriptions — use get_tasks for full details. Optionally filter by Kanban column.",
     inputSchema: {
       type: "object",
       properties: {
@@ -33,6 +33,21 @@ const TOOLS = [
           description: "Filter tasks by column. Omit to list all tasks.",
         },
       },
+    },
+  },
+  {
+    name: "get_tasks",
+    description: "Get full details (including description) for specific tasks by their IDs. Use this after list_tasks to inspect tasks you need more context on.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of task IDs to retrieve full details for",
+        },
+      },
+      required: ["taskIds"],
     },
   },
   {

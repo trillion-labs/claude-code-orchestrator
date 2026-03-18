@@ -88,6 +88,7 @@ export interface Project {
   workDir: string;
   permissionMode: PermissionMode;
   orchestratorSessionId?: string;
+  orchestratorClaudeSessionId?: string; // Claude CLI session ID (for --resume)
   createdAt: number;
   updatedAt: number;
 }

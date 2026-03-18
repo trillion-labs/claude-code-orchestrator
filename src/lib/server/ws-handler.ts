@@ -226,7 +226,17 @@ export class WebSocketHandler {
         const tasks = this.projectManager.getProjectTasks(projectId);
         const column = args.column as string | undefined;
         const filtered = column ? tasks.filter((t) => t.column === column) : tasks;
-        return { tasks: filtered.map((t) => ({ id: t.id, title: t.title, description: t.description, column: t.column, order: t.order })) };
+        return { tasks: filtered.map((t) => ({ id: t.id, title: t.title, column: t.column, order: t.order })) };
+      }
+
+      case "get_tasks": {
+        const taskIds = args.taskIds as string[];
+        const allTasks = this.projectManager.getProjectTasks(projectId);
+        const found = taskIds
+          .map((id) => allTasks.find((t) => t.id === id))
+          .filter(Boolean)
+          .map((t) => ({ id: t!.id, title: t!.title, description: t!.description, column: t!.column, order: t!.order }));
+        return { tasks: found };
       }
 
       case "create_task": {
@@ -802,14 +812,16 @@ export class WebSocketHandler {
             return;
           }
 
-          // Build system prompt with current board state
-          const tasks = this.projectManager.getProjectTasks(project.id);
-          const systemPrompt = buildOrchestratorPrompt(project, tasks);
+          // Build system prompt (board state is fetched via list_tasks tool, not embedded)
+          const systemPrompt = buildOrchestratorPrompt(project);
+
+          // Resume previous orchestrator session if available
+          const resumeId = project.orchestratorClaudeSessionId || undefined;
 
           const session = await this.sessionManager.createSession(
             machine,
             project.workDir,
-            undefined, // no resume
+            resumeId,
             project.permissionMode,
             undefined, // no worktree
             project.id,
@@ -819,8 +831,8 @@ export class WebSocketHandler {
 
           this.sessionManager.setSessionDisplayName(session.id, `Manager: ${project.name}`);
 
-          // Store orchestrator session on project
-          await this.projectManager.setOrchestratorSession(project.id, session.id);
+          // Store orchestrator session on project (including claudeSessionId for future resume)
+          await this.projectManager.setOrchestratorSession(project.id, session.id, session.claudeSessionId);
 
           this.broadcast({ type: "session.created", session });
           this.broadcast({ type: "orchestrator.created", projectId: project.id, session });
