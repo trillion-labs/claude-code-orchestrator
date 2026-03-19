@@ -189,6 +189,11 @@ export function SessionView({
             </div>
           </div>
           <StatusBadge status={session.status} />
+          {session.agentType && session.agentType !== "claude" && (
+            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+              {session.agentType === "codex" ? "Codex" : session.agentType}
+            </span>
+          )}
           <Popover open={modePopoverOpen} onOpenChange={setModePopoverOpen}>
             <PopoverTrigger asChild>
               <button className={`shrink-0 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer transition-colors whitespace-nowrap ${

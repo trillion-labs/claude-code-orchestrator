@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { PathInput } from "./PathInput";
 import type { PathListResult } from "@/hooks/useWebSocket";
-import type { MachineConfig, ClaudeSessionInfo, PermissionMode } from "@/lib/shared/types";
-import { PERMISSION_MODES } from "@/lib/shared/types";
+import type { MachineConfig, ClaudeSessionInfo, PermissionMode, AgentType } from "@/lib/shared/types";
+import { PERMISSION_MODES, AGENT_CONFIGS } from "@/lib/shared/types";
 import { Plus, Monitor, Server, RotateCcw, Search, Shield, ShieldAlert, ShieldOff, GitBranch, RefreshCw, Check } from "lucide-react";
 import { generateWorktreeName } from "@/lib/shared/worktree-names";
 import { TimeAgo } from "./TimeAgo";
@@ -32,6 +32,7 @@ interface MachineSelectorProps {
     resumeSessionId?: string,
     permissionMode?: PermissionMode,
     worktree?: { enabled: boolean; name: string; existingPath?: string },
+    agentType?: AgentType,
   ) => void;
   onDiscoverSessions: (machineId: string, workDir?: string) => void;
   onListWorktrees: (machineId: string, workDir: string) => void;
@@ -49,6 +50,7 @@ export function MachineSelector({
 }: MachineSelectorProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("new");
+  const [agentType, setAgentType] = useState<AgentType>("claude");
   const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [workDir, setWorkDir] = useState("~");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>("default");
@@ -83,7 +85,7 @@ export function MachineSelector({
       }
     }
 
-    onCreateSession(selectedMachine, workDir, undefined, permissionMode, worktreeOpts);
+    onCreateSession(selectedMachine, workDir, undefined, permissionMode, worktreeOpts, agentType);
     resetAndClose();
   };
 
@@ -110,6 +112,7 @@ export function MachineSelector({
     setWorkDir("~");
     setPermissionMode("default");
     setMode("new");
+    setAgentType("claude");
     setWorktreeMode("off");
     setWorktreeName(generateWorktreeName());
     setSelectedWorktree(null);
@@ -134,6 +137,25 @@ export function MachineSelector({
           </DialogTitle>
         </DialogHeader>
 
+        {/* Agent Type Selector */}
+        <div className="flex gap-1 p-1 bg-muted rounded-lg">
+          {(Object.entries(AGENT_CONFIGS) as [AgentType, typeof AGENT_CONFIGS[AgentType]][]).map(([key, config]) => (
+            <button
+              key={key}
+              onClick={() => {
+                setAgentType(key);
+                // Codex doesn't support resume — switch to new mode
+                if (key === "codex" && mode === "resume") setMode("new");
+              }}
+              className={`flex-1 text-sm py-1.5 px-3 rounded-md transition-colors font-medium ${
+                agentType === key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {config.label}
+            </button>
+          ))}
+        </div>
+
         {/* Mode Toggle */}
         <div className="flex gap-1 p-1 bg-muted rounded-lg">
           <button
@@ -144,15 +166,17 @@ export function MachineSelector({
           >
             New
           </button>
-          <button
-            onClick={() => setMode("resume")}
-            className={`flex-1 text-sm py-1.5 px-3 rounded-md transition-colors ${
-              mode === "resume" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
-            Resume
-          </button>
+          {agentType === "claude" && (
+            <button
+              onClick={() => setMode("resume")}
+              className={`flex-1 text-sm py-1.5 px-3 rounded-md transition-colors ${
+                mode === "resume" ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
+              Resume
+            </button>
+          )}
         </div>
 
         <div className="space-y-4 overflow-y-auto min-h-0 flex-1">

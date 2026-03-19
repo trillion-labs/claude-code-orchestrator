@@ -326,7 +326,7 @@ export class WebSocketHandler {
           return;
         }
         try {
-          const session = await this.sessionManager.createSession(machine, msg.workDir, msg.resumeSessionId, msg.permissionMode, msg.worktree);
+          const session = await this.sessionManager.createSession(machine, msg.workDir, msg.resumeSessionId, msg.permissionMode, msg.worktree, undefined, undefined, undefined, msg.agentType);
           this.send(ws, { type: "session.created", session });
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });

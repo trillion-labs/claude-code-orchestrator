@@ -34,7 +34,7 @@ import { Separator } from "@/components/ui/separator";
 import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { useStore } from "@/store";
-import type { PermissionMode } from "@/lib/shared/types";
+import type { PermissionMode, AgentType } from "@/lib/shared/types";
 
 export function Dashboard() {
   const { send, requestPathList, requestMkdir, requestFileRead } = useWebSocket();
@@ -71,8 +71,9 @@ export function Dashboard() {
     resumeSessionId?: string,
     permissionMode?: PermissionMode,
     worktree?: { enabled: boolean; name: string; existingPath?: string },
+    agentType?: AgentType,
   ) => {
-    send({ type: "session.create", machineId, workDir, resumeSessionId, permissionMode, worktree });
+    send({ type: "session.create", machineId, workDir, resumeSessionId, permissionMode, worktree, agentType });
   };
 
   const handleListWorktrees = (machineId: string, workDir: string) => {

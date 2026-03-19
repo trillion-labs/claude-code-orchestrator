@@ -7,6 +7,7 @@ import { StatusBadge } from "./StatusBadge";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useStore } from "@/store";
 import type { Session } from "@/lib/shared/types";
+import { AGENT_CONFIGS } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Monitor, Server, GitBranch, FolderOpen, X, PanelRight, GripVertical } from "lucide-react";
 import { TimeAgo } from "./TimeAgo";
@@ -165,6 +166,11 @@ export function SessionCard({
             >
               <PanelRight className="w-3.5 h-3.5" />
             </button>
+          )}
+          {session.agentType && session.agentType !== "claude" && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+              {AGENT_CONFIGS[session.agentType]?.label || session.agentType}
+            </span>
           )}
           <StatusBadge status={session.status} />
         </div>

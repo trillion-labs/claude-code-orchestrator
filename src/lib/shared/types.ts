@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+// ── Agent Types ──
+
+export type AgentType = "claude" | "codex";
+
+export const AGENT_CONFIGS: Record<AgentType, { label: string; command: string }> = {
+  claude: { label: "Claude", command: "claude" },
+  codex: { label: "Codex", command: "codex" },
+};
+
 // ── Machine Types ──
 
 export type MachineType = "local" | "ssh";
@@ -113,6 +122,7 @@ export interface Session {
   workDir: string;
   status: SessionStatus;
   claudeSessionId: string;
+  agentType: AgentType;
   createdAt: number;
   totalCostUsd: number;
   lastActivity: number;
