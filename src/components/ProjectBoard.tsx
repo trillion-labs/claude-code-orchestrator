@@ -69,8 +69,20 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
       .filter(Boolean) as Task[];
   }, [openTaskIds, projectTasks]);
 
-  const hasTaskPanel = openTaskIds.length > 0;
+  const hasTaskPanel = openTasks.length > 0;
   const resizeRef = useRef<{ startX: number; startWidth: number; target: "task" | "manager" | "tabbed" } | null>(null);
+
+  // Clean up stale task IDs (tasks removed from store while panel was open)
+  useEffect(() => {
+    setOpenTaskIds((prev) => {
+      const validIds = prev.filter((id) => projectTasks.some((t) => t.id === id));
+      if (validIds.length === prev.length) return prev;
+      if (activeTaskId && !projectTasks.some((t) => t.id === activeTaskId)) {
+        setActiveTaskId(validIds[0] ?? null);
+      }
+      return validIds;
+    });
+  }, [projectTasks, activeTaskId]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
