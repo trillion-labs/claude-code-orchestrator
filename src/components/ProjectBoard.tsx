@@ -35,6 +35,16 @@ interface ProjectBoardProps {
   onViewSession: (sessionId: string) => void;
 }
 
+// Module-level cache: survives unmount (e.g. projects ↔ sessions view switch)
+interface PanelState {
+  openTaskIds: string[];
+  activeTaskId: string | null;
+  managerPanelOpen: boolean;
+  sidePanelMode: "split" | "tabbed";
+  activeTab: "task" | "manager";
+}
+const panelStateCache = new Map<string, PanelState>();
+
 export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps) {
   const { getTasksByColumn, getTaskSession } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
@@ -45,14 +55,49 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const removePendingRequest = useStore((s) => s.removePendingRequest);
   const orchestratorSessionId = useStore((s) => s.orchestratorSessions.get(project.id));
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [openTaskIds, setOpenTaskIds] = useState<string[]>([]);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [managerPanelOpen, setManagerPanelOpen] = useState(false);
-  const [sidePanelMode, setSidePanelMode] = useState<"split" | "tabbed">("split");
-  const [activeTab, setActiveTab] = useState<"task" | "manager">("task");
+
+  // Restore per-project panel state from cache (or use defaults)
+  const cached = panelStateCache.get(project.id);
+  const [openTaskIds, setOpenTaskIds] = useState<string[]>(cached?.openTaskIds ?? []);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(cached?.activeTaskId ?? null);
+  const [managerPanelOpen, setManagerPanelOpen] = useState(cached?.managerPanelOpen ?? false);
+  const [sidePanelMode, setSidePanelMode] = useState<"split" | "tabbed">(cached?.sidePanelMode ?? "split");
+  const [activeTab, setActiveTab] = useState<"task" | "manager">(cached?.activeTab ?? "task");
   const [taskPanelWidth, setTaskPanelWidth] = useState(480);
   const [managerPanelWidth, setManagerPanelWidth] = useState(480);
   const [tabbedPanelWidth, setTabbedPanelWidth] = useState(780);
+
+  // Save panel state to cache on every state change (keyed by current project)
+  const prevProjectId = useRef<string>(project.id);
+  const currentProjectId = useRef<string>(project.id);
+  currentProjectId.current = project.id;
+
+  useEffect(() => {
+    panelStateCache.set(currentProjectId.current, {
+      openTaskIds, activeTaskId, managerPanelOpen, sidePanelMode, activeTab,
+    });
+  }, [openTaskIds, activeTaskId, managerPanelOpen, sidePanelMode, activeTab]);
+
+  useEffect(() => {
+    // Project switch: restore cached state for the new project
+    if (prevProjectId.current !== project.id) {
+      const next = panelStateCache.get(project.id);
+      if (next) {
+        setOpenTaskIds(next.openTaskIds);
+        setActiveTaskId(next.activeTaskId);
+        setManagerPanelOpen(next.managerPanelOpen);
+        setSidePanelMode(next.sidePanelMode);
+        setActiveTab(next.activeTab);
+      } else {
+        setOpenTaskIds([]);
+        setActiveTaskId(null);
+        setManagerPanelOpen(false);
+        setSidePanelMode("split");
+        setActiveTab("task");
+      }
+      prevProjectId.current = project.id;
+    }
+  }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const projectTasks = useMemo(() => tasks.get(project.id) || [], [tasks, project.id]);
 
@@ -69,7 +114,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
       .filter(Boolean) as Task[];
   }, [openTaskIds, projectTasks]);
 
-  const hasTaskPanel = openTaskIds.length > 0;
+  const hasTaskPanel = openTasks.length > 0;
   const resizeRef = useRef<{ startX: number; startWidth: number; target: "task" | "manager" | "tabbed" } | null>(null);
 
   useEffect(() => {
