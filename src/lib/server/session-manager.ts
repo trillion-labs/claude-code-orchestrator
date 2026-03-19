@@ -828,7 +828,10 @@ except:
       content: prompt,
       timestamp: Date.now(),
     };
-    if (!managed.firstUserMessage) managed.firstUserMessage = prompt;
+    if (!managed.firstUserMessage) {
+      managed.firstUserMessage = prompt;
+      this.emit("session:displayName", sessionId, managed.explicitDisplayName || prompt);
+    }
     managed.messages.push(userMsg);
     this.trimMessages(managed);
     this.emit("session:message", sessionId, userMsg);
