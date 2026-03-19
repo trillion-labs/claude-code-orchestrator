@@ -39,6 +39,9 @@ function findTaskFromMap(taskId: string, tasks: Map<string, Task[]>): Task | und
   return undefined;
 }
 
+// Module-level cache: survives unmount (e.g. sessions ↔ kanban view switch)
+let allTasksPanelCache: { openTaskIds: string[]; activeTaskId: string | null } | null = null;
+
 export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
   const { projects, getAllTasksByColumn, getTaskSession, getProjectName } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
@@ -46,9 +49,14 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
   const setSessionName = useStore((s) => s.setSessionName);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [openTaskIds, setOpenTaskIds] = useState<string[]>([]);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [openTaskIds, setOpenTaskIds] = useState<string[]>(allTasksPanelCache?.openTaskIds ?? []);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(allTasksPanelCache?.activeTaskId ?? null);
   const [detailWidth, setDetailWidth] = useState(780);
+
+  // Persist panel state to module-level cache on every change
+  useEffect(() => {
+    allTasksPanelCache = { openTaskIds, activeTaskId };
+  }, [openTaskIds, activeTaskId]);
   const [excludedProjects, setExcludedProjects] = useState<Set<string>>(new Set());
 
   // Derive active task across all projects
@@ -335,6 +343,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                 session={session}
                 messages={msgs}
                 streamingText={streaming}
+                projectName={getProjectName(task.projectId)}
                 onClose={() => handleCloseTaskTab(task.id)}
                 onUpdate={(updates) => handleUpdateTask(task.id, updates)}
                 onDelete={() => handleDeleteTask(task)}
