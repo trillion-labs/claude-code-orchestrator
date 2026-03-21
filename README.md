@@ -226,6 +226,10 @@ SSH machines from `~/.ssh/config` are also auto-discovered and available alongsi
     └── permission-mcp-server.mjs  # MCP permission tool
 ```
 
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before getting started.
+
 ## License
 
-MIT
+[MIT](LICENSE) © [Trillion Labs](https://trillionlabs.co/ko/)
