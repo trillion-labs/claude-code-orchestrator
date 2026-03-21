@@ -48,6 +48,18 @@ Four permission levels with dynamic runtime switching:
 - Plan panel recovery on resume via JSONL history analysis
 - Session metadata: first message preview, message count, last activity
 
+### Show User (Visual Side Panel)
+- Claude can render rich HTML content in a side panel next to the chat
+- Perfect for diagrams, charts, interactive visualizations, and formatted explanations
+- Supports CDN libraries (Chart.js, D3.js, Mermaid, etc.)
+- Triggered automatically when visual presentation would help understanding
+
+### Project & Task Management
+- Create projects and break them down into tasks
+- Link tasks to Claude Code sessions for traceable execution
+- Kanban board view for visual task management
+- Track task status across multiple sessions and machines
+
 ### Attention System
 - Visual pulse indicator on session cards when user action is needed
 - Permission request and question prompts surfaced in the UI
