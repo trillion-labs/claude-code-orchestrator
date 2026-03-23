@@ -189,10 +189,11 @@ SSH machines from `~/.ssh/config` are also auto-discovered and available alongsi
 | Entry | `server.ts` | HTTP + WebSocket server, Next.js integration |
 | Transport | `src/lib/server/ws-handler.ts` | Typed WebSocket message routing |
 | Core | `src/lib/server/session-manager.ts` | Session lifecycle, history loading, plan recovery |
+| Projects | `src/lib/server/project-manager.ts` | Project & task management |
 | Adapters | `src/lib/server/adapters/` | Local & SSH process execution |
 | Protocol | `src/lib/shared/protocol.ts` | Client ↔ Server message types |
 | State | `src/store/index.ts` | Zustand store (sessions, messages, plans, etc.) |
-| UI | `src/components/` | Dashboard, SessionView, PlanPanel, SessionCard, etc. |
+| UI | `src/components/` | Dashboard, SessionView, PlanPanel, Kanban, etc. |
 
 ## Project Structure
 
@@ -202,40 +203,53 @@ SSH machines from `~/.ssh/config` are also auto-discovered and available alongsi
 ├── src/
 │   ├── app/                  # Next.js app directory
 │   │   ├── layout.tsx
-│   │   ├── page.tsx
-│   │   └── globals.css
+│   │   └── page.tsx
 │   ├── components/           # React components
 │   │   ├── Dashboard.tsx     # Main layout with sidebar
 │   │   ├── SessionView.tsx   # Active session view
 │   │   ├── SessionCard.tsx   # Sidebar session card
 │   │   ├── PlanPanel.tsx     # Resizable plan side panel
+│   │   ├── ShowUserPanel.tsx # Visual HTML side panel
+│   │   ├── ProjectBoard.tsx  # Project management view
+│   │   ├── AllTasksBoard.tsx # Kanban board for tasks
+│   │   ├── KanbanColumn.tsx  # Kanban column component
+│   │   ├── TaskCard.tsx      # Task card component
+│   │   ├── TaskDialog.tsx    # Task create/edit dialog
 │   │   ├── StreamOutput.tsx  # Message stream renderer
 │   │   ├── PromptInput.tsx   # Chat input
 │   │   ├── MachineSelector.tsx # Machine & path selector
-│   │   ├── StatusBadge.tsx   # Session status indicator
-│   │   ├── SettingsDialog.tsx # Global/session settings
+│   │   ├── FilePreviewPanel.tsx # File preview side panel
+│   │   ├── ManagerChatPanel.tsx # Manager chat interface
 │   │   └── ui/              # shadcn/ui base components
 │   ├── hooks/
-│   │   └── useWebSocket.ts   # WebSocket connection hook
+│   │   ├── useWebSocket.ts   # WebSocket connection hook
+│   │   ├── useSessionStore.ts # Session state hook
+│   │   ├── useProjectStore.ts # Project state hook
+│   │   └── useTheme.ts       # Theme management hook
 │   ├── lib/
 │   │   ├── server/
 │   │   │   ├── session-manager.ts
+│   │   │   ├── project-manager.ts
 │   │   │   ├── ws-handler.ts
 │   │   │   ├── ssh-manager.ts
 │   │   │   ├── stream-parser.ts
 │   │   │   ├── permission-utils.ts
+│   │   │   ├── orchestrator-prompt.ts
 │   │   │   ├── ssh-config-loader.ts
 │   │   │   └── adapters/
 │   │   │       ├── base.ts
 │   │   │       ├── local-adapter.ts
+│   │   │       ├── process-adapter.ts
 │   │   │       └── ssh-adapter.ts
 │   │   └── shared/
 │   │       ├── types.ts      # Shared type definitions
-│   │       └── protocol.ts   # WebSocket message protocol
+│   │       ├── protocol.ts   # WebSocket message protocol
+│   │       └── worktree-names.ts # Worktree name utilities
 │   └── store/
 │       └── index.ts          # Zustand global store
 └── scripts/
-    └── permission-mcp-server.mjs  # MCP permission tool
+    ├── permission-mcp-server.mjs  # MCP permission tool
+    └── orchestrator-mcp-server.mjs # Orchestrator MCP server
 ```
 
 ## Contributing
