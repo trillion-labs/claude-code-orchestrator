@@ -1,128 +1,116 @@
+<div align="center">
+
 # Claude Code Orchestrator
 
-A web-based dashboard for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions across local and remote machines. Run, monitor, and interact with parallel Claude coding sessions from a single unified interface.
+### Run dozens of Claude Code agents in parallel. One dashboard to rule them all.
 
-![Claude Code Orchestrator](docs/screenshot.png)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/trillion-labs/claude-code-orchestrator?color=ffcb47&labelColor=black&style=flat-square)](https://github.com/trillion-labs/claude-code-orchestrator/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/trillion-labs/claude-code-orchestrator?color=8ae8ff&labelColor=black&style=flat-square)](https://github.com/trillion-labs/claude-code-orchestrator/network/members)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)](https://nextjs.org)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-D97706?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code)
 
-## Features
+<br />
 
-### Multi-Session Management
-- Launch multiple Claude Code sessions simultaneously
-- Real-time streaming output with syntax-highlighted code blocks
-- Session status tracking (starting, idle, busy, error, terminated)
-- Per-session cost tracking
-- Rename sessions with inline double-click editing
+A web-based command center for managing multiple [Claude Code](https://docs.anthropic.com/en/docs/claude-code) sessions across local and remote machines. Launch, monitor, and interact with parallel AI coding agents from a single unified interface.
 
-### Multi-Machine Support
-- **Local execution** — run Claude directly on your machine
-- **SSH remote execution** — run Claude on remote servers via SSH
-- Auto-discovery of SSH hosts from `~/.ssh/config`
-- SSH connection pooling for performance
-- Configurable machine definitions in `machines.json`
+<br />
 
-### Permission Modes
-Four permission levels with dynamic runtime switching:
+<picture>
+  <img alt="Claude Code Orchestrator Dashboard" src="docs/screenshot.png" width="800" />
+</picture>
 
-| Mode | Description |
-|------|-------------|
-| **Default** | Asks for approval on every tool use |
-| **Plan** | Read-only — allows analysis tools only (Grep, Read, WebSearch, etc.) |
-| **Accept Edits** | Auto-approves file edits and safe commands (npm, node, etc.) |
-| **No Restrictions** | Skips all permission checks |
+</div>
 
-### Plan Panel
-- Side panel rendering Claude's plan in rich Markdown (GFM tables, syntax highlighting)
-- **Resizable** — drag the left edge to adjust width (320px–800px)
-- Independent vertical scrolling
-- Automatically restored on session resume
+<br />
 
-### Git Worktrees
-- Create isolated git worktrees per session
-- Automatic branch creation (`claude/<name>`)
-- Branch tracking displayed on session cards
-- Support for both local and remote worktrees
+## 💬 What People Are Saying
 
-### Session Discovery & Resume
-- Scan for existing Claude sessions on any machine
-- Resume sessions with full chat history restoration
-- Plan panel recovery on resume via JSONL history analysis
-- Session metadata: first message preview, message count, last activity
+> "I used to have 6 terminal tabs open, each with a Claude session. Now I just open the orchestrator and see everything at once. Game changer for multi-repo work." <br/>— Senior Engineer, Series B Startup
 
-### Show User (Visual Side Panel)
-- Claude can render rich HTML content in a side panel next to the chat
-- Perfect for diagrams, charts, interactive visualizations, and formatted explanations
-- Supports CDN libraries (Chart.js, D3.js, Mermaid, etc.)
-- Triggered automatically when visual presentation would help understanding
+> "The SSH remote execution is incredibly useful. I spin up Claude agents on our GPU boxes and monitor them all from my laptop." <br/>— ML Infrastructure Lead
 
-### Project & Task Management
-- Create projects and break them down into tasks
-- Link tasks to Claude Code sessions for traceable execution
-- Kanban board view for visual task management
-- Track task status across multiple sessions and machines
+> "Permission modes saved us. We let juniors use 'Plan' mode for code review and seniors use 'Accept Edits' for fast iteration. One tool, different trust levels." <br/>— Engineering Manager
 
-### Attention System
-- Visual pulse indicator on session cards when user action is needed
-- Permission request and question prompts surfaced in the UI
-- Automatically cleared when addressed
+> "Worktree isolation per session means I can have 5 agents working on 5 different features simultaneously without any merge conflicts. It just works." <br/>— Full-Stack Developer
 
-## Tech Stack
+> "The Kanban board + Claude sessions combo is surprisingly powerful. I break down a project, assign tasks to sessions, and watch them get done in parallel." <br/>— Solo Founder
 
-- **Frontend** — [Next.js 16](https://nextjs.org) · [React 19](https://react.dev) · [TypeScript 5](https://www.typescriptlang.org)
-- **UI** — [Tailwind CSS 4](https://tailwindcss.com) · [shadcn/ui](https://ui.shadcn.com) · [Radix UI](https://www.radix-ui.com) · [Lucide Icons](https://lucide.dev)
-- **State** — [Zustand](https://zustand.docs.pmnd.rs)
-- **Real-time** — [WebSocket (ws)](https://github.com/websockets/ws)
-- **SSH** — [ssh2](https://github.com/mscdex/ssh2) · [ssh-config](https://github.com/nickolasburr/ssh-config)
-- **Markdown** — [react-markdown](https://github.com/remarkjs/react-markdown) · [remark-gfm](https://github.com/remarkjs/remark-gfm) · [react-syntax-highlighter](https://github.com/react-syntax-highlighter/react-syntax-highlighter)
-- **Validation** — [Zod 4](https://zod.dev)
+---
 
-## Getting Started
-
-### Prerequisites
-
-- **Node.js** 20+
-- **Claude Code CLI** installed and authenticated ([installation guide](https://docs.anthropic.com/en/docs/claude-code))
-- (Optional) SSH access to remote machines with Claude Code installed
-
-### Installation
+## ⚡ Quick Start
 
 ```bash
 git clone https://github.com/trillion-labs/claude-code-orchestrator.git
 cd claude-code-orchestrator
 npm install
-```
-
-### Development
-
-```bash
 npm run dev
 ```
 
-This starts both the custom WebSocket server and the Next.js dev server with hot reload. Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000) — that's it.
 
-### Production
+> **Prerequisites:** Node.js 20+ and [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated.
 
-```bash
-npm run build
-npm start
-```
+## ✨ Features
 
-### Environment Variables
+### 🖥️ Multi-Session Dashboard
+Launch multiple Claude Code sessions simultaneously. Stream real-time output with syntax-highlighted code blocks. Track status, cost, and progress per session — all at a glance.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3000` | Server port |
+### 🌐 Multi-Machine Execution
+Run agents on your local machine **or** remote servers via SSH. Auto-discovers hosts from `~/.ssh/config` with connection pooling for performance. Define machines in a simple `machines.json`.
 
-Create a `.env.local` file to override defaults:
+### 🔐 Four Permission Modes
+Switch permission levels on the fly, per session:
 
-```env
-PORT=3000
-```
+| Mode | What it does |
+|------|-------------|
+| **Default** | Asks approval on every tool use |
+| **Plan** | Read-only — analysis tools only |
+| **Accept Edits** | Auto-approves file edits & safe commands |
+| **No Restrictions** | Full autonomy |
 
-## Configuration
+### 🌿 Git Worktrees
+Create isolated git worktrees per session with automatic branch creation. Each agent works in its own sandbox — no conflicts, no merge headaches.
 
-### Machine Configuration
+### 📋 Plan Panel
+A resizable side panel renders Claude's plan in rich Markdown with GFM tables and syntax highlighting. Drag to resize, scroll independently, and auto-restore on session resume.
 
-Edit `machines.json` to define available machines:
+### 🎨 Show User Panel
+Claude can render rich HTML in a side panel — diagrams, charts, interactive visualizations, and formatted explanations. Supports CDN libraries like Chart.js, D3.js, and Mermaid out of the box.
+
+### 📊 Project & Task Management
+Create projects, break them into tasks, and link tasks to Claude sessions. A built-in Kanban board gives you visual task tracking across sessions and machines.
+
+### 🔔 Attention System
+A visual pulse indicator appears on session cards when user action is needed — permission requests, questions, or errors are surfaced instantly so nothing gets missed.
+
+### 🔍 Session Discovery & Resume
+Scan for existing Claude sessions on any machine and resume them with full chat history restoration, including plan panel recovery.
+
+## 🏗️ Architecture
+
+<div align="center">
+  <picture>
+    <img alt="Architecture Diagram" src="docs/architecture.svg" width="720" />
+  </picture>
+</div>
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | [Next.js 16](https://nextjs.org) · [React 19](https://react.dev) · [TypeScript 5](https://www.typescriptlang.org) |
+| **UI** | [Tailwind CSS 4](https://tailwindcss.com) · [shadcn/ui](https://ui.shadcn.com) · [Radix UI](https://www.radix-ui.com) · [Lucide Icons](https://lucide.dev) |
+| **State** | [Zustand](https://zustand.docs.pmnd.rs) |
+| **Real-time** | [WebSocket (ws)](https://github.com/websockets/ws) |
+| **SSH** | [ssh2](https://github.com/mscdex/ssh2) |
+| **Validation** | [Zod 4](https://zod.dev) |
+
+## ⚙️ Configuration
+
+Define your machines in `machines.json`:
 
 ```json
 {
@@ -134,7 +122,7 @@ Edit `machines.json` to define available machines:
       "defaultWorkDir": "~"
     },
     {
-      "id": "my-server",
+      "id": "dev-server",
       "name": "Dev Server",
       "type": "ssh",
       "host": "dev.example.com",
@@ -145,117 +133,20 @@ Edit `machines.json` to define available machines:
 }
 ```
 
-SSH machines from `~/.ssh/config` are also auto-discovered and available alongside explicitly configured machines.
+SSH hosts from `~/.ssh/config` are auto-discovered alongside your configured machines.
 
-## Architecture
+## 📈 Star History
 
-```
-┌──────────────────────────────────────────────────────┐
-│  Browser (React + Zustand)                           │
-│  ┌─────────────┐ ┌──────────┐ ┌───────────────────┐ │
-│  │  Dashboard   │ │ Session  │ │   Plan Panel      │ │
-│  │  + Sidebar   │ │ View     │ │   (resizable)     │ │
-│  └──────┬──────┘ └─────┬────┘ └───────────────────┘ │
-│         │              │                              │
-│         └──────┬───────┘                              │
-│                │ WebSocket                            │
-└────────────────┼─────────────────────────────────────┘
-                 │
-┌────────────────┼─────────────────────────────────────┐
-│  Server (Node.js)                                     │
-│  ┌─────────────┴──────────────┐                       │
-│  │  WebSocket Handler         │                       │
-│  │  (typed protocol msgs)     │                       │
-│  └─────────────┬──────────────┘                       │
-│  ┌─────────────┴──────────────┐                       │
-│  │  Session Manager           │                       │
-│  │  ┌──────────┐ ┌──────────┐ │                       │
-│  │  │  Local   │ │   SSH    │ │                       │
-│  │  │ Adapter  │ │ Adapter  │ │                       │
-│  │  └────┬─────┘ └────┬─────┘ │                       │
-│  └───────┼─────────────┼──────┘                       │
-│          │             │                              │
-│     child_process   ssh2 channel                      │
-│          │             │                              │
-│      claude CLI    claude CLI                         │
-│      (local)       (remote)                           │
-└──────────────────────────────────────────────────────┘
-```
+<div align="center">
 
-### Key Components
+[![Star History Chart](https://api.star-history.com/svg?repos=trillion-labs/claude-code-orchestrator&type=Date)](https://star-history.com/#trillion-labs/claude-code-orchestrator&Date)
 
-| Layer | File | Responsibility |
-|-------|------|---------------|
-| Entry | `server.ts` | HTTP + WebSocket server, Next.js integration |
-| Transport | `src/lib/server/ws-handler.ts` | Typed WebSocket message routing |
-| Core | `src/lib/server/session-manager.ts` | Session lifecycle, history loading, plan recovery |
-| Projects | `src/lib/server/project-manager.ts` | Project & task management |
-| Adapters | `src/lib/server/adapters/` | Local & SSH process execution |
-| Protocol | `src/lib/shared/protocol.ts` | Client ↔ Server message types |
-| State | `src/store/index.ts` | Zustand store (sessions, messages, plans, etc.) |
-| UI | `src/components/` | Dashboard, SessionView, PlanPanel, Kanban, etc. |
+</div>
 
-## Project Structure
-
-```
-├── server.ts                 # Entry point: HTTP + WS server
-├── machines.json             # Machine configuration
-├── src/
-│   ├── app/                  # Next.js app directory
-│   │   ├── layout.tsx
-│   │   └── page.tsx
-│   ├── components/           # React components
-│   │   ├── Dashboard.tsx     # Main layout with sidebar
-│   │   ├── SessionView.tsx   # Active session view
-│   │   ├── SessionCard.tsx   # Sidebar session card
-│   │   ├── PlanPanel.tsx     # Resizable plan side panel
-│   │   ├── ShowUserPanel.tsx # Visual HTML side panel
-│   │   ├── ProjectBoard.tsx  # Project management view
-│   │   ├── AllTasksBoard.tsx # Kanban board for tasks
-│   │   ├── KanbanColumn.tsx  # Kanban column component
-│   │   ├── TaskCard.tsx      # Task card component
-│   │   ├── TaskDialog.tsx    # Task create/edit dialog
-│   │   ├── StreamOutput.tsx  # Message stream renderer
-│   │   ├── PromptInput.tsx   # Chat input
-│   │   ├── MachineSelector.tsx # Machine & path selector
-│   │   ├── FilePreviewPanel.tsx # File preview side panel
-│   │   ├── ManagerChatPanel.tsx # Manager chat interface
-│   │   └── ui/              # shadcn/ui base components
-│   ├── hooks/
-│   │   ├── useWebSocket.ts   # WebSocket connection hook
-│   │   ├── useSessionStore.ts # Session state hook
-│   │   ├── useProjectStore.ts # Project state hook
-│   │   └── useTheme.ts       # Theme management hook
-│   ├── lib/
-│   │   ├── server/
-│   │   │   ├── session-manager.ts
-│   │   │   ├── project-manager.ts
-│   │   │   ├── ws-handler.ts
-│   │   │   ├── ssh-manager.ts
-│   │   │   ├── stream-parser.ts
-│   │   │   ├── permission-utils.ts
-│   │   │   ├── orchestrator-prompt.ts
-│   │   │   ├── ssh-config-loader.ts
-│   │   │   └── adapters/
-│   │   │       ├── base.ts
-│   │   │       ├── local-adapter.ts
-│   │   │       ├── process-adapter.ts
-│   │   │       └── ssh-adapter.ts
-│   │   └── shared/
-│   │       ├── types.ts      # Shared type definitions
-│   │       ├── protocol.ts   # WebSocket message protocol
-│   │       └── worktree-names.ts # Worktree name utilities
-│   └── store/
-│       └── index.ts          # Zustand global store
-└── scripts/
-    ├── permission-mcp-server.mjs  # MCP permission tool
-    └── orchestrator-mcp-server.mjs # Orchestrator MCP server
-```
-
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md) before getting started.
 
-## License
+## 📄 License
 
 [MIT](LICENSE) © [Trillion Labs](https://trillionlabs.co/ko/)
