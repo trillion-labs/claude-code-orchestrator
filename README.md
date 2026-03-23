@@ -97,8 +97,6 @@ Scan for existing Claude sessions on any machine and resume them with full chat 
   </picture>
 </div>
 
-> Edit the diagram yourself: open [`docs/architecture.excalidraw`](docs/architecture.excalidraw) in [excalidraw.com](https://excalidraw.com)
-
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
