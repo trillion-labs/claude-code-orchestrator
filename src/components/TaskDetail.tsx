@@ -27,6 +27,7 @@ interface TaskDetailProps {
   session?: Session;
   messages: ConversationMessage[];
   streamingText: string;
+  projectName?: string;
   onClose: () => void;
   onUpdate: (updates: { title?: string; description?: string }) => void;
   onSubmit: () => void;
@@ -45,6 +46,7 @@ export function TaskDetail({
   session,
   messages,
   streamingText,
+  projectName,
   onClose,
   onUpdate,
   onSubmit,
@@ -109,6 +111,11 @@ export function TaskDetail({
               {task.title}
               <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50" />
             </h3>
+          )}
+          {projectName && (
+            <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md truncate max-w-[120px] flex-shrink-0">
+              {projectName}
+            </span>
           )}
         </div>
         <button

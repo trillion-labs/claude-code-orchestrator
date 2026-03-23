@@ -2,6 +2,23 @@
   "name": "claude-orchestrator",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "description": "A web-based dashboard for managing multiple Claude Code sessions across local and remote machines",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trillion-labs/claude-code-orchestrator.git"
+  },
+  "homepage": "https://trillionlabs.co/ko/",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "orchestrator",
+    "ai",
+    "multi-session",
+    "dashboard",
+    "ssh",
+    "websocket"
+  ],
   "scripts": {
     "dev": "tsx watch server.ts",
     "dev:main": "PORT=8888 tsx watch server.ts",

@@ -24,12 +24,23 @@ import type { Task, KanbanColumn as KanbanColumnType } from "@/lib/shared/types"
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { LayoutGrid, Filter, Check, GripVertical } from "lucide-react";
+import { LayoutGrid, Filter, Check, GripVertical, X } from "lucide-react";
 
 interface AllTasksBoardProps {
   send: (msg: ClientMessage) => void;
   onViewSession: (sessionId: string) => void;
 }
+
+function findTaskFromMap(taskId: string, tasks: Map<string, Task[]>): Task | undefined {
+  for (const [, projectTasks] of tasks) {
+    const found = projectTasks.find((t) => t.id === taskId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+// Module-level cache: survives unmount (e.g. sessions ↔ kanban view switch)
+let allTasksPanelCache: { openTaskIds: string[]; activeTaskId: string | null } | null = null;
 
 export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
   const { projects, getAllTasksByColumn, getTaskSession, getProjectName } = useProjectStore();
@@ -38,19 +49,32 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
   const setSessionName = useStore((s) => s.setSessionName);
 
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [openTaskIds, setOpenTaskIds] = useState<string[]>(allTasksPanelCache?.openTaskIds ?? []);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(allTasksPanelCache?.activeTaskId ?? null);
   const [detailWidth, setDetailWidth] = useState(780);
+
+  // Persist panel state to module-level cache on every change
+  useEffect(() => {
+    allTasksPanelCache = { openTaskIds, activeTaskId };
+  }, [openTaskIds, activeTaskId]);
   const [excludedProjects, setExcludedProjects] = useState<Set<string>>(new Set());
 
-  // Derive selectedTask across all projects
-  const selectedTask = useMemo(() => {
-    if (!selectedTaskId) return null;
+  // Derive active task across all projects
+  const activeOpenTask = useMemo(() => {
+    if (!activeTaskId) return null;
     for (const [, projectTasks] of tasks) {
-      const found = projectTasks.find((t) => t.id === selectedTaskId);
+      const found = projectTasks.find((t) => t.id === activeTaskId);
       if (found) return found;
     }
     return null;
-  }, [selectedTaskId, tasks]);
+  }, [activeTaskId, tasks]);
+
+  // Resolve open tasks for tab rendering
+  const openTasks = useMemo(() => {
+    return openTaskIds
+      .map((id) => findTaskFromMap(id, tasks))
+      .filter(Boolean) as Task[];
+  }, [openTaskIds, tasks]);
 
   const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -82,12 +106,24 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
 
   // Find a task across all projects
   const findTask = useCallback((taskId: string): Task | undefined => {
-    for (const [, projectTasks] of tasks) {
-      const found = projectTasks.find((t) => t.id === taskId);
-      if (found) return found;
-    }
-    return undefined;
+    return findTaskFromMap(taskId, tasks);
   }, [tasks]);
+
+  const handleOpenTask = useCallback((taskId: string) => {
+    setOpenTaskIds((prev) => (prev.includes(taskId) ? prev : [...prev, taskId]));
+    setActiveTaskId(taskId);
+  }, []);
+
+  const handleCloseTaskTab = useCallback((taskId: string) => {
+    setOpenTaskIds((prev) => {
+      const next = prev.filter((id) => id !== taskId);
+      if (activeTaskId === taskId) {
+        const idx = prev.indexOf(taskId);
+        setActiveTaskId(next[Math.min(idx, next.length - 1)] ?? null);
+      }
+      return next;
+    });
+  }, [activeTaskId]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const task = findTask(event.active.id as string);
@@ -174,7 +210,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
 
   const handleDeleteTask = (task: Task) => {
     send({ type: "task.delete", projectId: task.projectId, taskId: task.id });
-    setSelectedTaskId(null);
+    handleCloseTaskTab(task.id);
   };
 
   const handleResumeTask = (task: Task) => {
@@ -201,17 +237,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
     return count;
   }, [tasks, excludedProjects]);
 
-  const selectedSession = selectedTask?.sessionId
-    ? sessions.get(selectedTask.sessionId)
-    : undefined;
-
-  const selectedMessages = selectedTask?.sessionId
-    ? messages.get(selectedTask.sessionId) || []
-    : [];
-
-  const selectedStreamingText = selectedTask?.sessionId
-    ? streamingText.get(selectedTask.sessionId) || ""
-    : "";
+  const hasTaskPanel = openTaskIds.length > 0;
 
   return (
     <div className="flex flex-col h-full min-w-0">
@@ -279,7 +305,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                   label={col.label}
                   tasks={getAllTasksByColumn(col.id, excludedProjects)}
                   getSession={getTaskSession}
-                  onTaskClick={(task) => setSelectedTaskId(task.id)}
+                  onTaskClick={(task) => handleOpenTask(task.id)}
                   onTaskSubmit={handleSubmitTask}
                   onTaskDone={handleDoneTask}
                   onViewSession={onViewSession}
@@ -304,49 +330,43 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
           </div>
         </div>
 
-        {/* Task detail panel */}
-        {selectedTask && (
-          <div className="flex-shrink-0 flex" style={{ width: detailWidth }}>
-            <div
-              className="w-1.5 flex-shrink-0 cursor-col-resize flex items-center justify-center hover:bg-violet-500/20 active:bg-violet-500/30 transition-colors group"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                resizeRef.current = { startX: e.clientX, startWidth: detailWidth };
-                document.body.style.cursor = "col-resize";
-                document.body.style.userSelect = "none";
-              }}
-            >
-              <GripVertical className="w-3 h-3 text-muted-foreground/30 group-hover:text-violet-400 transition-colors" />
-            </div>
-            <div className="flex-1 min-w-0">
+        {/* Task detail panel with tabs */}
+        {hasTaskPanel && (() => {
+          const renderTaskDetail = (task: Task) => {
+            const session = task.sessionId ? sessions.get(task.sessionId) : undefined;
+            const msgs = task.sessionId ? messages.get(task.sessionId) || [] : [];
+            const streaming = task.sessionId ? streamingText.get(task.sessionId) || "" : "";
+            return (
               <TaskDetail
-                task={selectedTask}
-                session={selectedSession}
-                messages={selectedMessages}
-                streamingText={selectedStreamingText}
-                onClose={() => setSelectedTaskId(null)}
-                onUpdate={(updates) => handleUpdateTask(selectedTask.id, updates)}
-                onDelete={() => handleDeleteTask(selectedTask)}
-                onSubmit={() => handleSubmitTask(selectedTask)}
-                onDone={() => handleDoneTask(selectedTask)}
-                onLinkSession={(sessionId) => handleLinkSession(selectedTask.id, sessionId)}
-                onResume={() => handleResumeTask(selectedTask)}
-                onViewSession={onViewSession.bind(null, selectedTask.sessionId!)}
+                key={task.id}
+                task={task}
+                session={session}
+                messages={msgs}
+                streamingText={streaming}
+                projectName={getProjectName(task.projectId)}
+                onClose={() => handleCloseTaskTab(task.id)}
+                onUpdate={(updates) => handleUpdateTask(task.id, updates)}
+                onDelete={() => handleDeleteTask(task)}
+                onSubmit={() => handleSubmitTask(task)}
+                onDone={() => handleDoneTask(task)}
+                onLinkSession={(sessionId) => handleLinkSession(task.id, sessionId)}
+                onResume={() => handleResumeTask(task)}
+                onViewSession={onViewSession.bind(null, task.sessionId!)}
                 onSendPrompt={(prompt) => {
-                  if (selectedTask.sessionId) {
-                    send({ type: "session.prompt", sessionId: selectedTask.sessionId, prompt });
+                  if (task.sessionId) {
+                    send({ type: "session.prompt", sessionId: task.sessionId, prompt });
                   }
                 }}
                 onCancelPrompt={() => {
-                  if (selectedTask.sessionId) {
-                    send({ type: "session.interrupt", sessionId: selectedTask.sessionId });
+                  if (task.sessionId) {
+                    send({ type: "session.interrupt", sessionId: task.sessionId });
                   }
                 }}
                 onPermissionResponse={(requestId, allow, answers, message) => {
-                  if (selectedTask.sessionId) {
+                  if (task.sessionId) {
                     send({
                       type: "session.permissionResponse",
-                      sessionId: selectedTask.sessionId,
+                      sessionId: task.sessionId,
                       requestId,
                       allow,
                       answers,
@@ -355,9 +375,53 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                   }
                 }}
               />
+            );
+          };
+
+          return (
+            <div className="flex-shrink-0 flex" style={{ width: detailWidth }}>
+              <div
+                className="w-1.5 flex-shrink-0 cursor-col-resize flex items-center justify-center hover:bg-violet-500/20 active:bg-violet-500/30 transition-colors group"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  resizeRef.current = { startX: e.clientX, startWidth: detailWidth };
+                  document.body.style.cursor = "col-resize";
+                  document.body.style.userSelect = "none";
+                }}
+              >
+                <GripVertical className="w-3 h-3 text-muted-foreground/30 group-hover:text-violet-400 transition-colors" />
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col h-full">
+                {/* Tab bar — show when multiple tasks are open */}
+                {openTasks.length > 1 && (
+                  <div className="flex items-center border-b border-l bg-muted/30 overflow-x-auto">
+                    {openTasks.map((task) => {
+                      const isActive = task.id === activeTaskId;
+                      return (
+                        <button
+                          key={task.id}
+                          className={`group/tab flex items-center gap-1 px-3 py-2 text-xs font-medium transition-colors flex-shrink-0 max-w-[180px] ${isActive ? "bg-background border-b-2 border-violet-500 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                          onClick={() => setActiveTaskId(task.id)}
+                        >
+                          <span className="truncate">{task.title}</span>
+                          <span
+                            className="p-0.5 rounded opacity-0 group-hover/tab:opacity-100 hover:bg-accent"
+                            onClick={(e) => { e.stopPropagation(); handleCloseTaskTab(task.id); }}
+                          >
+                            <X className="w-3 h-3" />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="flex-1 min-h-0">
+                  {activeOpenTask && renderTaskDetail(activeOpenTask)}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
