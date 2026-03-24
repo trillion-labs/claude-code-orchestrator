@@ -76,6 +76,7 @@ export interface Task {
   sessionId?: string;
   claudeSessionId?: string;   // Claude CLI session ID (for --resume)
   lastMachineId?: string;     // Machine ID the session last ran on
+  lastWorkDir?: string;       // workDir at submit time (used for resume)
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
