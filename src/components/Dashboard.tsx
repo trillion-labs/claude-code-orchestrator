@@ -315,6 +315,8 @@ export function Dashboard() {
               project={activeProject}
               send={send}
               onViewSession={handleViewSession}
+              requestPathList={requestPathList}
+              requestMkdir={requestMkdir}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground">

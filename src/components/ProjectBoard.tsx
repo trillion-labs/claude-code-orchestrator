@@ -31,7 +31,7 @@ import type { PathListResult, MkdirResult } from "@/hooks/useWebSocket";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "./NotesList";
 import { NoteDetail } from "./NoteDetail";
-import { Server, FolderOpen, Link, GripVertical, ShieldCheck, Wand2, Columns2, Layers, X, FileText, Plus } from "lucide-react";
+import { Server, FolderOpen, Link, GripVertical, ShieldCheck, Wand2, Columns2, Layers, X, FileText, Plus, Pencil } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
