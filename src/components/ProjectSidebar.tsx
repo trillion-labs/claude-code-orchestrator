@@ -217,7 +217,7 @@ export function ProjectSidebar({ send, onNavigateToSession }: ProjectSidebarProp
             <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
           )}
           <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="font-medium flex-1 text-left">휴지통</span>
+          <span className="font-medium flex-1 text-left">Trash</span>
           {trashedProjects.length > 0 && (
             <span className="text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
               {trashedProjects.length}
@@ -228,7 +228,7 @@ export function ProjectSidebar({ send, onNavigateToSession }: ProjectSidebarProp
           <div className="mt-1 space-y-0.5">
             {trashedProjects.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-3">
-                비어 있음
+                Empty
               </p>
             ) : (
               trashedProjects.map((item: TrashedProject) => (
@@ -249,8 +249,12 @@ export function ProjectSidebar({ send, onNavigateToSession }: ProjectSidebarProp
                     <RotateCcw className="w-3 h-3" />
                   </button>
                   <button
-                    title="영구 삭제"
-                    onClick={() => send({ type: "project.purge", projectId: item.project.id })}
+                    title="Delete permanently"
+                    onClick={() => {
+                      if (confirm(`Permanently delete "${item.project.name}"? This cannot be undone.`)) {
+                        send({ type: "project.purge", projectId: item.project.id });
+                      }
+                    }}
                     className="p-0.5 rounded text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                   >
                     <X className="w-3 h-3" />
