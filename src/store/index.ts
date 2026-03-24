@@ -107,6 +107,10 @@ interface SessionState {
   prependMessages: (sessionId: string, messages: ConversationMessage[], hasMore: boolean) => void;
   setLoadingHistory: (sessionId: string, loading: boolean) => void;
 
+  // Prompt queue
+  promptQueue: Map<string, string[]>;
+  setPromptQueue: (sessionId: string, queue: string[]) => void;
+
   // Streaming
   appendStreamDelta: (sessionId: string, delta: string) => void;
   clearStreamingText: (sessionId: string) => void;
@@ -193,6 +197,7 @@ export const useStore = create<SessionState>((set) => ({
   hasMoreMessages: new Map(),
   loadingHistory: new Map(),
   streamingText: new Map(),
+  promptQueue: new Map(),
   discoveredSessions: new Map(),
   respondedPermissions: new Map(),
   permissionAnswers: new Map(),
@@ -395,6 +400,17 @@ export const useStore = create<SessionState>((set) => ({
         return { messages, streamingText };
       }
       return { messages };
+    }),
+
+  setPromptQueue: (sessionId, queue) =>
+    set((state) => {
+      const promptQueue = new Map(state.promptQueue);
+      if (queue.length === 0) {
+        promptQueue.delete(sessionId);
+      } else {
+        promptQueue.set(sessionId, queue);
+      }
+      return { promptQueue };
     }),
 
   prependMessages: (sessionId, olderMessages, hasMore) =>

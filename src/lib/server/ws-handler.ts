@@ -362,6 +362,11 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.dequeue": {
+        this.sessionManager.dequeuePrompt(msg.sessionId, msg.index);
+        break;
+      }
+
       case "session.interrupt": {
         this.sessionManager.interruptSession(msg.sessionId);
         break;
@@ -865,6 +870,10 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:message", (sessionId: string, message: import("../shared/types").ConversationMessage) => {
       this.broadcast({ type: "session.message", sessionId, message });
+    });
+
+    this.sessionManager.on("session:queueUpdate", (sessionId: string, queue: string[]) => {
+      this.broadcast({ type: "session.queueUpdate", sessionId, queue });
     });
 
     this.sessionManager.on("session:status", (sessionId: string, status: string, error?: string, totalCostUsd?: number) => {

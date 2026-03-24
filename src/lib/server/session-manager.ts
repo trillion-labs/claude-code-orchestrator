@@ -821,6 +821,14 @@ except:
     const managed = this.sessions.get(sessionId);
     if (!managed) throw new Error(`Session ${sessionId} not found`);
 
+    if (managed.isProcessingPrompt) {
+      // Queue the prompt — don't add to history or emit yet
+      managed.promptQueue.push(prompt);
+      if (!managed.firstUserMessage) managed.firstUserMessage = prompt;
+      this.emit("session:queueUpdate", sessionId, [...managed.promptQueue]);
+      return;
+    }
+
     // Add user message to history
     const userMsg: ConversationMessage = {
       id: uuidv4(),
@@ -833,13 +841,15 @@ except:
     this.trimMessages(managed);
     this.emit("session:message", sessionId, userMsg);
 
-    if (managed.isProcessingPrompt) {
-      // Queue the prompt
-      managed.promptQueue.push(prompt);
-      return;
-    }
-
     this.processPrompt(managed, prompt);
+  }
+
+  dequeuePrompt(sessionId: string, index: number): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return;
+    if (index < 0 || index >= managed.promptQueue.length) return;
+    managed.promptQueue.splice(index, 1);
+    this.emit("session:queueUpdate", sessionId, [...managed.promptQueue]);
   }
 
   private async processPrompt(managed: ManagedSession, prompt: string) {
@@ -1000,6 +1010,17 @@ except:
 
         if (managed.promptQueue.length > 0) {
           const nextPrompt = managed.promptQueue.shift()!;
+          // Now add the queued user message to history and emit
+          const queuedUserMsg: ConversationMessage = {
+            id: uuidv4(),
+            role: "user",
+            content: nextPrompt,
+            timestamp: Date.now(),
+          };
+          managed.messages.push(queuedUserMsg);
+          this.trimMessages(managed);
+          this.emit("session:message", sessionId, queuedUserMsg);
+          this.emit("session:queueUpdate", sessionId, [...managed.promptQueue]);
           this.processPrompt(managed, nextPrompt);
         }
         break;

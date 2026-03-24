@@ -78,7 +78,9 @@ export type ClientMessage =
   | { type: "session.history"; sessionId: string; before: number; limit?: number }
   // ── Orchestrator Manager ──
   | { type: "orchestrator.create"; projectId: string }
-  | { type: "orchestrator.prompt"; projectId: string; prompt: string };
+  | { type: "orchestrator.prompt"; projectId: string; prompt: string }
+  // ── Prompt queue ──
+  | { type: "session.dequeue"; sessionId: string; index: number };
 
 // ── Server → Client Messages ──
 
@@ -234,4 +236,6 @@ export type ServerMessage =
   | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean }
   // ── Orchestrator Manager ──
   | { type: "orchestrator.created"; projectId: string; session: Session }
-  | { type: "orchestrator.terminated"; projectId: string };
+  | { type: "orchestrator.terminated"; projectId: string }
+  // ── Prompt queue ──
+  | { type: "session.queueUpdate"; sessionId: string; queue: string[] };
