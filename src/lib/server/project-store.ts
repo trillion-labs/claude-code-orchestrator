@@ -1,15 +1,21 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
-import type { Project, Task, KanbanColumn } from "../shared/types";
+import type { Project, Task, KanbanColumn, TrashedProject } from "../shared/types";
 
 const DATA_DIR = join(homedir(), ".claude-orchestrator");
 const PROJECTS_FILE = join(DATA_DIR, "projects.json");
+const TRASH_FILE = join(DATA_DIR, "trash.json");
 const TASKS_DIR = join(DATA_DIR, "tasks");
 
 interface ProjectsFileData {
   version: number;
   projects: Project[];
+}
+
+interface TrashFileData {
+  version: number;
+  items: TrashedProject[];
 }
 
 interface TasksFileData {
@@ -20,9 +26,11 @@ interface TasksFileData {
 export class ProjectStore {
   private projects: Project[] = [];
   private tasksByProject = new Map<string, Task[]>();
+  private trash: TrashedProject[] = [];
 
   // Debounce timers for disk writes
   private projectsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private trashSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private tasksSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   async initialize(): Promise<void> {
@@ -38,6 +46,16 @@ export class ProjectStore {
     } catch {
       // File doesn't exist yet — start empty
       this.projects = [];
+    }
+
+    // Load trash
+    try {
+      const trashContent = await readFile(TRASH_FILE, "utf-8");
+      const trashData: TrashFileData = JSON.parse(trashContent);
+      this.trash = trashData.items || [];
+    } catch {
+      // File doesn't exist yet — start empty
+      this.trash = [];
     }
 
     // Load tasks for each project
@@ -93,6 +111,52 @@ export class ProjectStore {
     } catch {
       // Ignore — file may not exist
     }
+  }
+
+  async trashProject(id: string): Promise<TrashedProject> {
+    const project = this.projects.find((p) => p.id === id);
+    if (!project) throw new Error(`Project ${id} not found`);
+    const tasks = this.tasksByProject.get(id) || [];
+    const trashedProject: TrashedProject = {
+      project,
+      tasks,
+      deletedAt: new Date().toISOString(),
+    };
+    this.trash.push(trashedProject);
+    this.projects = this.projects.filter((p) => p.id !== id);
+    this.tasksByProject.delete(id);
+    await this.saveProjectsDebounced();
+    await this.saveTrashDebounced();
+    return trashedProject;
+  }
+
+  async restoreProject(id: string): Promise<TrashedProject> {
+    const item = this.trash.find((t) => t.project.id === id);
+    if (!item) throw new Error(`Project ${id} not found in trash`);
+    this.projects.push(item.project);
+    this.tasksByProject.set(id, item.tasks);
+    this.trash = this.trash.filter((t) => t.project.id !== id);
+    await this.saveProjectsDebounced();
+    await this.saveTrashDebounced();
+    // Restore tasks file
+    await this.saveTasksNow(id);
+    return item;
+  }
+
+  async purgeProject(id: string): Promise<void> {
+    this.trash = this.trash.filter((t) => t.project.id !== id);
+    await this.saveTrashDebounced();
+    // Delete tasks file (best effort)
+    try {
+      const { unlink } = await import("fs/promises");
+      await unlink(join(TASKS_DIR, `${id}.json`));
+    } catch {
+      // Ignore — file may not exist
+    }
+  }
+
+  getTrash(): TrashedProject[] {
+    return this.trash;
   }
 
   // ── Task CRUD ──
@@ -185,6 +249,22 @@ export class ProjectStore {
         resolve();
       }, 500);
     });
+  }
+
+  private async saveTrashDebounced(): Promise<void> {
+    if (this.trashSaveTimer) clearTimeout(this.trashSaveTimer);
+    return new Promise((resolve) => {
+      this.trashSaveTimer = setTimeout(async () => {
+        await this.saveTrashNow();
+        resolve();
+      }, 500);
+    });
+  }
+
+  private async saveTrashNow(): Promise<void> {
+    const data: TrashFileData = { version: 1, items: this.trash };
+    await mkdir(DATA_DIR, { recursive: true });
+    await writeFile(TRASH_FILE, JSON.stringify(data, null, 2), "utf-8");
   }
 
   private async saveTasksDebounced(projectId: string): Promise<void> {
