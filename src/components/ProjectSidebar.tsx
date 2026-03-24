@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -19,12 +19,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { useProjectStore } from "@/hooks/useProjectStore";
+import { useStore } from "@/store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { PendingPermissions } from "./PendingPermissions";
-import { FolderOpen, Server, Trash2, LayoutGrid, GripVertical } from "lucide-react";
+import { FolderOpen, Server, Trash2, LayoutGrid, GripVertical, RotateCcw, X, ChevronDown, ChevronRight } from "lucide-react";
 import { ALL_TASKS_ID } from "@/lib/shared/types";
-import type { Project } from "@/lib/shared/types";
+import type { Project, TrashedProject } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 
 interface ProjectSidebarProps {
@@ -98,8 +99,22 @@ function SortableProjectItem({ project, isActive, onClick, onDelete }: SortableP
   );
 }
 
+function relativeTime(isoString: string): string {
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  if (diffSecs < 60) return `${diffSecs}초 전`;
+  const diffMins = Math.floor(diffSecs / 60);
+  if (diffMins < 60) return `${diffMins}분 전`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}시간 전`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}일 전`;
+}
+
 export function ProjectSidebar({ send, onNavigateToSession }: ProjectSidebarProps) {
   const { projects, activeProjectId, setActiveProject, reorderProjects } = useProjectStore();
+  const trashedProjects = useStore((state) => state.trashedProjects);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   const handleDeleteProject = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
@@ -188,6 +203,64 @@ export function ProjectSidebar({ send, onNavigateToSession }: ProjectSidebarProp
           )}
         </div>
       </ScrollArea>
+
+      {/* Trash bin section */}
+      <Separator />
+      <div className="px-2 py-1">
+        <button
+          onClick={() => setTrashOpen((v) => !v)}
+          className="w-full flex items-center gap-2 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors text-sm"
+        >
+          {trashOpen ? (
+            <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
+          )}
+          <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="font-medium flex-1 text-left">휴지통</span>
+          {trashedProjects.length > 0 && (
+            <span className="text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+              {trashedProjects.length}
+            </span>
+          )}
+        </button>
+        {trashOpen && (
+          <div className="mt-1 space-y-0.5">
+            {trashedProjects.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">
+                비어 있음
+              </p>
+            ) : (
+              trashedProjects.map((item: TrashedProject) => (
+                <div
+                  key={item.project.id}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg group hover:bg-accent/30"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate">{item.project.name}</div>
+                    <div className="text-[10px] text-muted-foreground">{relativeTime(item.deletedAt)}</div>
+                  </div>
+                  <button
+                    title="복원"
+                    onClick={() => send({ type: "project.restore", projectId: item.project.id })}
+                    className="p-0.5 rounded text-muted-foreground hover:text-green-500 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                  <button
+                    title="영구 삭제"
+                    onClick={() => send({ type: "project.purge", projectId: item.project.id })}
+                    className="p-0.5 rounded text-muted-foreground hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       <PendingPermissions onNavigate={onNavigateToSession} />
 

@@ -644,8 +644,38 @@ export class WebSocketHandler {
 
       case "project.delete": {
         try {
-          await this.projectManager.deleteProject(msg.projectId);
-          this.broadcast({ type: "project.deleted", projectId: msg.projectId });
+          const trashedProject = await this.projectManager.trashProject(msg.projectId);
+          this.broadcast({ type: "project.trashed", projectId: msg.projectId, trashedProject });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "project.trash": {
+        try {
+          const trashedProject = await this.projectManager.trashProject(msg.projectId);
+          this.broadcast({ type: "project.trashed", projectId: msg.projectId, trashedProject });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "project.restore": {
+        try {
+          const item = await this.projectManager.restoreProject(msg.projectId);
+          this.broadcast({ type: "project.restored", project: item.project, tasks: item.tasks });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "project.purge": {
+        try {
+          await this.projectManager.purgeProject(msg.projectId);
+          this.broadcast({ type: "project.purged", projectId: msg.projectId });
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
         }
@@ -655,6 +685,8 @@ export class WebSocketHandler {
       case "project.list": {
         const projects = this.projectManager.getAllProjects();
         this.send(ws, { type: "project.list", projects });
+        const trashItems = this.projectManager.getTrash();
+        this.send(ws, { type: "trash.list", items: trashItems });
         break;
       }
 
