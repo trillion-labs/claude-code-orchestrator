@@ -30,6 +30,7 @@ interface KanbanColumnProps {
   onViewSession: (sessionId: string) => void;
   onEditTitle?: (taskId: string, newTitle: string) => void;
   getProjectName?: (projectId: string) => string | undefined;
+  projectWorkDir?: string;
 }
 
 export function KanbanColumn({
@@ -43,6 +44,7 @@ export function KanbanColumn({
   onViewSession,
   onEditTitle,
   getProjectName,
+  projectWorkDir,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column });
   const taskIds = tasks.map((t) => t.id);
@@ -92,6 +94,7 @@ export function KanbanColumn({
                 }
                 onEditTitle={onEditTitle}
                 projectName={getProjectName?.(task.projectId)}
+                projectWorkDir={projectWorkDir}
               />
             ))
           )}

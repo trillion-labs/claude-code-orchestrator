@@ -23,9 +23,11 @@ import { TaskDialog } from "./TaskDialog";
 import { TaskDetail } from "./TaskDetail";
 import { ManagerChatPanel } from "./ManagerChatPanel";
 import { SessionPickerDialog } from "./SessionPickerDialog";
+import { PathInput } from "./PathInput";
 import { KANBAN_COLUMNS, PERMISSION_MODES } from "@/lib/shared/types";
 import type { Task, KanbanColumn as KanbanColumnType, Project, PermissionMode } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
+import type { PathListResult, MkdirResult } from "@/hooks/useWebSocket";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "./NotesList";
 import { NoteDetail } from "./NoteDetail";
@@ -35,6 +37,8 @@ interface ProjectBoardProps {
   project: Project;
   send: (msg: ClientMessage) => void;
   onViewSession: (sessionId: string) => void;
+  requestPathList: (machineId: string, path: string) => Promise<PathListResult>;
+  requestMkdir: (machineId: string, path: string) => Promise<MkdirResult>;
 }
 
 // Module-level cache: survives unmount (e.g. projects ↔ sessions view switch)
@@ -51,7 +55,7 @@ const panelStateCache = new Map<string, PanelState>();
 // Global (not per-project) — persists across project switches and unmounts
 let globalProjectTab: "kanban" | "notes" = "kanban";
 
-export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps) {
+export function ProjectBoard({ project, send, onViewSession, requestPathList, requestMkdir }: ProjectBoardProps) {
   const { getTasksByColumn, getTaskSession } = useProjectStore();
   const { messages, streamingText, sessions } = useStore();
   const tasks = useStore((s) => s.tasks);
@@ -400,6 +404,17 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "project.update", projectId: project.id, updates: { permissionMode: mode } });
   };
 
+  const [editingWorkDir, setEditingWorkDir] = useState(false);
+  const [workDirDraft, setWorkDirDraft] = useState(project.workDir);
+
+  const handleWorkDirConfirm = () => {
+    const trimmed = workDirDraft.trim();
+    if (trimmed && trimmed !== project.workDir) {
+      send({ type: "project.update", projectId: project.id, updates: { workDir: trimmed } });
+    }
+    setEditingWorkDir(false);
+  };
+
   // Manager session data
   const managerSession = orchestratorSessionId
     ? sessions.get(orchestratorSessionId)
@@ -441,9 +456,36 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
             <Server className="w-3 h-3 flex-shrink-0" />
             <span className="truncate max-w-[120px]">{project.machineId}</span>
           </span>
-          <span className="flex items-center gap-1">
+          <span className="relative flex items-center gap-1">
             <FolderOpen className="w-3 h-3 flex-shrink-0" />
-            <span className="truncate max-w-[200px]">{project.workDir}</span>
+            {editingWorkDir ? (
+              <div className="absolute left-0 top-5 z-50 w-80 bg-popover border border-border rounded-lg shadow-lg p-2">
+                <PathInput
+                  value={workDirDraft}
+                  onChange={setWorkDirDraft}
+                  onConfirm={handleWorkDirConfirm}
+                  machineId={project.machineId}
+                  requestPathList={requestPathList}
+                  requestMkdir={requestMkdir}
+                />
+                <div className="flex justify-end gap-1 mt-2">
+                  <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setEditingWorkDir(false); setWorkDirDraft(project.workDir); }}>
+                    Cancel
+                  </Button>
+                  <Button size="sm" className="h-6 text-xs" onClick={handleWorkDirConfirm}>
+                    Save
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            <button
+              className="truncate max-w-[200px] hover:text-foreground transition-colors flex items-center gap-1 group/workdir"
+              onClick={() => { setWorkDirDraft(project.workDir); setEditingWorkDir(true); }}
+              title="Click to change working directory"
+            >
+              <span className="truncate">{project.workDir}</span>
+              <Pencil className="w-2.5 h-2.5 opacity-0 group-hover/workdir:opacity-100 flex-shrink-0" />
+            </button>
           </span>
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-3 h-3 flex-shrink-0" />
@@ -553,6 +595,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   onTaskDone={handleDoneTask}
                   onViewSession={onViewSession}
                   onEditTitle={handleEditTitle}
+                  projectWorkDir={project.workDir}
                 />
               ))}
 
