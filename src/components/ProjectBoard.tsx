@@ -23,11 +23,11 @@ import { TaskDialog } from "./TaskDialog";
 import { TaskDetail } from "./TaskDetail";
 import { ManagerChatPanel } from "./ManagerChatPanel";
 import { SessionPickerDialog } from "./SessionPickerDialog";
-import { KANBAN_COLUMNS } from "@/lib/shared/types";
-import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
+import { KANBAN_COLUMNS, PERMISSION_MODES } from "@/lib/shared/types";
+import type { Task, KanbanColumn as KanbanColumnType, Project, PermissionMode } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Button } from "@/components/ui/button";
-import { Server, FolderOpen, Link, GripVertical, Wand2, Columns2, Layers, X } from "lucide-react";
+import { Server, FolderOpen, Link, GripVertical, ShieldCheck, Wand2, Columns2, Layers, X, Pencil } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
@@ -314,6 +314,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.resume", projectId: project.id, taskId: task.id });
   };
 
+  const handlePermissionModeChange = (mode: PermissionMode) => {
+    send({ type: "project.update", projectId: project.id, updates: { permissionMode: mode } });
+  };
+
   // Manager session data
   const managerSession = orchestratorSessionId
     ? sessions.get(orchestratorSessionId)
@@ -343,6 +347,19 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
           <span className="flex items-center gap-1">
             <FolderOpen className="w-3 h-3 flex-shrink-0" />
             <span className="truncate max-w-[200px]">{project.workDir}</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <ShieldCheck className="w-3 h-3 flex-shrink-0" />
+            <select
+              value={project.permissionMode}
+              onChange={(e) => handlePermissionModeChange(e.target.value as PermissionMode)}
+              className="bg-transparent text-xs text-muted-foreground border-none outline-none cursor-pointer hover:text-foreground transition-colors"
+              title="Default permission mode for new tasks"
+            >
+              {(Object.entries(PERMISSION_MODES) as [PermissionMode, typeof PERMISSION_MODES[PermissionMode]][]).map(([mode, cfg]) => (
+                <option key={mode} value={mode}>{cfg.label}</option>
+              ))}
+            </select>
           </span>
         </div>
         <div className="flex-shrink-0 flex items-center gap-1.5">
