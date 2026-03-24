@@ -74,6 +74,7 @@ export function useWebSocket() {
     updateSessionProject,
     setSessionName,
     setOrchestratorSession,
+    setPromptQueue,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -103,6 +104,10 @@ export function useWebSocket() {
 
         case "session.message":
           addMessage(msg.sessionId, msg.message);
+          break;
+
+        case "session.queueUpdate":
+          setPromptQueue(msg.sessionId, msg.queue);
           break;
 
         case "session.history":
@@ -300,7 +305,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, addShowUserTab, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setOrchestratorSession]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, addShowUserTab, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setOrchestratorSession, setPromptQueue]
   );
 
   const connect = useCallback(() => {

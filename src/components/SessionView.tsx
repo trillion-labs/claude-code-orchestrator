@@ -52,6 +52,10 @@ export function SessionView({
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [modePopoverOpen, setModePopoverOpen] = useState(false);
 
+  // Prompt queue
+  const promptQueueRaw = useStore((s) => s.promptQueue.get(session.id));
+  const promptQueue = promptQueueRaw ?? [];
+
   // Plan panel
   const planContent = useStore((s) => s.planContent.get(session.id));
   const planPanelOpen = useStore((s) => s.planPanelOpen.get(session.id) ?? false);
@@ -352,9 +356,27 @@ export function SessionView({
             />
           )}
 
+          {/* Queued prompts preview */}
+          {promptQueue.length > 0 && (
+            <div className="border-t bg-muted/30 px-4 py-2 space-y-1">
+              {promptQueue.map((prompt, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground/60 font-mono">
+                  <span className="text-muted-foreground/40 shrink-0">queued</span>
+                  <span className="truncate flex-1">{prompt}</span>
+                  <button
+                    onClick={() => send({ type: "session.dequeue", sessionId: session.id, index: i })}
+                    className="shrink-0 p-0.5 rounded text-muted-foreground/40 hover:bg-destructive/20 hover:text-destructive"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <PromptInput
             onSend={onSendPrompt}
-            disabled={isBusy}
+            isBusy={isBusy}
             onCancel={() => send({ type: "session.interrupt", sessionId: session.id })}
           />
         </div>
