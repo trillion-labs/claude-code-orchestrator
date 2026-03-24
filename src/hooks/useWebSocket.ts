@@ -81,6 +81,10 @@ export function useWebSocket() {
     updateNote: updateNoteInStore,
     removeNote,
     setNoteContent,
+    // Trash
+    addToTrash,
+    removeFromTrash,
+    setTrashList,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -236,8 +240,27 @@ export function useWebSocket() {
           removeProject(msg.projectId);
           break;
 
+        case "project.trashed":
+          addToTrash(msg.trashedProject);
+          removeProject(msg.projectId);
+          break;
+
+        case "project.restored":
+          removeFromTrash(msg.project.id);
+          addProject(msg.project);
+          setTasks(msg.project.id, msg.tasks);
+          break;
+
+        case "project.purged":
+          removeFromTrash(msg.projectId);
+          break;
+
         case "project.list":
           setProjects(msg.projects);
+          break;
+
+        case "trash.list":
+          setTrashList(msg.items);
           break;
 
         case "task.created":
@@ -333,7 +356,7 @@ export function useWebSocket() {
           break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, addShowUserTab, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setOrchestratorSession, setPromptQueue, setNotes, addNote, updateNoteInStore, removeNote, setNoteContent]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, addShowUserTab, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setOrchestratorSession, setPromptQueue, setNotes, addNote, updateNoteInStore, removeNote, setNoteContent, addToTrash, removeFromTrash, setTrashList]
   );
 
   const connect = useCallback(() => {

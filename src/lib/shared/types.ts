@@ -104,6 +104,14 @@ export interface Note {
   updatedAt: number;
 }
 
+// ── Trash Types ──
+
+export interface TrashedProject {
+  project: Project;
+  tasks: Task[];
+  deletedAt: string;
+}
+
 // ── Worktree Info ──
 
 export interface WorktreeInfo {

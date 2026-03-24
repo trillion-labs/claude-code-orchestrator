@@ -1,4 +1,4 @@
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn, Note } from "./types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn, Note, TrashedProject } from "./types";
 
 // ── Client → Server Messages ──
 
@@ -60,6 +60,9 @@ export type ClientMessage =
   | { type: "project.create"; name: string; machineId: string; workDir: string; permissionMode: PermissionMode }
   | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode } }
   | { type: "project.delete"; projectId: string }
+  | { type: "project.trash"; projectId: string }
+  | { type: "project.restore"; projectId: string }
+  | { type: "project.purge"; projectId: string }
   | { type: "project.list" }
   // ── Task CRUD ──
   | { type: "task.create"; projectId: string; title: string; description: string }
@@ -218,7 +221,11 @@ export type ServerMessage =
   | { type: "project.created"; project: Project }
   | { type: "project.updated"; project: Project }
   | { type: "project.deleted"; projectId: string }
+  | { type: "project.trashed"; projectId: string; trashedProject: TrashedProject }
+  | { type: "project.restored"; project: Project; tasks: Task[] }
+  | { type: "project.purged"; projectId: string }
   | { type: "project.list"; projects: Project[] }
+  | { type: "trash.list"; items: TrashedProject[] }
   // ── Task responses ──
   | { type: "task.created"; task: Task }
   | { type: "task.updated"; task: Task }
