@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Play, ExternalLink, AlertCircle, RotateCcw, Pencil, CheckCircle2 } from "lucide-react";
+import { Play, ExternalLink, AlertCircle, RotateCcw, Pencil, CheckCircle2, TriangleAlert } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { TimeAgo } from "./TimeAgo";
 import type { Task, Session } from "@/lib/shared/types";
@@ -17,9 +17,10 @@ interface TaskCardProps {
   onViewSession?: () => void;
   onEditTitle?: (taskId: string, newTitle: string) => void;
   projectName?: string;
+  projectWorkDir?: string;
 }
 
-export function TaskCard({ task, session, onClick, onSubmit, onDone, onViewSession, onEditTitle, projectName }: TaskCardProps) {
+export function TaskCard({ task, session, onClick, onSubmit, onDone, onViewSession, onEditTitle, projectName, projectWorkDir }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -35,6 +36,12 @@ export function TaskCard({ task, session, onClick, onSubmit, onDone, onViewSessi
   };
 
   const hasError = session?.status === "error";
+  const hasWorkDirMismatch =
+    !!task.lastWorkDir &&
+    !!projectWorkDir &&
+    task.lastWorkDir !== projectWorkDir &&
+    task.column !== "todo" &&
+    task.column !== "done";
 
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -119,6 +126,17 @@ export function TaskCard({ task, session, onClick, onSubmit, onDone, onViewSessi
               <Pencil className="w-3 h-3" />
             </button>
           )}
+        </div>
+      )}
+
+      {/* WorkDir mismatch warning */}
+      {hasWorkDirMismatch && (
+        <div
+          className="mt-1 flex items-center gap-1 text-[10px] text-amber-400"
+          title={`Session workDir (${task.lastWorkDir}) differs from project workDir (${projectWorkDir}). Resume will use original workDir.`}
+        >
+          <TriangleAlert className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">workDir changed — resume uses original path</span>
         </div>
       )}
 

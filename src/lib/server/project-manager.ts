@@ -37,7 +37,7 @@ export class ProjectManager {
 
   async updateProject(
     projectId: string,
-    updates: { name?: string; permissionMode?: PermissionMode },
+    updates: { name?: string; permissionMode?: PermissionMode; workDir?: string },
   ): Promise<Project> {
     await this.store.updateProject(projectId, updates);
     const project = this.store.getProject(projectId);
@@ -179,6 +179,7 @@ export class ProjectManager {
       sessionId: session.id,
       claudeSessionId: session.claudeSessionId,
       lastMachineId: machine.id,
+      lastWorkDir: project.workDir,
     });
 
     // Wait for session to be idle, then send the task description as prompt
@@ -206,9 +207,11 @@ export class ProjectManager {
     }
 
     // Create a new session with --resume pointing to the old Claude session
+    // Use lastWorkDir (workDir at submit time) to ensure consistency with original session
+    const workDir = task.lastWorkDir ?? project.workDir;
     const session = await this.sessionManager.createSession(
       machine,
-      project.workDir,
+      workDir,
       task.claudeSessionId,    // resumeSessionId
       project.permissionMode,
       undefined,               // worktree (not re-creating)
