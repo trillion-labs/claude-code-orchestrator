@@ -354,7 +354,7 @@ export function SessionView({
 
           <PromptInput
             onSend={onSendPrompt}
-            disabled={isBusy}
+            isBusy={isBusy}
             onCancel={() => send({ type: "session.interrupt", sessionId: session.id })}
           />
         </div>
