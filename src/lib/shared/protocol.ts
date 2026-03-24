@@ -1,4 +1,4 @@
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn } from "./types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn, AgentType } from "./types";
 
 // ── Client → Server Messages ──
 
@@ -10,6 +10,7 @@ export type ClientMessage =
       resumeSessionId?: string; // Claude session ID to resume
       permissionMode?: PermissionMode;
       worktree?: { enabled: boolean; name: string; existingPath?: string };
+      agentType?: AgentType;
     }
   | {
       type: "session.discover";

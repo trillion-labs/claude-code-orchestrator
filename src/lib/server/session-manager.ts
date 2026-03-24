@@ -8,9 +8,10 @@ import { LocalAdapter } from "./adapters/local-adapter";
 import { SSHAdapter } from "./adapters/ssh-adapter";
 import { SSHConnectionManager } from "./ssh-manager";
 import { StreamParser } from "./stream-parser";
-import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, WorktreeInfo } from "../shared/types";
+import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, WorktreeInfo, AgentType } from "../shared/types";
 import { PERMISSION_MODES } from "../shared/types";
 import { resolvePermissionByMode } from "./permission-utils";
+import { createAgentProvider, type AgentProvider, type NormalizedEvent } from "./agents";
 
 interface PermissionResolver {
   resolve: (result: { behavior: string; updatedInput?: Record<string, unknown>; message?: string }) => void;
@@ -22,6 +23,7 @@ interface ManagedSession {
   adapter: ProcessAdapter;
   parser: StreamParser;
   machine: MachineConfig;
+  provider: AgentProvider;
   permissionMode: PermissionMode;
   mcpConfigPath?: string; // Temp MCP config file path
   claudeConfigDir?: string; // Custom CLAUDE_CONFIG_DIR (e.g. from direnv)
@@ -54,9 +56,10 @@ export class SessionManager extends EventEmitter {
     this.orchestratorPort = orchestratorPort;
   }
 
-  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }, projectId?: string, taskId?: string, options?: { isOrchestrator?: boolean; orchestratorProjectId?: string; systemPrompt?: string }): Promise<Session> {
+  async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }, projectId?: string, taskId?: string, options?: { isOrchestrator?: boolean; orchestratorProjectId?: string; systemPrompt?: string }, agentType: AgentType = "claude"): Promise<Session> {
     const sessionId = uuidv4();
     const claudeSessionId = resumeSessionId || uuidv4();
+    const provider = createAgentProvider(agentType);
 
     const session: Session = {
       id: sessionId,
@@ -65,6 +68,7 @@ export class SessionManager extends EventEmitter {
       workDir,
       status: "starting",
       claudeSessionId,
+      agentType,
       createdAt: Date.now(),
       totalCostUsd: 0,
       lastActivity: Date.now(),
@@ -86,6 +90,7 @@ export class SessionManager extends EventEmitter {
       adapter,
       parser,
       machine,
+      provider,
       permissionMode,
       promptQueue: [],
       isProcessingPrompt: false,
@@ -170,7 +175,7 @@ export class SessionManager extends EventEmitter {
 
     // Wire up parser events
     parser.on("message", (msg: ClaudeStreamMessage) => {
-      this.handleClaudeMessage(sessionId, msg);
+      this.handleAgentMessage(sessionId, msg);
     });
 
     parser.on("stderr", (line: string) => {
@@ -211,6 +216,11 @@ export class SessionManager extends EventEmitter {
         session.error = undefined;
         console.log(`[Session ${sessionId}] Interrupted — returning to idle (will re-spawn on next prompt)`);
         this.emit("session:status", sessionId, "idle");
+      } else if (managed.provider.isProcessPerPrompt && code === 0) {
+        // Normal completion for process-per-prompt agents — expected exit
+        if (managed.isProcessingPrompt) {
+          this.finalizePrompt(managed);
+        }
       } else {
         session.status = "error";
         const stderrMsg = stderrBuffer.trim();
@@ -221,56 +231,42 @@ export class SessionManager extends EventEmitter {
       }
     });
 
-    // Spawn the Claude process
-    const args = [
-      "-p",
-      "--input-format", "stream-json",
-      "--output-format", "stream-json",
-      "--verbose",
-    ];
-
-    // Always set up MCP permission prompt tool — permission mode is resolved
-    // dynamically in handlePermissionRequest() via resolvePermissionByMode()
-    try {
-      if (machine.type === "local") {
-        const mcpConfigPath = await this.writeMcpConfig(sessionId, managed.orchestratorProjectId);
-        managed.mcpConfigPath = mcpConfigPath;
-        args.push(
-          "--permission-prompt-tool", "mcp__perm__check_permission",
-          "--mcp-config", mcpConfigPath,
-        );
-      } else {
-        // Remote: set up reverse port forward + remote MCP server (with timeout)
-        const remoteConfig = await Promise.race([
-          this.setupRemoteMcpPermission(sessionId, machine),
-          new Promise<null>((resolve) => setTimeout(() => {
-            console.warn(`[Session ${sessionId}] Remote MCP setup timed out after 10s`);
-            resolve(null);
-          }, 10000)),
-        ]);
-        if (remoteConfig) {
-          managed.mcpConfigPath = remoteConfig; // Remote path for cleanup
-          args.push(
-            "--permission-prompt-tool", "mcp__perm__check_permission",
-            "--mcp-config", remoteConfig,
-          );
+    // Set up MCP permission prompt tool (only for agents that support it)
+    let mcpConfigPath: string | undefined;
+    if (provider.supportsMcpPermissions) {
+      try {
+        if (machine.type === "local") {
+          mcpConfigPath = await this.writeMcpConfig(sessionId, managed.orchestratorProjectId);
+          managed.mcpConfigPath = mcpConfigPath;
+        } else {
+          // Remote: set up reverse port forward + remote MCP server (with timeout)
+          const remoteConfig = await Promise.race([
+            this.setupRemoteMcpPermission(sessionId, machine),
+            new Promise<null>((resolve) => setTimeout(() => {
+              console.warn(`[Session ${sessionId}] Remote MCP setup timed out after 10s`);
+              resolve(null);
+            }, 10000)),
+          ]);
+          if (remoteConfig) {
+            managed.mcpConfigPath = remoteConfig;
+            mcpConfigPath = remoteConfig;
+          }
         }
+      } catch (err) {
+        console.warn(`[Session ${sessionId}] Could not set up MCP permission tool:`, (err as Error).message);
       }
-    } catch (err) {
-      console.warn(`[Session ${sessionId}] Could not set up MCP permission tool:`, (err as Error).message);
     }
 
-    // Orchestrator manager: restrict tools to read-only + inject system prompt
-    if (options?.isOrchestrator && options.systemPrompt) {
-      args.push("--allowedTools", "Read,Glob,Grep,mcp__orch__*,mcp__perm__*");
-      args.push("--append-system-prompt", options.systemPrompt);
-    }
-
-    if (resumeSessionId) {
-      args.push("--resume", resumeSessionId);
-    } else {
-      args.push("--session-id", claudeSessionId);
-    }
+    // Build spawn command via provider
+    const { command: spawnCmd, args } = provider.buildSpawnCommand({
+      sessionId,
+      claudeSessionId,
+      resumeSessionId,
+      workDir: session.workDir,
+      mcpConfigPath,
+      isOrchestrator: options?.isOrchestrator,
+      systemPrompt: options?.systemPrompt,
+    });
 
     try {
       // Load chat history from .jsonl if resuming
@@ -314,8 +310,15 @@ export class SessionManager extends EventEmitter {
       const spawnCwd = session.worktree
         ? session.worktree.worktreePath
         : (resumeSessionId && managed.originalCwd) || workDir;
-      console.log(`[Session ${sessionId}] Spawning claude with cwd=${spawnCwd}, args=${args.join(" ")}`);
-      await adapter.spawn("claude", args, { cwd: spawnCwd, env: spawnEnv });
+
+      if (provider.isProcessPerPrompt) {
+        // Process-per-prompt agents (e.g. Codex): skip spawning, go straight to idle
+        console.log(`[Session ${sessionId}] Process-per-prompt agent (${agentType}) — ready for prompts`);
+      } else {
+        // Long-lived agents (e.g. Claude): spawn the persistent process
+        console.log(`[Session ${sessionId}] Spawning ${agentType} with cwd=${spawnCwd}, args=${args.join(" ")}`);
+        await adapter.spawn(spawnCmd, args, { cwd: spawnCwd, env: spawnEnv });
+      }
       session.status = "idle";
       this.emit("session:status", sessionId, session.status);
     } catch (err) {
@@ -850,80 +853,66 @@ except:
     managed.session.lastActivity = Date.now();
     this.emit("session:status", managed.session.id, "busy");
 
-    // If the process was killed (e.g. after interrupt), re-spawn with --resume
-    if (!managed.adapter.isRunning) {
-      console.log(`[Session ${managed.session.id}] Process not running — re-spawning with --resume ${managed.session.claudeSessionId}`);
-      await this.respawnClaude(managed);
+    if (managed.provider.isProcessPerPrompt) {
+      // Process-per-prompt (Codex): spawn a new process for each prompt
+      const buildPromptCmd = managed.provider.buildPromptCommand!;
+      const { command, args } = buildPromptCmd({
+        prompt,
+        workDir: managed.session.worktree?.worktreePath || managed.originalCwd || managed.session.workDir,
+        permissionMode: managed.permissionMode,
+      });
+      const spawnCwd = managed.session.worktree?.worktreePath || managed.originalCwd || managed.session.workDir;
+      console.log(`[Session ${managed.session.id}] Spawning ${managed.provider.agentType} prompt process: ${command} ${args.join(" ")}`);
+      await managed.adapter.spawn(command, args, { cwd: spawnCwd });
+    } else {
+      // Long-lived (Claude): write to existing stdin
+      if (!managed.adapter.isRunning) {
+        console.log(`[Session ${managed.session.id}] Process not running — re-spawning with --resume ${managed.session.claudeSessionId}`);
+        await this.respawnAgent(managed);
+      }
+
+      const message = managed.provider.formatPrompt(prompt);
+      if (message) managed.adapter.write(message);
     }
-
-    // Send the prompt as stream-json
-    const message = JSON.stringify({
-      type: "user",
-      message: {
-        role: "user",
-        content: prompt,
-      },
-    }) + "\n";
-
-    managed.adapter.write(message);
   }
 
-  private handleClaudeMessage(sessionId: string, msg: ClaudeStreamMessage) {
+  private handleAgentMessage(sessionId: string, raw: unknown) {
     const managed = this.sessions.get(sessionId);
     if (!managed) return;
 
     managed.session.lastActivity = Date.now();
 
-    switch (msg.type) {
-      case "system":
-        managed.session.claudeSessionId = msg.session_id;
-        break;
+    // For Claude, we also keep the original direct handling for assistant messages
+    // that need special treatment (hasStreamedText logic)
+    const msg = raw as Record<string, unknown>;
 
-      case "message_start":
-        // New assistant message — reset per-message flag and add separator
-        managed.hasStreamedText = false;
-        if (managed.currentAssistantMessage) {
-          managed.currentAssistantMessage += "\n\n---\n\n";
-          this.emit("session:stream", sessionId, "\n\n---\n\n");
-        }
-        break;
+    // Claude-specific: handle message types that the normalized events don't fully cover
+    if (managed.provider.agentType === "claude") {
+      const msgType = msg.type as string;
+      // These types are ignored by normalized events but need no special handling
+      if (msgType === "content_block_start" || msgType === "content_block_stop" ||
+          msgType === "message_delta" || msgType === "message_stop") {
+        return;
+      }
 
-      case "content_block_delta":
-        if (msg.delta.type === "text_delta" && msg.delta.text) {
-          managed.currentAssistantMessage += msg.delta.text;
-          this.emit("session:stream", sessionId, msg.delta.text);
-          managed.hasStreamedText = true;
-        }
-        // input_json_delta is ignored here — tool_use content is
-        // rendered from the complete `assistant` message instead
-        break;
-
-      case "content_block_start":
-      case "content_block_stop":
-      case "message_delta":
-      case "message_stop":
-        break;
-
-      case "assistant":
-        // Process tool_use blocks (these are never streamed via deltas).
-        // Text blocks: only render if not already streamed via content_block_delta.
-        if (msg.message.content) {
+      // For "assistant" type, we need hasStreamedText logic that NormalizedEvent can't express
+      if (msgType === "assistant") {
+        const message = msg.message as Record<string, unknown> | undefined;
+        const content = message?.content as Array<Record<string, unknown>> | undefined;
+        if (content) {
           let newContent = "";
-          for (const block of msg.message.content) {
+          for (const block of content) {
             if (block.type === "text") {
               if (!managed.hasStreamedText) {
-                newContent += block.text;
+                newContent += block.text as string;
               }
             } else if (block.type === "tool_use") {
               if (newContent) newContent += "\n\n";
               const inputStr = block.input ? JSON.stringify(block.input) : "";
-              newContent += this.renderToolUse(block.name, inputStr);
+              newContent += this.renderToolUse(block.name as string, inputStr);
 
-              // Track plan file path from Write/Edit tool_use blocks
-              // Two cases: (1) orchestrator permission mode is "plan", or
-              // (2) Claude Code entered plan mode on its own and writes to .claude/plans/
               if (block.name === "Write" || block.name === "Edit") {
-                const fp = block.input?.file_path ? String(block.input.file_path) : "";
+                const fp = block.input && typeof block.input === "object" ? String((block.input as Record<string, unknown>).file_path || "") : "";
                 if (fp && (managed.permissionMode === "plan" || this.isPlanFilePath(fp))) {
                   managed.planFilePath = fp;
                 }
@@ -940,23 +929,24 @@ except:
             this.emit("session:stream", sessionId, newContent);
           }
         }
-        break;
+        return;
+      }
 
-      case "user": {
-        // Detect permission denials from tool_result blocks with is_error
-        const content = msg.message?.content;
+      // For "user" type (permission denials), handle specially
+      if (msgType === "user") {
+        const message = msg.message as Record<string, unknown> | undefined;
+        const content = message?.content;
         if (Array.isArray(content)) {
-          for (const block of content) {
+          for (const block of content as Array<Record<string, unknown>>) {
             if (block.type === "tool_result" && block.is_error) {
               const errorText = typeof block.content === "string"
                 ? block.content
                 : Array.isArray(block.content)
-                  ? block.content.filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n")
+                  ? (block.content as Array<{ type: string; text: string }>).filter(b => b.type === "text").map(b => b.text).join("\n")
                   : "Permission denied";
 
-              // Check if it looks like a permission denial
               if (errorText.toLowerCase().includes("permission") || errorText.toLowerCase().includes("not allowed") || errorText.toLowerCase().includes("denied")) {
-                const toolName = block.tool_use_id || "Unknown tool";
+                const toolName = (block.tool_use_id as string) || "Unknown tool";
                 const denialBlock = `\n\`\`\`tool-permission-denied\n${JSON.stringify({ tool: toolName, error: errorText })}\n\`\`\`\n`;
 
                 if (managed.currentAssistantMessage && !managed.currentAssistantMessage.endsWith("\n\n")) {
@@ -969,42 +959,141 @@ except:
             }
           }
         }
-        break;
-      }
-
-      case "result": {
-        const costUsd = msg.total_cost_usd || 0;
-        managed.session.totalCostUsd += costUsd;
-
-        const resultText = managed.currentAssistantMessage || msg.result || "";
-
-        if (resultText) {
-          const assistantMsg: ConversationMessage = {
-            id: uuidv4(),
-            role: "assistant",
-            content: resultText,
-            timestamp: Date.now(),
-            costUsd,
-            durationMs: msg.duration_ms,
-          };
-          managed.messages.push(assistantMsg);
-          this.trimMessages(managed);
-          this.emit("session:message", sessionId, assistantMsg);
-        }
-
-        managed.currentAssistantMessage = "";
-        managed.hasStreamedText = false;
-        managed.isProcessingPrompt = false;
-        managed.session.status = "idle";
-        this.emit("session:status", sessionId, "idle", undefined, managed.session.totalCostUsd);
-
-        if (managed.promptQueue.length > 0) {
-          const nextPrompt = managed.promptQueue.shift()!;
-          this.processPrompt(managed, nextPrompt);
-        }
-        break;
+        return;
       }
     }
+
+    // Use provider's parseMessage for normalized handling
+    const events = managed.provider.parseMessage(raw);
+    for (const evt of events) {
+      switch (evt.kind) {
+        case "init":
+          managed.session.claudeSessionId = evt.sessionId;
+          break;
+
+        case "message_start":
+          managed.hasStreamedText = false;
+          if (managed.currentAssistantMessage) {
+            managed.currentAssistantMessage += "\n\n---\n\n";
+            this.emit("session:stream", sessionId, "\n\n---\n\n");
+          }
+          break;
+
+        case "text_delta":
+          managed.currentAssistantMessage += evt.text;
+          this.emit("session:stream", sessionId, evt.text);
+          managed.hasStreamedText = true;
+          break;
+
+        case "tool_use": {
+          const rendered = this.renderToolUse(evt.name, JSON.stringify(evt.input));
+          if (rendered) {
+            if (managed.currentAssistantMessage && !managed.currentAssistantMessage.endsWith("\n\n") && !managed.currentAssistantMessage.endsWith("---\n\n")) {
+              managed.currentAssistantMessage += "\n\n";
+              this.emit("session:stream", sessionId, "\n\n");
+            }
+            managed.currentAssistantMessage += rendered;
+            this.emit("session:stream", sessionId, rendered);
+          }
+          break;
+        }
+
+        case "tool_result":
+          // Permission denial handling for non-Claude agents
+          if (evt.isError) {
+            const denialBlock = `\n\`\`\`tool-permission-denied\n${JSON.stringify({ tool: "Unknown", error: evt.content })}\n\`\`\`\n`;
+            if (managed.currentAssistantMessage && !managed.currentAssistantMessage.endsWith("\n\n")) {
+              managed.currentAssistantMessage += "\n\n";
+              this.emit("session:stream", sessionId, "\n\n");
+            }
+            managed.currentAssistantMessage += denialBlock;
+            this.emit("session:stream", sessionId, denialBlock);
+          }
+          break;
+
+        case "result": {
+          const costUsd = evt.costUsd ?? this.estimateCost(managed.provider.agentType, evt.inputTokens, evt.outputTokens);
+          managed.session.totalCostUsd += costUsd;
+
+          const resultText = managed.currentAssistantMessage;
+
+          if (resultText) {
+            const assistantMsg: ConversationMessage = {
+              id: uuidv4(),
+              role: "assistant",
+              content: resultText,
+              timestamp: Date.now(),
+              costUsd,
+              durationMs: evt.durationMs,
+            };
+            managed.messages.push(assistantMsg);
+            this.trimMessages(managed);
+            this.emit("session:message", sessionId, assistantMsg);
+          }
+
+          managed.currentAssistantMessage = "";
+          managed.hasStreamedText = false;
+          managed.isProcessingPrompt = false;
+          managed.session.status = "idle";
+          this.emit("session:status", sessionId, "idle", undefined, managed.session.totalCostUsd);
+
+          if (managed.promptQueue.length > 0) {
+            const nextPrompt = managed.promptQueue.shift()!;
+            this.processPrompt(managed, nextPrompt);
+          }
+          break;
+        }
+
+        case "ignored":
+          break;
+      }
+    }
+  }
+
+  /**
+   * Finalize a prompt for process-per-prompt agents when process exits
+   * without a "result" event.
+   */
+  private finalizePrompt(managed: ManagedSession) {
+    const sessionId = managed.session.id;
+    const resultText = managed.currentAssistantMessage;
+
+    if (resultText) {
+      const assistantMsg: ConversationMessage = {
+        id: uuidv4(),
+        role: "assistant",
+        content: resultText,
+        timestamp: Date.now(),
+      };
+      managed.messages.push(assistantMsg);
+      this.trimMessages(managed);
+      this.emit("session:message", sessionId, assistantMsg);
+    }
+
+    managed.currentAssistantMessage = "";
+    managed.hasStreamedText = false;
+    managed.isProcessingPrompt = false;
+    managed.session.status = "idle";
+    this.emit("session:status", sessionId, "idle", undefined, managed.session.totalCostUsd);
+
+    if (managed.promptQueue.length > 0) {
+      const nextPrompt = managed.promptQueue.shift()!;
+      this.processPrompt(managed, nextPrompt);
+    }
+  }
+
+  /**
+   * Estimate cost from token counts (for agents that don't provide direct cost).
+   */
+  private estimateCost(agentType: AgentType, inputTokens?: number, outputTokens?: number): number {
+    if (!inputTokens && !outputTokens) return 0;
+    // Rough estimation for Codex/OpenAI models
+    if (agentType === "codex") {
+      const inputCost = (inputTokens || 0) * 0.003 / 1000; // $3/1M input tokens
+      const outputCost = (outputTokens || 0) * 0.012 / 1000; // $12/1M output tokens
+      return inputCost + outputCost;
+    }
+    return 0;
   }
 
   private isPlanFilePath(filePath: string): boolean {
@@ -1431,28 +1520,15 @@ for line in sys.stdin:
   }
 
   /**
-   * Re-spawn the Claude process after an interrupt.
+   * Re-spawn the agent process after an interrupt.
    * Uses --resume with the existing claudeSessionId to continue the conversation.
    */
-  private async respawnClaude(managed: ManagedSession): Promise<void> {
+  private async respawnAgent(managed: ManagedSession): Promise<void> {
     const { session } = managed;
-    const args = [
-      "-p",
-      "--input-format", "stream-json",
-      "--output-format", "stream-json",
-      "--verbose",
-    ];
-
-    // Re-use existing MCP config if available
-    if (managed.mcpConfigPath) {
-      args.push(
-        "--permission-prompt-tool", "mcp__perm__check_permission",
-        "--mcp-config", managed.mcpConfigPath,
-      );
-    }
-
-    // Resume the existing Claude session
-    args.push("--resume", session.claudeSessionId);
+    const { command, args } = managed.provider.buildRespawnCommand({
+      claudeSessionId: session.claudeSessionId,
+      mcpConfigPath: managed.mcpConfigPath,
+    });
 
     const spawnEnv: Record<string, string> = {};
     if (managed.claudeConfigDir) {
@@ -1462,8 +1538,8 @@ for line in sys.stdin:
       ? session.worktree.worktreePath
       : managed.originalCwd || session.workDir;
 
-    console.log(`[Session ${session.id}] Re-spawning claude with cwd=${spawnCwd}, args=${args.join(" ")}`);
-    await managed.adapter.spawn("claude", args, { cwd: spawnCwd, env: spawnEnv });
+    console.log(`[Session ${session.id}] Re-spawning ${managed.provider.agentType} with cwd=${spawnCwd}, args=${args.join(" ")}`);
+    await managed.adapter.spawn(command, args, { cwd: spawnCwd, env: spawnEnv });
   }
 
   terminateSession(sessionId: string): void {
