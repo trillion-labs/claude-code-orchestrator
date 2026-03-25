@@ -277,6 +277,24 @@ export const useStore = create<SessionState>((set) => ({
         if (p.sessionId === sessionId) splitPanelWidths.delete(p.id);
       }
       let focusedPanelId = state.focusedPanelId;
+      // Compute next session to auto-select when active session is deleted
+      const getNextSessionId = (): string | null => {
+        const orderMap = state.sessionOrder.length > 0
+          ? new Map(state.sessionOrder.map((id, i) => [id, i]))
+          : null;
+        const ordered = Array.from(state.sessions.values()).sort((a, b) => {
+          if (!orderMap) return b.createdAt - a.createdAt;
+          const oa = orderMap.get(a.id);
+          const ob = orderMap.get(b.id);
+          if (oa === undefined && ob === undefined) return b.createdAt - a.createdAt;
+          if (oa === undefined) return -1;
+          if (ob === undefined) return -1;
+          return oa - ob;
+        });
+        const idx = ordered.findIndex((s) => s.id === sessionId);
+        const candidate = ordered[idx + 1] ?? ordered[idx - 1];
+        return candidate?.id ?? null;
+      };
       // If only one panel remains, collapse to single mode
       if (splitPanels.length <= 1) {
         const remainingSessionId = splitPanels[0]?.sessionId ?? null;
@@ -289,7 +307,7 @@ export const useStore = create<SessionState>((set) => ({
           planContent, planPanelOpen, filePreview, filePreviewOpen, showUserContent, showUserPanelOpen,
           splitPanels, splitPanelWidths, focusedPanelId,
           activeSessionId: state.activeSessionId === sessionId
-            ? remainingSessionId
+            ? (remainingSessionId ?? getNextSessionId())
             : state.activeSessionId,
         };
       }
@@ -304,7 +322,7 @@ export const useStore = create<SessionState>((set) => ({
         splitPanels, splitPanelWidths, focusedPanelId,
         activeSessionId: focusedPanelId
           ? splitPanels.find((p) => p.id === focusedPanelId)?.sessionId ?? state.activeSessionId
-          : (state.activeSessionId === sessionId ? null : state.activeSessionId),
+          : (state.activeSessionId === sessionId ? getNextSessionId() : state.activeSessionId),
       };
     }),
 
