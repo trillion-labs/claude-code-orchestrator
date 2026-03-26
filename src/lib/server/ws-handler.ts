@@ -354,6 +354,11 @@ export class WebSocketHandler {
         await this.projectStore.updateNote(projectId, args.noteId as string, updates);
         const updatedIndex = this.projectStore.getNoteIndex(projectId, args.noteId as string);
         if (updatedIndex) this.broadcast({ type: "note.updated", note: updatedIndex });
+        // Also broadcast content so UI cache is refreshed
+        if (updates.content !== undefined) {
+          const fullNote = await this.projectStore.getNote(projectId, args.noteId as string);
+          if (fullNote) this.broadcast({ type: "note.data", note: fullNote });
+        }
         return { note: { id: args.noteId, title: updatedIndex?.title } };
       }
 
@@ -941,6 +946,11 @@ export class WebSocketHandler {
           await this.projectStore.updateNote(msg.projectId, msg.noteId, msg.updates);
           const index = this.projectStore.getNoteIndex(msg.projectId, msg.noteId);
           if (index) this.broadcast({ type: "note.updated", note: index });
+          // Broadcast content so other clients' caches are refreshed
+          if (msg.updates.content !== undefined) {
+            const fullNote = await this.projectStore.getNote(msg.projectId, msg.noteId);
+            if (fullNote) this.broadcast({ type: "note.data", note: fullNote });
+          }
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
         }
