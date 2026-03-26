@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -31,7 +31,7 @@ import { PendingPermissions } from "./PendingPermissions";
 import { SplitPanelContainer } from "./SplitPanelContainer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Terminal, Settings, LayoutGrid, FolderOpen } from "lucide-react";
+import { Terminal, Settings, LayoutGrid, FolderOpen, Trash2 } from "lucide-react";
 import { useStore } from "@/store";
 import type { PermissionMode } from "@/lib/shared/types";
 
@@ -121,11 +121,69 @@ export function Dashboard() {
     setActiveSession(sessionId);
   };
 
+  // Drag-to-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isDragSelectingRef = useRef(false);
+  const dragStartIdRef = useRef<string | null>(null);
+  const inSelectMode = selectedIds.size > 0;
+
+  const startDragSelect = useCallback((sessionId: string) => {
+    isDragSelectingRef.current = true;
+    dragStartIdRef.current = sessionId;
+  }, []);
+
+  const extendDragSelect = useCallback((sessionId: string) => {
+    if (!isDragSelectingRef.current || !dragStartIdRef.current) return;
+    const startIdx = sessions.findIndex((s) => s.id === dragStartIdRef.current);
+    const endIdx = sessions.findIndex((s) => s.id === sessionId);
+    if (startIdx === -1 || endIdx === -1) return;
+    const [from, to] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+    setSelectedIds(new Set(sessions.slice(from, to + 1).map((s) => s.id)));
+  }, [sessions]);
+
+  const toggleSelected = useCallback((sessionId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    isDragSelectingRef.current = false;
+    dragStartIdRef.current = null;
+  }, []);
+
+  const handleBulkDelete = useCallback(() => {
+    selectedIds.forEach((id) => {
+      send({ type: "session.terminate", sessionId: id });
+    });
+    clearSelection();
+  }, [selectedIds, send, clearSelection]);
+
+  useEffect(() => {
+    const onMouseUp = () => { isDragSelectingRef.current = false; };
+    window.addEventListener("mouseup", onMouseUp);
+    return () => window.removeEventListener("mouseup", onMouseUp);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && inSelectMode) clearSelection();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [inSelectMode, clearSelection]);
+
   // DnD sensors with activation constraint to distinguish click vs drag
+  // Disable DnD when in select mode to avoid conflicts
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  const activeSensors = inSelectMode ? [] : sensors;
 
   const handleSessionDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -223,7 +281,7 @@ export function Dashboard() {
           <>
             <ScrollArea className="flex-1 min-w-0 min-h-0" data-sidebar-scroll>
               <DndContext
-                sensors={sensors}
+                sensors={activeSensors}
                 collisionDetection={closestCenter}
                 modifiers={[restrictToVerticalAxis, restrictToParentElement]}
                 onDragEnd={handleSessionDragEnd}
@@ -242,12 +300,19 @@ export function Dashboard() {
                             key={session.id}
                             session={session}
                             isActive={session.id === activeSessionId}
-                            onClick={() => setActiveSession(session.id)}
+                            isSelected={selectedIds.has(session.id)}
+                            selectMode={inSelectMode}
+                            onClick={() => {
+                              if (inSelectMode) toggleSelected(session.id);
+                              else setActiveSession(session.id);
+                            }}
+                            onDragSelectStart={startDragSelect}
+                            onDragSelectEnter={extendDragSelect}
                             attentionCount={attentionSet ? attentionSet.size : 0}
                             displayName={getSessionDisplayName(session.id)}
                             onRename={(name) => setSessionName(session.id, name)}
                             send={send}
-                            onSplitRight={splitSession}
+                            onSplitRight={inSelectMode ? undefined : splitSession}
                           />
                         );
                       })
@@ -260,9 +325,27 @@ export function Dashboard() {
             <PendingPermissions onNavigate={handleViewSession} />
 
             <Separator />
-            <div className="p-3 text-xs text-muted-foreground text-center">
-              {sessions.length} session{sessions.length !== 1 ? "s" : ""} active
-            </div>
+            {inSelectMode ? (
+              <div className="p-2 flex items-center gap-2">
+                <button
+                  onClick={handleBulkDelete}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 text-xs font-medium transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete {selectedIds.size} session{selectedIds.size !== 1 ? "s" : ""}
+                </button>
+                <button
+                  onClick={clearSelection}
+                  className="px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-accent transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 text-xs text-muted-foreground text-center">
+                {sessions.length} session{sessions.length !== 1 ? "s" : ""} active
+              </div>
+            )}
           </>
         ) : (
           <ProjectSidebar
