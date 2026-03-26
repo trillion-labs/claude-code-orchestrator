@@ -233,7 +233,7 @@ export class SessionManager extends EventEmitter {
     // dynamically in handlePermissionRequest() via resolvePermissionByMode()
     try {
       if (machine.type === "local") {
-        const mcpConfigPath = await this.writeMcpConfig(sessionId, managed.orchestratorProjectId);
+        const mcpConfigPath = await this.writeMcpConfig(sessionId, managed.orchestratorProjectId, projectId);
         managed.mcpConfigPath = mcpConfigPath;
         args.push(
           "--permission-prompt-tool", "mcp__perm__check_permission",
@@ -1077,7 +1077,7 @@ except:
 
   // ── MCP Permission Prompt Tool ──
 
-  private async writeMcpConfig(sessionId: string, orchestratorProjectId?: string): Promise<string> {
+  private async writeMcpConfig(sessionId: string, orchestratorProjectId?: string, projectId?: string): Promise<string> {
     const srcPath = join(process.cwd(), "scripts", "permission-mcp-server.mjs");
     // Copy MCP server script to /tmp to avoid issues with .claude/ worktree paths
     const mcpServerPath = join(tmpdir(), `claude-orch-${sessionId}.mcp.mjs`);
@@ -1105,6 +1105,18 @@ except:
             },
           },
         }),
+        // Note MCP server — included for project-linked worker sessions (non-orchestrator)
+        ...(!orchestratorProjectId && projectId && {
+          note: {
+            command: "node",
+            args: [join(tmpdir(), `claude-orch-${sessionId}.note.mjs`)],
+            env: {
+              ORCHESTRATOR_URL: `http://localhost:${this.orchestratorPort}`,
+              SESSION_ID: sessionId,
+              PROJECT_ID: projectId,
+            },
+          },
+        }),
       },
     };
 
@@ -1113,6 +1125,13 @@ except:
       const orchSrcPath = join(process.cwd(), "scripts", "orchestrator-mcp-server.mjs");
       const orchDestPath = join(tmpdir(), `claude-orch-${sessionId}.orchestrator.mjs`);
       await copyFile(orchSrcPath, orchDestPath);
+    }
+
+    // Copy note MCP server script for project-linked worker sessions
+    if (!orchestratorProjectId && projectId) {
+      const noteSrcPath = join(process.cwd(), "scripts", "note-mcp-server.mjs");
+      const noteDestPath = join(tmpdir(), `claude-orch-${sessionId}.note.mjs`);
+      await copyFile(noteSrcPath, noteDestPath);
     }
 
     await writeFile(configPath, JSON.stringify(config), "utf-8");
@@ -1126,6 +1145,7 @@ except:
       // Also clean up copied MCP server script
       try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".mcp.mjs")); } catch { /* ignore */ }
       try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".orchestrator.mjs")); } catch { /* ignore */ }
+      try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".note.mjs")); } catch { /* ignore */ }
     } else {
       // Remote: clean up remote temp files
       try {
