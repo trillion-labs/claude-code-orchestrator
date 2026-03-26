@@ -178,13 +178,12 @@ export function Dashboard() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [inSelectMode, clearSelection]);
 
-  // DnD sensors with activation constraint to distinguish click vs drag
-  // Disable DnD when in select mode to avoid conflicts
+  // DnD sensors — select mode doesn't need separate disabling because
+  // the grip handle (where listeners are attached) is not rendered when selectMode=true
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const activeSensors = inSelectMode ? [] : sensors;
 
   const handleSessionDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -284,7 +283,7 @@ export function Dashboard() {
           <>
             <ScrollArea className="flex-1 min-w-0 min-h-0" data-sidebar-scroll>
               <DndContext
-                sensors={activeSensors}
+                sensors={sensors}
                 collisionDetection={closestCenter}
                 modifiers={[restrictToVerticalAxis, restrictToParentElement]}
                 onDragEnd={handleSessionDragEnd}
