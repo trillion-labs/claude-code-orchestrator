@@ -1,4 +1,4 @@
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn } from "./types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn, Note } from "./types";
 
 // ── Client → Server Messages ──
 
@@ -80,7 +80,13 @@ export type ClientMessage =
   | { type: "orchestrator.create"; projectId: string }
   | { type: "orchestrator.prompt"; projectId: string; prompt: string }
   // ── Prompt queue ──
-  | { type: "session.dequeue"; sessionId: string; index: number };
+  | { type: "session.dequeue"; sessionId: string; index: number }
+  // ── Note CRUD ──
+  | { type: "note.create"; projectId: string; title: string; content: string }
+  | { type: "note.update"; projectId: string; noteId: string; updates: { title?: string; content?: string } }
+  | { type: "note.delete"; projectId: string; noteId: string }
+  | { type: "note.list"; projectId: string }
+  | { type: "note.get"; projectId: string; noteId: string };
 
 // ── Server → Client Messages ──
 
@@ -238,4 +244,10 @@ export type ServerMessage =
   | { type: "orchestrator.created"; projectId: string; session: Session }
   | { type: "orchestrator.terminated"; projectId: string }
   // ── Prompt queue ──
-  | { type: "session.queueUpdate"; sessionId: string; queue: string[] };
+  | { type: "session.queueUpdate"; sessionId: string; queue: string[] }
+  // ── Note responses ──
+  | { type: "note.created"; note: Omit<Note, "content"> }
+  | { type: "note.updated"; note: Omit<Note, "content"> }
+  | { type: "note.deleted"; projectId: string; noteId: string }
+  | { type: "note.list"; projectId: string; notes: Omit<Note, "content">[] }
+  | { type: "note.data"; note: Note };

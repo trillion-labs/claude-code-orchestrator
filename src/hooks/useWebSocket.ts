@@ -75,6 +75,12 @@ export function useWebSocket() {
     setSessionName,
     setOrchestratorSession,
     setPromptQueue,
+    // Notes
+    setNotes,
+    addNote,
+    updateNote: updateNoteInStore,
+    removeNote,
+    setNoteContent,
   } = useStore();
 
   const handleMessage = useCallback(
@@ -303,9 +309,31 @@ export function useWebSocket() {
         case "orchestrator.terminated":
           setOrchestratorSession(msg.projectId, null);
           break;
+
+        // ── Notes ──
+
+        case "note.list":
+          setNotes(msg.projectId, msg.notes);
+          break;
+
+        case "note.created":
+          addNote(msg.note);
+          break;
+
+        case "note.updated":
+          updateNoteInStore(msg.note.projectId, msg.note.id, msg.note);
+          break;
+
+        case "note.deleted":
+          removeNote(msg.projectId, msg.noteId);
+          break;
+
+        case "note.data":
+          setNoteContent(msg.note.id, msg.note.content);
+          break;
       }
     },
-    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, addShowUserTab, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setOrchestratorSession, setPromptQueue]
+    [addSession, updateSessionStatus, updateSessionPermissionMode, removeSession, setSessions, setMachines, addMessage, prependMessages, appendStreamDelta, setDiscoveredSessions, addAttention, clearAttention, addPendingRequest, clearPendingRequests, setGlobalConfig, setSessionConfig, setPlanContent, addShowUserTab, setWorktrees, setProjects, addProject, updateProject, removeProject, setTasks, addTask, updateTask, removeTask, updateSessionLink, updateSessionProject, setSessionName, setOrchestratorSession, setPromptQueue, setNotes, addNote, updateNoteInStore, removeNote, setNoteContent]
   );
 
   const connect = useCallback(() => {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, PermissionRequest, KanbanColumn } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, Note, PermissionRequest, KanbanColumn } from "@/lib/shared/types";
 
 export interface SplitPanel {
   id: string;
@@ -80,6 +80,8 @@ interface SessionState {
   projects: Map<string, Project>;
   activeProjectId: string | null;
   tasks: Map<string, Task[]>; // projectId → Task[]
+  notes: Map<string, Omit<Note, "content">[]>; // projectId → index entries (no content)
+  noteContent: Map<string, string>; // noteId → loaded content
   viewMode: "sessions" | "kanban";
   // Orchestrator manager sessions (projectId → sessionId)
   orchestratorSessions: Map<string, string>;
@@ -174,6 +176,12 @@ interface SessionState {
   removeTask: (projectId: string, taskId: string) => void;
   moveTaskLocal: (projectId: string, taskId: string, destColumn: KanbanColumn, destOrder: number) => void;
   updateSessionLink: (sessionId: string, projectId: string, taskId: string) => void;
+  // Notes
+  setNotes: (projectId: string, notes: Omit<Note, "content">[]) => void;
+  addNote: (note: Omit<Note, "content">) => void;
+  updateNote: (projectId: string, noteId: string, updates: Partial<Omit<Note, "content">>) => void;
+  removeNote: (projectId: string, noteId: string) => void;
+  setNoteContent: (noteId: string, content: string) => void;
   setViewMode: (mode: "sessions" | "kanban") => void;
   // Sidebar ordering
   reorderSessions: (orderedIds: string[]) => void;
@@ -222,6 +230,8 @@ export const useStore = create<SessionState>((set) => ({
   projects: new Map(),
   activeProjectId: null,
   tasks: new Map(),
+  notes: new Map(),
+  noteContent: new Map(),
   splitPanels: [],
   splitPanelWidths: new Map(),
   focusedPanelId: null,
@@ -915,9 +925,12 @@ export const useStore = create<SessionState>((set) => ({
       projects.delete(projectId);
       const tasks = new Map(state.tasks);
       tasks.delete(projectId);
+      const notes = new Map(state.notes);
+      notes.delete(projectId);
       return {
         projects,
         tasks,
+        notes,
         activeProjectId: state.activeProjectId === projectId ? null : state.activeProjectId,
       };
     }),
@@ -1018,6 +1031,54 @@ export const useStore = create<SessionState>((set) => ({
         sessions.set(sessionId, { ...session, projectId, taskId });
       }
       return { sessions };
+    }),
+
+  // ── Notes ──
+
+  setNotes: (projectId, noteList) =>
+    set((state) => {
+      const notes = new Map(state.notes);
+      notes.set(projectId, noteList);
+      return { notes };
+    }),
+
+  addNote: (note) =>
+    set((state) => {
+      const notes = new Map(state.notes);
+      const existing = notes.get(note.projectId) || [];
+      notes.set(note.projectId, [...existing, note]);
+      return { notes };
+    }),
+
+  updateNote: (projectId, noteId, updates) =>
+    set((state) => {
+      const notes = new Map(state.notes);
+      const existing = notes.get(projectId) || [];
+      notes.set(
+        projectId,
+        existing.map((n) => (n.id === noteId ? { ...n, ...updates } : n))
+      );
+      return { notes };
+    }),
+
+  removeNote: (projectId, noteId) =>
+    set((state) => {
+      const notes = new Map(state.notes);
+      const existing = notes.get(projectId) || [];
+      notes.set(
+        projectId,
+        existing.filter((n) => n.id !== noteId)
+      );
+      const noteContent = new Map(state.noteContent);
+      noteContent.delete(noteId);
+      return { notes, noteContent };
+    }),
+
+  setNoteContent: (noteId, content) =>
+    set((state) => {
+      const noteContent = new Map(state.noteContent);
+      noteContent.set(noteId, content);
+      return { noteContent };
     }),
 
   setViewMode: (mode) => set({ viewMode: mode }),

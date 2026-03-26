@@ -310,6 +310,7 @@ export function Dashboard() {
             />
           ) : activeProject ? (
             <ProjectBoard
+              key={activeProject.id}
               project={activeProject}
               send={send}
               onViewSession={handleViewSession}

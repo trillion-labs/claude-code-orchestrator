@@ -860,6 +860,70 @@ export class WebSocketHandler {
         }
         break;
       }
+
+      // ── Note CRUD ──
+
+      case "note.create": {
+        try {
+          const now = Date.now();
+          const note = {
+            id: crypto.randomUUID(),
+            projectId: msg.projectId,
+            title: msg.title,
+            content: msg.content,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await this.projectStore.createNote(note);
+          // Broadcast index only (without content)
+          const { content: _, ...index } = note;
+          this.broadcast({ type: "note.created", note: index });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "note.update": {
+        try {
+          await this.projectStore.updateNote(msg.projectId, msg.noteId, msg.updates);
+          const index = this.projectStore.getNoteIndex(msg.projectId, msg.noteId);
+          if (index) this.broadcast({ type: "note.updated", note: index });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "note.delete": {
+        try {
+          await this.projectStore.deleteNote(msg.projectId, msg.noteId);
+          this.broadcast({ type: "note.deleted", projectId: msg.projectId, noteId: msg.noteId });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "note.list": {
+        const notes = this.projectStore.getProjectNotes(msg.projectId);
+        this.send(ws, { type: "note.list", projectId: msg.projectId, notes });
+        break;
+      }
+
+      case "note.get": {
+        try {
+          const note = await this.projectStore.getNote(msg.projectId, msg.noteId);
+          if (note) {
+            this.send(ws, { type: "note.data", note });
+          } else {
+            this.send(ws, { type: "error", error: `Note ${msg.noteId} not found` });
+          }
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
     }
   }
 
