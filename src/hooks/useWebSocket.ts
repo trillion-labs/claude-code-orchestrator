@@ -450,5 +450,9 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  return { send, requestPathList, requestMkdir, requestFileRead };
+  const refreshMachines = useCallback(() => {
+    wsRef.current?.send(JSON.stringify({ type: "machines.list" }));
+  }, []);
+
+  return { send, requestPathList, requestMkdir, requestFileRead, refreshMachines };
 }
