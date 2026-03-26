@@ -37,7 +37,7 @@ import { useStore } from "@/store";
 import type { PermissionMode } from "@/lib/shared/types";
 
 export function Dashboard() {
-  const { send, requestPathList, requestMkdir, requestFileRead } = useWebSocket();
+  const { send, requestPathList, requestMkdir, requestFileRead, refreshMachines } = useWebSocket();
   const {
     sessions,
     activeSession,
@@ -207,6 +207,7 @@ export function Dashboard() {
               onDiscoverSessions={handleDiscoverSessions}
               onListWorktrees={handleListWorktrees}
               requestPathList={requestPathList}
+              onRefreshMachines={refreshMachines}
             />
           ) : (
             <ProjectCreateDialog

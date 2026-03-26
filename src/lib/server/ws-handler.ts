@@ -33,6 +33,7 @@ export class WebSocketHandler {
   private projectStore: ProjectStore;
   private projectManager: ProjectManager;
   private clients = new Set<WebSocket>();
+  private baseMachines: MachineConfig[] = [];
   private machines: MachineConfig[] = [];
 
   constructor(port = 3000) {
@@ -43,15 +44,15 @@ export class WebSocketHandler {
   }
 
   async initialize() {
-    // Load machines from machines.json
+    // Load machines from machines.json (static, cached once)
     try {
       const machinesPath = join(process.cwd(), "machines.json");
       const content = await readFile(machinesPath, "utf-8");
       const config = JSON.parse(content);
-      this.machines = config.machines || [];
+      this.baseMachines = config.machines || [];
     } catch {
       console.warn("Could not load machines.json, using defaults");
-      this.machines = [{
+      this.baseMachines = [{
         id: "local",
         name: "Local Machine",
         type: "local",
@@ -59,18 +60,23 @@ export class WebSocketHandler {
       }];
     }
 
-    // Load SSH hosts from ~/.ssh/config
-    try {
-      const sshHosts = await loadSSHHosts();
-      this.machines.push(...sshHosts);
-    } catch {
-      console.warn("Could not load SSH config");
-    }
-
-    console.log(`[WS] Loaded ${this.machines.length} machines`);
+    // Initial load of all machines (base + SSH)
+    await this.reloadMachines();
 
     // Initialize project store (load from disk)
     await this.projectManager.initialize();
+  }
+
+  /** Reload SSH hosts from ~/.ssh/config and merge with base machines */
+  private async reloadMachines() {
+    let sshHosts: MachineConfig[] = [];
+    try {
+      sshHosts = await loadSSHHosts();
+    } catch {
+      console.warn("Could not load SSH config");
+    }
+    this.machines = [...this.baseMachines, ...sshHosts];
+    console.log(`[WS] Loaded ${this.machines.length} machines (${this.baseMachines.length} base + ${sshHosts.length} SSH)`);
   }
 
   handleConnection(ws: WebSocket) {
@@ -385,6 +391,7 @@ export class WebSocketHandler {
       }
 
       case "machines.list": {
+        await this.reloadMachines();
         this.send(ws, { type: "machines.list", machines: this.machines });
         break;
       }

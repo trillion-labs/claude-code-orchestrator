@@ -36,6 +36,7 @@ interface MachineSelectorProps {
   onDiscoverSessions: (machineId: string, workDir?: string) => void;
   onListWorktrees: (machineId: string, workDir: string) => void;
   requestPathList: (machineId: string, path: string) => Promise<PathListResult>;
+  onRefreshMachines?: () => void;
 }
 
 export function MachineSelector({
@@ -46,6 +47,7 @@ export function MachineSelector({
   onDiscoverSessions,
   onListWorktrees,
   requestPathList,
+  onRefreshMachines,
 }: MachineSelectorProps) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("new");
@@ -120,7 +122,7 @@ export function MachineSelector({
     || (worktreeMode === "existing" && !selectedWorktree);
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) resetAndClose(); else setOpen(true); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) resetAndClose(); else { onRefreshMachines?.(); setOpen(true); } }}>
       <DialogTrigger asChild>
         <Button size="sm" className="w-full">
           <Plus className="w-4 h-4 mr-1" />
