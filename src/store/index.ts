@@ -1,6 +1,32 @@
 import { create } from "zustand";
 import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, Note, PermissionRequest, KanbanColumn } from "@/lib/shared/types";
 
+// ── Session name localStorage persistence ──
+
+const SESSION_NAMES_KEY = "cco_session_names";
+
+function loadSessionNamesFromStorage(): Map<string, string> {
+  if (typeof window === "undefined") return new Map();
+  try {
+    const stored = localStorage.getItem(SESSION_NAMES_KEY);
+    if (!stored) return new Map();
+    return new Map(Object.entries(JSON.parse(stored) as Record<string, string>));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveSessionNamesToStorage(names: Map<string, string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const obj: Record<string, string> = {};
+    names.forEach((v, k) => { obj[k] = v; });
+    localStorage.setItem(SESSION_NAMES_KEY, JSON.stringify(obj));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export interface SplitPanel {
   id: string;
   sessionId: string;
@@ -244,7 +270,14 @@ export const useStore = create<SessionState>((set) => ({
     set(() => {
       const map = new Map<string, Session>();
       for (const s of sessions) map.set(s.id, s);
-      return { sessions: map };
+      // Restore user-set custom names from localStorage, pruning stale entries
+      const stored = loadSessionNamesFromStorage();
+      const sessionNames = new Map<string, string>();
+      stored.forEach((name, id) => {
+        if (map.has(id)) sessionNames.set(id, name);
+      });
+      saveSessionNamesToStorage(sessionNames);
+      return { sessions: map, sessionNames };
     }),
 
   addSession: (session) =>
@@ -314,6 +347,7 @@ export const useStore = create<SessionState>((set) => ({
       pendingRequests.delete(sessionId);
       const sessionNames = new Map(state.sessionNames);
       sessionNames.delete(sessionId);
+      saveSessionNamesToStorage(sessionNames);
       const sessionConfig = new Map(state.sessionConfig);
       sessionConfig.delete(sessionId);
       const planContent = new Map(state.planContent);
@@ -581,6 +615,7 @@ export const useStore = create<SessionState>((set) => ({
     set((state) => {
       const sessionNames = new Map(state.sessionNames);
       sessionNames.set(sessionId, name);
+      saveSessionNamesToStorage(sessionNames);
       return { sessionNames };
     }),
 
