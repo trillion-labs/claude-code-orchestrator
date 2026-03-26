@@ -318,6 +318,51 @@ export class WebSocketHandler {
         };
       }
 
+      // ── Note Tools ──
+
+      case "list_notes": {
+        const notes = this.projectStore.getProjectNotes(projectId);
+        return { notes: notes.map((n) => ({ id: n.id, title: n.title, createdAt: n.createdAt, updatedAt: n.updatedAt })) };
+      }
+
+      case "get_note": {
+        const note = await this.projectStore.getNote(projectId, args.noteId as string);
+        if (!note) throw new Error(`Note ${args.noteId} not found`);
+        return { note: { id: note.id, title: note.title, content: note.content, createdAt: note.createdAt, updatedAt: note.updatedAt } };
+      }
+
+      case "create_note": {
+        const now = Date.now();
+        const note = {
+          id: crypto.randomUUID(),
+          projectId,
+          title: args.title as string,
+          content: args.content as string,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await this.projectStore.createNote(note);
+        const { content: _, ...index } = note;
+        this.broadcast({ type: "note.created", note: index });
+        return { note: { id: note.id, title: note.title } };
+      }
+
+      case "update_note": {
+        const updates: { title?: string; content?: string } = {};
+        if (args.title) updates.title = args.title as string;
+        if (args.content) updates.content = args.content as string;
+        await this.projectStore.updateNote(projectId, args.noteId as string, updates);
+        const updatedIndex = this.projectStore.getNoteIndex(projectId, args.noteId as string);
+        if (updatedIndex) this.broadcast({ type: "note.updated", note: updatedIndex });
+        return { note: { id: args.noteId, title: updatedIndex?.title } };
+      }
+
+      case "delete_note": {
+        await this.projectStore.deleteNote(projectId, args.noteId as string);
+        this.broadcast({ type: "note.deleted", projectId, noteId: args.noteId as string });
+        return { success: true };
+      }
+
       default:
         throw new Error(`Unknown orchestrator tool: ${tool}`);
     }

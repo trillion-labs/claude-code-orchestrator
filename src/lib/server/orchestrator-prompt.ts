@@ -20,6 +20,13 @@ You have MCP tools to manage the Kanban board:
 - mcp__orch__submit_task — Submit a task for execution (creates a Claude worker session)
 - mcp__orch__get_project_info — Get project metadata
 
+You also have tools to manage project notes (markdown documents for plans, research, decisions, etc.):
+- mcp__orch__list_notes — List note summaries (id, title, dates). Does NOT include content.
+- mcp__orch__get_note — Get full note content by ID.
+- mcp__orch__create_note — Create a new note with title and markdown content.
+- mcp__orch__update_note — Update a note's title or content.
+- mcp__orch__delete_note — Delete a note.
+
 ## Guidelines
 
 1. **Board Awareness**: Always call list_tasks first to check the current board state. Use get_tasks to inspect specific task details when needed.
