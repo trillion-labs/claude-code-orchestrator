@@ -1841,6 +1841,23 @@ for line in sys.stdin:
     return this.sessions.get(sessionId)?.explicitDisplayName;
   }
 
+  /**
+   * Ensures session history is loaded into managed.messages.
+   * If already in memory, no-op. Otherwise loads from the .jsonl file on disk.
+   * Used by session.list reconnect so it uses the same path as task resume.
+   */
+  async ensureSessionHistory(sessionId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed || managed.messages.length > 0) return;
+    const { claudeSessionId } = managed.session;
+    if (!claudeSessionId) return;
+    if (managed.machine.type === "local") {
+      await this.loadSessionHistory(managed, claudeSessionId);
+    } else {
+      await this.loadRemoteSessionHistory(managed, managed.machine, claudeSessionId);
+    }
+  }
+
   getSessionDisplayName(sessionId: string): string {
     const managed = this.sessions.get(sessionId);
     if (!managed) return "Imported session";

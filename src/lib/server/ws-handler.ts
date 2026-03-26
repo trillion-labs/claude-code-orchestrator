@@ -526,9 +526,10 @@ export class WebSocketHandler {
       case "session.list": {
         const sessions = this.sessionManager.getAllSessions();
         this.send(ws, { type: "session.list", sessions });
-        // Re-send recent messages and explicit display names so reconnecting
-        // clients restore session history and names without a full reload.
+        // Same path as task resume: load from .jsonl if not in memory, then
+        // send messages and display names so reconnecting clients restore state.
         for (const session of sessions) {
+          await this.sessionManager.ensureSessionHistory(session.id);
           const explicitName = this.sessionManager.getExplicitSessionName(session.id);
           if (explicitName) {
             this.send(ws, { type: "session.displayName", sessionId: session.id, name: explicitName });
