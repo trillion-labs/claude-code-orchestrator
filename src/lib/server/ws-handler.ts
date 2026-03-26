@@ -526,6 +526,23 @@ export class WebSocketHandler {
       case "session.list": {
         const sessions = this.sessionManager.getAllSessions();
         this.send(ws, { type: "session.list", sessions });
+        // Re-send recent messages and explicit display names so reconnecting
+        // clients restore session history and names without a full reload.
+        for (const session of sessions) {
+          const explicitName = this.sessionManager.getExplicitSessionName(session.id);
+          if (explicitName) {
+            this.send(ws, { type: "session.displayName", sessionId: session.id, name: explicitName });
+          }
+          const messages = this.sessionManager.getSessionMessages(session.id);
+          if (messages.length > 0) {
+            this.send(ws, {
+              type: "session.history",
+              sessionId: session.id,
+              messages,
+              hasMore: messages.length >= 20,
+            });
+          }
+        }
         break;
       }
 

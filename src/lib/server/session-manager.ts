@@ -1836,6 +1836,11 @@ for line in sys.stdin:
    * Extract a display name from the session.
    * Priority: explicitDisplayName > firstUserMessage > first user message in history.
    */
+  /** Returns only the explicitly set display name (task title or user-set), not auto-derived. */
+  getExplicitSessionName(sessionId: string): string | undefined {
+    return this.sessions.get(sessionId)?.explicitDisplayName;
+  }
+
   getSessionDisplayName(sessionId: string): string {
     const managed = this.sessions.get(sessionId);
     if (!managed) return "Imported session";
