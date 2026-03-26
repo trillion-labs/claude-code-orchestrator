@@ -27,6 +27,7 @@ import { KANBAN_COLUMNS } from "@/lib/shared/types";
 import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Button } from "@/components/ui/button";
+import { NotesList } from "./NotesList";
 import { Server, FolderOpen, Link, GripVertical, Wand2, Columns2, Layers, X } from "lucide-react";
 
 interface ProjectBoardProps {
@@ -42,8 +43,13 @@ interface PanelState {
   managerPanelOpen: boolean;
   sidePanelMode: "split" | "tabbed";
   activeTab: "task" | "manager";
+  openNoteIds: string[];
+  activeNoteId: string | null;
 }
 const panelStateCache = new Map<string, PanelState>();
+
+// Global (not per-project) — persists across project switches and unmounts
+let globalProjectTab: "kanban" | "notes" = "kanban";
 
 export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps) {
   const { getTasksByColumn, getTaskSession } = useProjectStore();
@@ -63,6 +69,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const [managerPanelOpen, setManagerPanelOpen] = useState(cached?.managerPanelOpen ?? false);
   const [sidePanelMode, setSidePanelMode] = useState<"split" | "tabbed">(cached?.sidePanelMode ?? "split");
   const [activeTab, setActiveTab] = useState<"task" | "manager">(cached?.activeTab ?? "task");
+  const [projectTab, _setProjectTab] = useState<"kanban" | "notes">(globalProjectTab);
+  const setProjectTab = (v: "kanban" | "notes") => { globalProjectTab = v; _setProjectTab(v); };
+  const [openNoteIds, setOpenNoteIds] = useState<string[]>(cached?.openNoteIds ?? []);
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(cached?.activeNoteId ?? null);
   const [taskPanelWidth, setTaskPanelWidth] = useState(480);
   const [managerPanelWidth, setManagerPanelWidth] = useState(480);
   const [tabbedPanelWidth, setTabbedPanelWidth] = useState(780);
@@ -75,8 +85,9 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   useEffect(() => {
     panelStateCache.set(currentProjectId.current, {
       openTaskIds, activeTaskId, managerPanelOpen, sidePanelMode, activeTab,
+      openNoteIds, activeNoteId,
     });
-  }, [openTaskIds, activeTaskId, managerPanelOpen, sidePanelMode, activeTab]);
+  }, [openTaskIds, activeTaskId, managerPanelOpen, sidePanelMode, activeTab, openNoteIds, activeNoteId]);
 
   useEffect(() => {
     // Project switch: restore cached state for the new project
@@ -88,12 +99,16 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
         setManagerPanelOpen(next.managerPanelOpen);
         setSidePanelMode(next.sidePanelMode);
         setActiveTab(next.activeTab);
+        setOpenNoteIds(next.openNoteIds);
+        setActiveNoteId(next.activeNoteId);
       } else {
         setOpenTaskIds([]);
         setActiveTaskId(null);
         setManagerPanelOpen(false);
         setSidePanelMode("split");
         setActiveTab("task");
+        setOpenNoteIds([]);
+        setActiveNoteId(null);
       }
       prevProjectId.current = project.id;
     }
@@ -333,8 +348,23 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   return (
     <div className="flex flex-col h-full min-w-0">
       {/* Board header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b min-w-0">
-        <h2 className="text-sm font-semibold truncate min-w-0 flex-1">{project.name}</h2>
+      <div className="flex items-center gap-3 px-4 py-2 border-b min-w-0 h-12">
+        <h2 className="text-sm font-semibold truncate min-w-0">{project.name}</h2>
+        <div className="flex items-center gap-0.5 bg-muted/50 rounded-md p-0.5">
+          <button
+            className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${projectTab === "kanban" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setProjectTab("kanban")}
+          >
+            Kanban
+          </button>
+          <button
+            className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${projectTab === "notes" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setProjectTab("notes")}
+          >
+            Notes
+          </button>
+        </div>
+        <div className="flex-1" />
         <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground flex-shrink-0">
           <span className="flex items-center gap-1">
             <Server className="w-3 h-3 flex-shrink-0" />
@@ -346,8 +376,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
           </span>
         </div>
         <div className="flex-shrink-0 flex items-center gap-1.5">
-          {/* Split/Tabbed toggle — only when both panels are open */}
-          {hasTaskPanel && managerPanelOpen && (
+          {/* Split/Tabbed toggle — only when both panels are open (kanban mode) */}
+          {projectTab === "kanban" && hasTaskPanel && managerPanelOpen && (
             <Button
               variant="ghost"
               size="sm"
@@ -359,32 +389,46 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               {sidePanelMode === "split" ? "Tabbed" : "Split"}
             </Button>
           )}
-          <Button
-            variant={managerPanelOpen || orchestratorSessionId ? "default" : "outline"}
-            size="sm"
-            className="gap-1.5"
-            onClick={handleManagerClick}
-          >
-            <Wand2 className="w-3.5 h-3.5" />
-            Manager
-          </Button>
-          <SessionPickerDialog
-            title="Import Session as Task"
-            onSelectSession={handleImportSession}
-            trigger={
-              <Button variant="outline" size="sm" className="gap-1.5">
-                <Link className="w-3.5 h-3.5" />
-                Import Session
+          {projectTab === "kanban" && (
+            <>
+              <Button
+                variant={managerPanelOpen || orchestratorSessionId ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                onClick={handleManagerClick}
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                Manager
               </Button>
-            }
-          />
-          <TaskDialog onCreateTask={handleCreateTask} />
+              <SessionPickerDialog
+                title="Import Session as Task"
+                onSelectSession={handleImportSession}
+                trigger={
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Link className="w-3.5 h-3.5" />
+                    Import Session
+                  </Button>
+                }
+              />
+              <TaskDialog onCreateTask={handleCreateTask} />
+            </>
+          )}
         </div>
       </div>
 
       {/* Board body */}
       <div className="flex-1 flex overflow-hidden min-w-0">
-        {/* Kanban columns */}
+        {/* Main content area — Kanban or Notes */}
+        {projectTab === "notes" ? (
+          <NotesList
+            project={project}
+            send={send}
+            openNoteIds={openNoteIds}
+            setOpenNoteIds={setOpenNoteIds}
+            activeNoteId={activeNoteId}
+            setActiveNoteId={setActiveNoteId}
+          />
+        ) : (
         <div className="flex-1 overflow-x-auto min-w-0">
           <div className="flex gap-3 p-4 w-max">
             <DndContext
@@ -422,9 +466,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
             </DndContext>
           </div>
         </div>
+        )}
 
-        {/* Side panels */}
-        {(hasTaskPanel || managerPanelOpen) && (() => {
+        {/* Side panels (Kanban mode only) */}
+        {projectTab === "kanban" && (hasTaskPanel || managerPanelOpen) && (() => {
           const bothOpen = hasTaskPanel && managerPanelOpen;
 
           const renderTaskDetail = (task: Task) => {
