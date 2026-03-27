@@ -117,7 +117,7 @@ export function useWebSocket() {
           break;
 
         case "session.history":
-          prependMessages(msg.sessionId, msg.messages, msg.hasMore);
+          prependMessages(msg.sessionId, msg.messages);
           break;
 
         case "session.status":

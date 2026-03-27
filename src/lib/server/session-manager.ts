@@ -990,7 +990,11 @@ except:
 
     switch (msg.type) {
       case "system":
-        managed.session.claudeSessionId = msg.session_id;
+        console.log(`[Session ${sessionId}] system: session_id=${msg.session_id}, current=${managed.session.claudeSessionId}`);
+        if (msg.session_id && msg.session_id !== managed.session.claudeSessionId) {
+          managed.session.claudeSessionId = msg.session_id;
+          this.emit("session:claudeSessionId", sessionId, msg.session_id);
+        }
         break;
 
       case "message_start":
@@ -1892,7 +1896,6 @@ for line in sys.stdin:
         try {
           const content = await readFile(filePath, "utf-8");
           this.parseSessionJsonl(managed, content);
-          console.log(`[Session ${managed.session.id}] Loaded ${managed.messages.length} history messages from ${project}/${claudeSessionId}.jsonl`);
           return; // Found the file, done
         } catch {
           // File not in this project dir, try next
@@ -1907,20 +1910,10 @@ for line in sys.stdin:
     try {
       // Search for the session file in ~/.claude/projects AND workDir ancestors' .claude/projects
       // This handles direnv setups where CLAUDE_CONFIG_DIR points to a custom location
-      const workDir = managed.session.workDir || "~";
-      const findScript = `
-p="${workDir}"
-# Search default location first
-find ~/.claude/projects -maxdepth 2 -name "${claudeSessionId}.jsonl" -not -path "*/subagents/*" 2>/dev/null | head -1
-# Walk up from workDir looking for .claude/projects
-p=$(cd "$p" 2>/dev/null && pwd || echo "")
-while [ -n "$p" ] && [ "$p" != "/" ]; do
-  if [ -d "$p/.claude/projects" ]; then
-    find "$p/.claude/projects" -maxdepth 2 -name "${claudeSessionId}.jsonl" -not -path "*/subagents/*" 2>/dev/null | head -1
-  fi
-  p=$(dirname "$p")
-done
-`.trim();
+      // Replace leading ~ with $HOME so tilde expands inside double-quoted cd
+      const workDir = (managed.session.workDir || "~").replace(/^~(?=\/|$)/, "$HOME");
+      // Mirror the same PATH setup as ssh-adapter spawn so direnv is available
+      const findScript = `export PATH="$HOME/.local/bin:$PATH" && cd "${workDir}" 2>/dev/null && eval "$(direnv export bash 2>/dev/null)" 2>/dev/null ; find "\${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects" -maxdepth 2 -name "${claudeSessionId}.jsonl" -not -path "*/subagents/*" 2>/dev/null | head -1`;
 
       const findChannel = await this.sshManager.exec(machine, findScript);
       const findOutput = await new Promise<string>((resolve) => {
@@ -1947,7 +1940,6 @@ done
         const homeDir = await this.getRemoteHomeDir(machine);
         if (configDir !== `${homeDir}/.claude`) {
           managed.claudeConfigDir = configDir;
-          console.log(`[Session ${managed.session.id}] Detected custom CLAUDE_CONFIG_DIR: ${configDir}`);
         }
       }
 
@@ -2070,124 +2062,6 @@ done
     }
   }
 
-  /**
-   * Load older messages from .jsonl history for pagination.
-   * Returns messages with timestamp < `before`, up to `limit` items (newest first within the batch).
-   */
-  async loadMessageHistory(sessionId: string, before: number, limit = 20): Promise<{ messages: ConversationMessage[]; hasMore: boolean }> {
-    const managed = this.sessions.get(sessionId);
-    if (!managed) return { messages: [], hasMore: false };
-
-    const allMessages = await this.parseFullHistory(managed);
-    // Filter messages older than `before`
-    const older = allMessages.filter((m) => m.timestamp < before);
-    const hasMore = older.length > limit;
-    // Return the most recent `limit` messages from the older set
-    const page = older.slice(-limit);
-    return { messages: page, hasMore };
-  }
-
-  /**
-   * Parse the full .jsonl history without storing it in memory.
-   * Returns all ConversationMessages from the session's history file.
-   */
-  private async parseFullHistory(managed: ManagedSession): Promise<ConversationMessage[]> {
-    const claudeSessionId = managed.session.claudeSessionId;
-    const messages: ConversationMessage[] = [];
-
-    const content = managed.machine.type === "local"
-      ? await this.readLocalJsonl(claudeSessionId)
-      : await this.readRemoteJsonl(managed.machine, claudeSessionId);
-
-    if (!content) return messages;
-
-    const lines = content.split("\n").filter(Boolean);
-    for (const line of lines) {
-      try {
-        const msg = JSON.parse(line);
-
-        if (msg.type === "user" && msg.message?.content) {
-          const c = msg.message.content;
-          const text = typeof c === "string"
-            ? c
-            : Array.isArray(c)
-              ? c.filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n")
-              : "";
-          if (!text) continue;
-          messages.push({
-            id: uuidv4(),
-            role: "user",
-            content: text,
-            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-          });
-        }
-
-        if (msg.type === "assistant" && msg.message?.content) {
-          const c = msg.message.content;
-          let text = "";
-          if (typeof c === "string") {
-            text = c;
-          } else if (Array.isArray(c)) {
-            const parts: string[] = [];
-            for (const block of c) {
-              if (block.type === "text") {
-                parts.push(block.text);
-              } else if (block.type === "tool_use") {
-                const inputStr = block.input ? JSON.stringify(block.input) : "";
-                parts.push(this.renderToolUse(block.name, inputStr));
-              }
-            }
-            text = parts.join("\n");
-          }
-          if (!text.trim()) continue;
-          messages.push({
-            id: uuidv4(),
-            role: "assistant",
-            content: text,
-            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-          });
-        }
-      } catch { /* skip invalid lines */ }
-    }
-
-    return messages;
-  }
-
-  private async readLocalJsonl(claudeSessionId: string): Promise<string | null> {
-    const claudeDir = join(homedir(), ".claude", "projects");
-    try {
-      const projects = await readdir(claudeDir);
-      for (const project of projects) {
-        const filePath = join(claudeDir, project, `${claudeSessionId}.jsonl`);
-        try {
-          return await readFile(filePath, "utf-8");
-        } catch {
-          // Not in this project dir, try next
-        }
-      }
-    } catch { /* ignore */ }
-    return null;
-  }
-
-  private async readRemoteJsonl(machine: MachineConfig, claudeSessionId: string): Promise<string | null> {
-    const script = `python3 -c "
-import os, glob
-home = os.path.expanduser('~')
-pattern = os.path.join(home, '.claude', 'projects', '*', '${claudeSessionId}.jsonl')
-files = glob.glob(pattern)
-if files:
-    with open(files[0]) as f:
-        print(f.read())
-"`;
-    try {
-      const channel = await this.sshManager.execFresh(machine, script);
-      return await new Promise<string>((resolve) => {
-        let out = "";
-        channel.on("data", (data: Buffer) => { out += data.toString(); });
-        channel.on("close", () => resolve(out || ""));
-      });
-    } catch { return null; }
-  }
 
   async discoverSessions(machine: MachineConfig, workDir?: string): Promise<ClaudeSessionInfo[]> {
     if (machine.type === "local") {

@@ -540,7 +540,7 @@ export class WebSocketHandler {
               type: "session.history",
               sessionId: session.id,
               messages,
-              hasMore: messages.length >= 20,
+              hasMore: false,
             });
           }
         }
@@ -918,6 +918,11 @@ export class WebSocketHandler {
           const { task, session } = await this.projectManager.resumeTask(msg.projectId, msg.taskId, resumeMachine);
           this.broadcast({ type: "task.resumed", task, session });
           this.broadcast({ type: "session.created", session });
+          // Send history loaded during resume
+          const resumeMessages = this.sessionManager.getSessionMessages(session.id);
+          if (resumeMessages.length > 0) {
+            this.send(ws, { type: "session.history", sessionId: session.id, messages: resumeMessages, hasMore: false });
+          }
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
         }
@@ -930,18 +935,6 @@ export class WebSocketHandler {
             msg.projectId, msg.sessionId, msg.title
           );
           this.broadcast({ type: "task.sessionImported", task, session });
-        } catch (err) {
-          this.send(ws, { type: "error", error: (err as Error).message });
-        }
-        break;
-      }
-
-      case "session.history": {
-        try {
-          const { messages, hasMore } = await this.sessionManager.loadMessageHistory(
-            msg.sessionId, msg.before, msg.limit
-          );
-          this.send(ws, { type: "session.history", sessionId: msg.sessionId, messages, hasMore });
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
         }
@@ -1184,6 +1177,20 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:displayName", (sessionId: string, name: string) => {
       this.broadcast({ type: "session.displayName", sessionId, name });
+    });
+
+    this.sessionManager.on("session:claudeSessionId", async (sessionId: string, claudeSessionId: string) => {
+      const session = this.sessionManager.getSession(sessionId);
+      if (session?.taskId && session?.projectId) {
+        await this.projectManager.updateTask(session.projectId, session.taskId, { claudeSessionId });
+        console.log(`[Session ${sessionId}] Updated task claudeSessionId → ${claudeSessionId}`);
+      }
+      // Initial history load used wrong UUID — reload with the real UUID from Claude
+      await this.sessionManager.ensureSessionHistory(sessionId);
+      const messages = this.sessionManager.getSessionMessages(sessionId);
+      if (messages.length > 0) {
+        this.broadcast({ type: "session.history", sessionId, messages, hasMore: false });
+      }
     });
 
     this.sessionManager.on("session:showUser", (sessionId: string, title: string, html: string) => {
