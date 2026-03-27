@@ -91,7 +91,7 @@ export class ProjectManager {
   async updateTask(
     projectId: string,
     taskId: string,
-    updates: { title?: string; description?: string; sessionId?: string },
+    updates: { title?: string; description?: string; sessionId?: string; claudeSessionId?: string },
   ): Promise<Task> {
     await this.store.updateTask(projectId, taskId, updates);
     const task = this.store.getTask(projectId, taskId);
@@ -219,10 +219,11 @@ export class ProjectManager {
     // Set session display name to task title
     this.sessionManager.setSessionDisplayName(session.id, task.title);
 
-    // Update the task's sessionId to the new orchestrator session
+    // Update the task's sessionId and claudeSessionId (may have been corrected during history load)
     await this.store.updateTask(projectId, taskId, {
       sessionId: session.id,
       lastMachineId: machine.id,
+      ...(session.claudeSessionId !== task.claudeSessionId && { claudeSessionId: session.claudeSessionId }),
     });
 
     const updatedTask = this.store.getTask(projectId, taskId)!;

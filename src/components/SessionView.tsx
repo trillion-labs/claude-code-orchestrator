@@ -61,11 +61,6 @@ export function SessionView({
   const planPanelOpen = useStore((s) => s.planPanelOpen.get(session.id) ?? false);
   const setPlanPanelOpen = useStore((s) => s.setPlanPanelOpen);
 
-  // History
-  const hasMoreMessages = useStore((s) => s.hasMoreMessages.get(session.id) ?? true);
-  const loadingHistory = useStore((s) => s.loadingHistory.get(session.id) ?? false);
-  const setLoadingHistory = useStore((s) => s.setLoadingHistory);
-
   // File preview tabs
   const filePreviewTabsRaw = useStore((s) => s.filePreviewTabs.get(session.id));
   const filePreviewTabs = useMemo(() => filePreviewTabsRaw ?? [], [filePreviewTabsRaw]);
@@ -96,13 +91,6 @@ export function SessionView({
   const hasAnySidePanelContent = !!planContent || filePreviewTabs.length > 0 || showUserTabs.length > 0;
   const hasAnyPanelOpen = planPanelOpen || filePreviewOpen || showUserPanelOpen;
   const hasNonLoadingFileTabs = filePreviewTabs.some((t) => !t.loading);
-
-  const handleLoadHistory = useCallback(() => {
-    if (loadingHistory || !hasMoreMessages || messages.length === 0) return;
-    setLoadingHistory(session.id, true);
-    const oldestTimestamp = messages[0].timestamp;
-    send({ type: "session.history", sessionId: session.id, before: oldestTimestamp, limit: 20 });
-  }, [loadingHistory, hasMoreMessages, messages, session.id, setLoadingHistory, send]);
 
   const handleFilePreview = useCallback(async (filePath: string) => {
     if (sidePanelMerged) {
@@ -347,9 +335,6 @@ export function SessionView({
               streamingText={streamingText}
               sessionId={session.id}
               isBusy={isBusy}
-              hasMoreMessages={hasMoreMessages}
-              loadingHistory={loadingHistory}
-              onLoadHistory={handleLoadHistory}
               onSendPrompt={onSendPrompt}
               onPermissionResponse={onPermissionResponse}
               onFilePreview={handleFilePreview}

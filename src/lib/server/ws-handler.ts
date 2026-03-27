@@ -2,6 +2,7 @@ import type { WebSocket } from "ws";
 import type { IncomingMessage, ServerResponse } from "http";
 import { SessionManager } from "./session-manager";
 import { ProjectStore } from "./project-store";
+import { SessionStore } from "./session-store";
 import { ProjectManager } from "./project-manager";
 import { loadSSHHosts } from "./ssh-config-loader";
 import { readFile, writeFile, mkdir } from "fs/promises";
@@ -31,6 +32,7 @@ function extToLanguage(ext: string): string {
 export class WebSocketHandler {
   private sessionManager: SessionManager;
   private projectStore: ProjectStore;
+  private sessionStore: SessionStore;
   private projectManager: ProjectManager;
   private clients = new Set<WebSocket>();
   private baseMachines: MachineConfig[] = [];
@@ -39,6 +41,7 @@ export class WebSocketHandler {
   constructor(port = 3000) {
     this.sessionManager = new SessionManager(port);
     this.projectStore = new ProjectStore();
+    this.sessionStore = new SessionStore();
     this.projectManager = new ProjectManager(this.projectStore, this.sessionManager);
     this.setupSessionEvents();
   }
@@ -65,6 +68,10 @@ export class WebSocketHandler {
 
     // Initialize project store (load from disk)
     await this.projectManager.initialize();
+
+    // Initialize session store and restore persisted sessions
+    await this.sessionStore.initialize();
+    this.sessionManager.loadPersistedSessions(this.sessionStore);
   }
 
   /** Reload SSH hosts from ~/.ssh/config and merge with base machines */
@@ -387,6 +394,24 @@ export class WebSocketHandler {
       case "session.list": {
         const sessions = this.sessionManager.getAllSessions();
         this.send(ws, { type: "session.list", sessions });
+        // Same path as task resume: load from .jsonl if not in memory, then
+        // send messages and display names so reconnecting clients restore state.
+        for (const session of sessions) {
+          await this.sessionManager.ensureSessionHistory(session.id);
+          const explicitName = this.sessionManager.getExplicitSessionName(session.id);
+          if (explicitName) {
+            this.send(ws, { type: "session.displayName", sessionId: session.id, name: explicitName });
+          }
+          const messages = this.sessionManager.getSessionMessages(session.id);
+          if (messages.length > 0) {
+            this.send(ws, {
+              type: "session.history",
+              sessionId: session.id,
+              messages,
+              hasMore: false,
+            });
+          }
+        }
         break;
       }
 
@@ -761,6 +786,11 @@ export class WebSocketHandler {
           const { task, session } = await this.projectManager.resumeTask(msg.projectId, msg.taskId, resumeMachine);
           this.broadcast({ type: "task.resumed", task, session });
           this.broadcast({ type: "session.created", session });
+          // Send history loaded during resume
+          const resumeMessages = this.sessionManager.getSessionMessages(session.id);
+          if (resumeMessages.length > 0) {
+            this.send(ws, { type: "session.history", sessionId: session.id, messages: resumeMessages, hasMore: false });
+          }
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
         }
@@ -773,18 +803,6 @@ export class WebSocketHandler {
             msg.projectId, msg.sessionId, msg.title
           );
           this.broadcast({ type: "task.sessionImported", task, session });
-        } catch (err) {
-          this.send(ws, { type: "error", error: (err as Error).message });
-        }
-        break;
-      }
-
-      case "session.history": {
-        try {
-          const { messages, hasMore } = await this.sessionManager.loadMessageHistory(
-            msg.sessionId, msg.before, msg.limit
-          );
-          this.send(ws, { type: "session.history", sessionId: msg.sessionId, messages, hasMore });
         } catch (err) {
           this.send(ws, { type: "error", error: (err as Error).message });
         }
@@ -1004,6 +1022,20 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:displayName", (sessionId: string, name: string) => {
       this.broadcast({ type: "session.displayName", sessionId, name });
+    });
+
+    this.sessionManager.on("session:claudeSessionId", async (sessionId: string, claudeSessionId: string) => {
+      const session = this.sessionManager.getSession(sessionId);
+      if (session?.taskId && session?.projectId) {
+        await this.projectManager.updateTask(session.projectId, session.taskId, { claudeSessionId });
+        console.log(`[Session ${sessionId}] Updated task claudeSessionId → ${claudeSessionId}`);
+      }
+      // Initial history load used wrong UUID — reload with the real UUID from Claude
+      await this.sessionManager.ensureSessionHistory(sessionId);
+      const messages = this.sessionManager.getSessionMessages(sessionId);
+      if (messages.length > 0) {
+        this.broadcast({ type: "session.history", sessionId, messages, hasMore: false });
+      }
     });
 
     this.sessionManager.on("session:showUser", (sessionId: string, title: string, html: string) => {

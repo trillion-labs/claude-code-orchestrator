@@ -1,6 +1,32 @@
 import { create } from "zustand";
 import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, Note, PermissionRequest, KanbanColumn } from "@/lib/shared/types";
 
+// ── Session name localStorage persistence ──
+
+const SESSION_NAMES_KEY = "cco_session_names";
+
+function loadSessionNamesFromStorage(): Map<string, string> {
+  if (typeof window === "undefined") return new Map();
+  try {
+    const stored = localStorage.getItem(SESSION_NAMES_KEY);
+    if (!stored) return new Map();
+    return new Map(Object.entries(JSON.parse(stored) as Record<string, string>));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveSessionNamesToStorage(names: Map<string, string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const obj: Record<string, string> = {};
+    names.forEach((v, k) => { obj[k] = v; });
+    localStorage.setItem(SESSION_NAMES_KEY, JSON.stringify(obj));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export interface SplitPanel {
   id: string;
   sessionId: string;
@@ -36,10 +62,6 @@ interface SessionState {
   focusedPanelId: string | null;
   // Per-session message history
   messages: Map<string, ConversationMessage[]>;
-  // Whether more history is available for a session (for pagination)
-  hasMoreMessages: Map<string, boolean>;
-  // Whether history is currently being loaded
-  loadingHistory: Map<string, boolean>;
   // Per-session streaming text
   streamingText: Map<string, string>;
   // Discovered sessions per machine
@@ -106,8 +128,7 @@ interface SessionState {
 
   // Messages
   addMessage: (sessionId: string, message: ConversationMessage) => void;
-  prependMessages: (sessionId: string, messages: ConversationMessage[], hasMore: boolean) => void;
-  setLoadingHistory: (sessionId: string, loading: boolean) => void;
+  prependMessages: (sessionId: string, messages: ConversationMessage[]) => void;
 
   // Prompt queue
   promptQueue: Map<string, string[]>;
@@ -202,8 +223,6 @@ export const useStore = create<SessionState>((set) => ({
   activeSessionId: null,
   machines: [],
   messages: new Map(),
-  hasMoreMessages: new Map(),
-  loadingHistory: new Map(),
   streamingText: new Map(),
   promptQueue: new Map(),
   discoveredSessions: new Map(),
@@ -244,7 +263,14 @@ export const useStore = create<SessionState>((set) => ({
     set(() => {
       const map = new Map<string, Session>();
       for (const s of sessions) map.set(s.id, s);
-      return { sessions: map };
+      // Restore user-set custom names from localStorage, pruning stale entries
+      const stored = loadSessionNamesFromStorage();
+      const sessionNames = new Map<string, string>();
+      stored.forEach((name, id) => {
+        if (map.has(id)) sessionNames.set(id, name);
+      });
+      saveSessionNamesToStorage(sessionNames);
+      return { sessions: map, sessionNames };
     }),
 
   addSession: (session) =>
@@ -302,10 +328,6 @@ export const useStore = create<SessionState>((set) => ({
       sessions.delete(sessionId);
       const messages = new Map(state.messages);
       messages.delete(sessionId);
-      const hasMoreMessages = new Map(state.hasMoreMessages);
-      hasMoreMessages.delete(sessionId);
-      const loadingHistory = new Map(state.loadingHistory);
-      loadingHistory.delete(sessionId);
       const streamingText = new Map(state.streamingText);
       streamingText.delete(sessionId);
       const pendingAttention = new Map(state.pendingAttention);
@@ -314,6 +336,7 @@ export const useStore = create<SessionState>((set) => ({
       pendingRequests.delete(sessionId);
       const sessionNames = new Map(state.sessionNames);
       sessionNames.delete(sessionId);
+      saveSessionNamesToStorage(sessionNames);
       const sessionConfig = new Map(state.sessionConfig);
       sessionConfig.delete(sessionId);
       const planContent = new Map(state.planContent);
@@ -352,7 +375,7 @@ export const useStore = create<SessionState>((set) => ({
         splitPanelWidths.clear();
         focusedPanelId = null;
         return {
-          sessions, messages, hasMoreMessages, loadingHistory, streamingText,
+          sessions, messages, streamingText,
           pendingAttention, pendingRequests, sessionNames, sessionConfig,
           planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, showUserTabs, showUserCache, activeShowUserTabId, showUserPanelOpen, sidePanelMerged, activeMergedTabId,
           splitPanels, splitPanelWidths, focusedPanelId,
@@ -366,7 +389,7 @@ export const useStore = create<SessionState>((set) => ({
         focusedPanelId = splitPanels[0]?.id ?? null;
       }
       return {
-        sessions, messages, hasMoreMessages, loadingHistory, streamingText,
+        sessions, messages, streamingText,
         pendingAttention, pendingRequests, sessionNames, sessionConfig,
         planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen,
         splitPanels, splitPanelWidths, focusedPanelId,
@@ -423,7 +446,7 @@ export const useStore = create<SessionState>((set) => ({
       return { promptQueue };
     }),
 
-  prependMessages: (sessionId, olderMessages, hasMore) =>
+  prependMessages: (sessionId, olderMessages) =>
     set((state) => {
       const messages = new Map(state.messages);
       const existing = messages.get(sessionId) || [];
@@ -431,23 +454,9 @@ export const useStore = create<SessionState>((set) => ({
       const existingTimestamps = new Set(existing.map((m) => m.timestamp));
       const unique = olderMessages.filter((m) => !existingTimestamps.has(m.timestamp));
       messages.set(sessionId, [...unique, ...existing]);
-      const hasMoreMessages = new Map(state.hasMoreMessages);
-      hasMoreMessages.set(sessionId, hasMore);
-      const loadingHistory = new Map(state.loadingHistory);
-      loadingHistory.delete(sessionId);
-      return { messages, hasMoreMessages, loadingHistory };
+      return { messages };
     }),
 
-  setLoadingHistory: (sessionId, loading) =>
-    set((state) => {
-      const loadingHistory = new Map(state.loadingHistory);
-      if (loading) {
-        loadingHistory.set(sessionId, true);
-      } else {
-        loadingHistory.delete(sessionId);
-      }
-      return { loadingHistory };
-    }),
 
   appendStreamDelta: (sessionId, delta) =>
     set((state) => {
@@ -581,6 +590,7 @@ export const useStore = create<SessionState>((set) => ({
     set((state) => {
       const sessionNames = new Map(state.sessionNames);
       sessionNames.set(sessionId, name);
+      saveSessionNamesToStorage(sessionNames);
       return { sessionNames };
     }),
 
