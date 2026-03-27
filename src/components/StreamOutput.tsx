@@ -1100,9 +1100,6 @@ interface StreamOutputProps {
   streamingText: string;
   sessionId?: string;
   isBusy?: boolean;
-  hasMoreMessages?: boolean;
-  loadingHistory?: boolean;
-  onLoadHistory?: () => void;
   onSendPrompt?: (prompt: string) => void;
   onPermissionResponse?: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
   onFilePreview?: (filePath: string) => void;
@@ -1113,68 +1110,17 @@ export function StreamOutput({
   streamingText,
   sessionId,
   isBusy,
-  hasMoreMessages,
-  loadingHistory,
-  onLoadHistory,
   onSendPrompt,
   onPermissionResponse,
   onFilePreview,
 }: StreamOutputProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
-  const topSentinelRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const prevScrollHeightRef = useRef<number>(0);
-  const isInitialLoadRef = useRef(true);
-
-  // Helper to get the actual scrollable viewport element
-  const getViewport = useCallback(() => {
-    return scrollAreaRef.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
-  }, []);
 
   // Auto-scroll to bottom for new messages/streaming
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
-
-  // After prepending messages, restore scroll position so it doesn't jump
-  useEffect(() => {
-    const viewport = getViewport();
-    if (prevScrollHeightRef.current > 0 && viewport) {
-      const newScrollHeight = viewport.scrollHeight;
-      const diff = newScrollHeight - prevScrollHeightRef.current;
-      viewport.scrollTop += diff;
-      prevScrollHeightRef.current = 0;
-    }
-  }, [messages, getViewport]);
-
-  // Detect scroll to top via IntersectionObserver
-  const handleSentinelVisible = useCallback(() => {
-    if (!hasMoreMessages || loadingHistory || isInitialLoadRef.current) return;
-    const viewport = getViewport();
-    if (viewport) {
-      prevScrollHeightRef.current = viewport.scrollHeight;
-    }
-    onLoadHistory?.();
-  }, [hasMoreMessages, loadingHistory, onLoadHistory, getViewport]);
-
-  useEffect(() => {
-    const sentinel = topSentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          handleSentinelVisible();
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    observer.observe(sentinel);
-    // Allow observation to fire after initial render settles
-    const timer = setTimeout(() => { isInitialLoadRef.current = false; }, 1000);
-    return () => { observer.disconnect(); clearTimeout(timer); };
-  }, [handleSentinelVisible]);
 
   // Determine which message should have interactive tool blocks:
   // Only the last assistant message is interactive, and only if
@@ -1202,15 +1148,6 @@ export function StreamOutput({
       <PermissionResponseContext.Provider value={onPermissionResponse}>
         <ScrollArea className="flex-1 min-h-0 px-4 py-2" ref={scrollAreaRef}>
           <div className="space-y-6 max-w-4xl mx-auto py-4">
-            {/* Sentinel for detecting scroll to top */}
-            <div ref={topSentinelRef} className="h-1" />
-
-            {loadingHistory && (
-              <div className="flex justify-center py-2">
-                <span className="text-xs text-muted-foreground animate-pulse">Loading older messages...</span>
-              </div>
-            )}
-
             {messages.map((msg, idx) => (
               <ToolInteractiveContext.Provider
                 key={msg.id}

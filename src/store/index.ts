@@ -62,10 +62,6 @@ interface SessionState {
   focusedPanelId: string | null;
   // Per-session message history
   messages: Map<string, ConversationMessage[]>;
-  // Whether more history is available for a session (for pagination)
-  hasMoreMessages: Map<string, boolean>;
-  // Whether history is currently being loaded
-  loadingHistory: Map<string, boolean>;
   // Per-session streaming text
   streamingText: Map<string, string>;
   // Discovered sessions per machine
@@ -132,8 +128,7 @@ interface SessionState {
 
   // Messages
   addMessage: (sessionId: string, message: ConversationMessage) => void;
-  prependMessages: (sessionId: string, messages: ConversationMessage[], hasMore: boolean) => void;
-  setLoadingHistory: (sessionId: string, loading: boolean) => void;
+  prependMessages: (sessionId: string, messages: ConversationMessage[]) => void;
 
   // Prompt queue
   promptQueue: Map<string, string[]>;
@@ -228,8 +223,6 @@ export const useStore = create<SessionState>((set) => ({
   activeSessionId: null,
   machines: [],
   messages: new Map(),
-  hasMoreMessages: new Map(),
-  loadingHistory: new Map(),
   streamingText: new Map(),
   promptQueue: new Map(),
   discoveredSessions: new Map(),
@@ -335,10 +328,6 @@ export const useStore = create<SessionState>((set) => ({
       sessions.delete(sessionId);
       const messages = new Map(state.messages);
       messages.delete(sessionId);
-      const hasMoreMessages = new Map(state.hasMoreMessages);
-      hasMoreMessages.delete(sessionId);
-      const loadingHistory = new Map(state.loadingHistory);
-      loadingHistory.delete(sessionId);
       const streamingText = new Map(state.streamingText);
       streamingText.delete(sessionId);
       const pendingAttention = new Map(state.pendingAttention);
@@ -386,7 +375,7 @@ export const useStore = create<SessionState>((set) => ({
         splitPanelWidths.clear();
         focusedPanelId = null;
         return {
-          sessions, messages, hasMoreMessages, loadingHistory, streamingText,
+          sessions, messages, streamingText,
           pendingAttention, pendingRequests, sessionNames, sessionConfig,
           planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen, showUserTabs, showUserCache, activeShowUserTabId, showUserPanelOpen, sidePanelMerged, activeMergedTabId,
           splitPanels, splitPanelWidths, focusedPanelId,
@@ -400,7 +389,7 @@ export const useStore = create<SessionState>((set) => ({
         focusedPanelId = splitPanels[0]?.id ?? null;
       }
       return {
-        sessions, messages, hasMoreMessages, loadingHistory, streamingText,
+        sessions, messages, streamingText,
         pendingAttention, pendingRequests, sessionNames, sessionConfig,
         planContent, planPanelOpen, filePreviewTabs, activeFilePreviewTabId, filePreviewOpen,
         splitPanels, splitPanelWidths, focusedPanelId,
@@ -457,7 +446,7 @@ export const useStore = create<SessionState>((set) => ({
       return { promptQueue };
     }),
 
-  prependMessages: (sessionId, olderMessages, hasMore) =>
+  prependMessages: (sessionId, olderMessages) =>
     set((state) => {
       const messages = new Map(state.messages);
       const existing = messages.get(sessionId) || [];
@@ -465,23 +454,9 @@ export const useStore = create<SessionState>((set) => ({
       const existingTimestamps = new Set(existing.map((m) => m.timestamp));
       const unique = olderMessages.filter((m) => !existingTimestamps.has(m.timestamp));
       messages.set(sessionId, [...unique, ...existing]);
-      const hasMoreMessages = new Map(state.hasMoreMessages);
-      hasMoreMessages.set(sessionId, hasMore);
-      const loadingHistory = new Map(state.loadingHistory);
-      loadingHistory.delete(sessionId);
-      return { messages, hasMoreMessages, loadingHistory };
+      return { messages };
     }),
 
-  setLoadingHistory: (sessionId, loading) =>
-    set((state) => {
-      const loadingHistory = new Map(state.loadingHistory);
-      if (loading) {
-        loadingHistory.set(sessionId, true);
-      } else {
-        loadingHistory.delete(sessionId);
-      }
-      return { loadingHistory };
-    }),
 
   appendStreamDelta: (sessionId, delta) =>
     set((state) => {
