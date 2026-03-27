@@ -11,6 +11,7 @@ import { StreamParser } from "./stream-parser";
 import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, WorktreeInfo } from "../shared/types";
 import { PERMISSION_MODES } from "../shared/types";
 import { resolvePermissionByMode } from "./permission-utils";
+import type { SessionStore } from "./session-store";
 
 interface PermissionResolver {
   resolve: (result: { behavior: string; updatedInput?: Record<string, unknown>; message?: string }) => void;
@@ -44,6 +45,8 @@ const MAX_RECENT_MESSAGES = 20; // Keep last 10 turns (user + assistant)
 
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, ManagedSession>();
+  private terminatedSessions = new Map<string, Session>();
+  private sessionStore?: SessionStore;
   private sshManager: SSHConnectionManager;
   private pendingPermissions = new Map<string, PermissionResolver>();
   private orchestratorPort: number;
@@ -52,6 +55,55 @@ export class SessionManager extends EventEmitter {
     super();
     this.sshManager = new SSHConnectionManager();
     this.orchestratorPort = orchestratorPort;
+  }
+
+  /**
+   * Load persisted sessions from disk. Call this once during startup.
+   * Persisted sessions are restored with status "terminated" so the UI
+   * can display them and offer resume.
+   */
+  loadPersistedSessions(store: SessionStore): void {
+    this.sessionStore = store;
+    for (const record of store.getAll()) {
+      const session: Session = {
+        id: record.id,
+        claudeSessionId: record.claudeSessionId,
+        machineId: record.machineId,
+        machineName: record.machineName,
+        workDir: record.workDir,
+        status: "terminated",
+        createdAt: record.createdAt,
+        totalCostUsd: record.totalCostUsd,
+        lastActivity: record.lastActivity,
+        permissionMode: record.permissionMode,
+        ...(record.worktree && { worktree: record.worktree }),
+        ...(record.projectId && { projectId: record.projectId }),
+        ...(record.taskId && { taskId: record.taskId }),
+      };
+      this.terminatedSessions.set(session.id, session);
+    }
+    console.log(`[SessionManager] Restored ${this.terminatedSessions.size} terminated sessions`);
+  }
+
+  private persistSession(managed: ManagedSession): void {
+    if (!this.sessionStore) return;
+    const { session } = managed;
+    this.sessionStore.save({
+      id: session.id,
+      claudeSessionId: session.claudeSessionId,
+      machineId: session.machineId,
+      machineName: session.machineName,
+      workDir: session.workDir,
+      permissionMode: managed.permissionMode,
+      createdAt: session.createdAt,
+      lastActivity: session.lastActivity,
+      totalCostUsd: session.totalCostUsd,
+      ...(session.worktree && { worktree: session.worktree }),
+      ...(session.projectId && { projectId: session.projectId }),
+      ...(session.taskId && { taskId: session.taskId }),
+      ...(managed.explicitDisplayName && { explicitDisplayName: managed.explicitDisplayName }),
+      ...(managed.firstUserMessage && { firstUserMessage: managed.firstUserMessage }),
+    });
   }
 
   async createSession(machine: MachineConfig, workDir: string, resumeSessionId?: string, permissionMode: PermissionMode = "default", worktree?: { enabled: boolean; name: string; existingPath?: string }, projectId?: string, taskId?: string, options?: { isOrchestrator?: boolean; orchestratorProjectId?: string; systemPrompt?: string }): Promise<Session> {
@@ -96,6 +148,7 @@ export class SessionManager extends EventEmitter {
     };
 
     this.sessions.set(sessionId, managed);
+    this.terminatedSessions.delete(sessionId); // Remove if was a restored terminated session
 
     // Handle worktree (new sessions only)
     if (worktree?.enabled && !resumeSessionId) {
@@ -331,6 +384,7 @@ export class SessionManager extends EventEmitter {
       await adapter.spawn("claude", args, { cwd: spawnCwd, env: spawnEnv });
       session.status = "idle";
       this.emit("session:status", sessionId, session.status);
+      this.persistSession(managed);
     } catch (err) {
       session.status = "error";
       session.error = (err as Error).message;
@@ -1024,6 +1078,7 @@ except:
         managed.isProcessingPrompt = false;
         managed.session.status = "idle";
         this.emit("session:status", sessionId, "idle", undefined, managed.session.totalCostUsd);
+        this.persistSession(managed);
 
         if (managed.promptQueue.length > 0) {
           const nextPrompt = managed.promptQueue.shift()!;
@@ -1522,11 +1577,16 @@ for line in sys.stdin:
     }
 
     this.emit("session:status", sessionId, "terminated");
+    // Move to terminated map so it remains visible in session list
+    this.terminatedSessions.set(sessionId, { ...managed.session });
     this.sessions.delete(sessionId);
+    // Update store: persist last known state then keep the record
+    // (We keep terminated sessions in the store so they survive restarts)
+    this.persistSession(managed);
   }
 
   getSession(sessionId: string): Session | undefined {
-    return this.sessions.get(sessionId)?.session;
+    return this.sessions.get(sessionId)?.session ?? this.terminatedSessions.get(sessionId);
   }
 
   getSessionMessages(sessionId: string): ConversationMessage[] {
@@ -1534,7 +1594,12 @@ for line in sys.stdin:
   }
 
   getAllSessions(): Session[] {
-    return Array.from(this.sessions.values()).map((m) => m.session);
+    const active = Array.from(this.sessions.values()).map((m) => m.session);
+    const activeIds = new Set(active.map((s) => s.id));
+    const terminated = Array.from(this.terminatedSessions.values()).filter(
+      (s) => !activeIds.has(s.id)
+    );
+    return [...active, ...terminated];
   }
 
   /**
@@ -1556,6 +1621,7 @@ for line in sys.stdin:
     if (!managed) return;
     managed.explicitDisplayName = name;
     this.emit("session:displayName", sessionId, name);
+    this.persistSession(managed);
   }
 
   /**
@@ -1564,7 +1630,14 @@ for line in sys.stdin:
    */
   /** Returns only the explicitly set display name (task title or user-set), not auto-derived. */
   getExplicitSessionName(sessionId: string): string | undefined {
-    return this.sessions.get(sessionId)?.explicitDisplayName;
+    const managed = this.sessions.get(sessionId);
+    if (managed) return managed.explicitDisplayName;
+    // For terminated sessions, check the store
+    if (this.sessionStore) {
+      const record = this.sessionStore.getAll().find((r) => r.id === sessionId);
+      return record?.explicitDisplayName || record?.firstUserMessage;
+    }
+    return undefined;
   }
 
   /**

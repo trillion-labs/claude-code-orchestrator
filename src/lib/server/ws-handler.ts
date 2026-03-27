@@ -2,6 +2,7 @@ import type { WebSocket } from "ws";
 import type { IncomingMessage, ServerResponse } from "http";
 import { SessionManager } from "./session-manager";
 import { ProjectStore } from "./project-store";
+import { SessionStore } from "./session-store";
 import { ProjectManager } from "./project-manager";
 import { loadSSHHosts } from "./ssh-config-loader";
 import { readFile, writeFile, mkdir } from "fs/promises";
@@ -31,6 +32,7 @@ function extToLanguage(ext: string): string {
 export class WebSocketHandler {
   private sessionManager: SessionManager;
   private projectStore: ProjectStore;
+  private sessionStore: SessionStore;
   private projectManager: ProjectManager;
   private clients = new Set<WebSocket>();
   private baseMachines: MachineConfig[] = [];
@@ -39,6 +41,7 @@ export class WebSocketHandler {
   constructor(port = 3000) {
     this.sessionManager = new SessionManager(port);
     this.projectStore = new ProjectStore();
+    this.sessionStore = new SessionStore();
     this.projectManager = new ProjectManager(this.projectStore, this.sessionManager);
     this.setupSessionEvents();
   }
@@ -65,6 +68,10 @@ export class WebSocketHandler {
 
     // Initialize project store (load from disk)
     await this.projectManager.initialize();
+
+    // Initialize session store and restore persisted sessions
+    await this.sessionStore.initialize();
+    this.sessionManager.loadPersistedSessions(this.sessionStore);
   }
 
   /** Reload SSH hosts from ~/.ssh/config and merge with base machines */
