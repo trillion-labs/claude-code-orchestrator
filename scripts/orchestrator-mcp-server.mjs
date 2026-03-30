@@ -146,6 +146,62 @@ const TOOLS = [
       properties: {},
     },
   },
+  // ── Note Tools ──
+  {
+    name: "list_notes",
+    description: "List note summaries (id, title, createdAt, updatedAt) in the current project. Does NOT include content — use get_note for full content.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "get_note",
+    description: "Get full note content (title + markdown content) by note ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The note ID to retrieve" },
+      },
+      required: ["noteId"],
+    },
+  },
+  {
+    name: "create_note",
+    description: "Create a new note in the current project. Notes are markdown documents for storing plans, research, decisions, or any project knowledge.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Note title" },
+        content: { type: "string", description: "Note content in markdown format" },
+      },
+      required: ["title", "content"],
+    },
+  },
+  {
+    name: "update_note",
+    description: "Update an existing note's title or content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The note ID to update" },
+        title: { type: "string", description: "New title (optional)" },
+        content: { type: "string", description: "New content in markdown (optional)" },
+      },
+      required: ["noteId"],
+    },
+  },
+  {
+    name: "delete_note",
+    description: "Delete a note from the project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The note ID to delete" },
+      },
+      required: ["noteId"],
+    },
+  },
 ];
 
 rl.on("line", async (line) => {
