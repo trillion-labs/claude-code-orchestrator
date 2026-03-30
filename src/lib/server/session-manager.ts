@@ -264,11 +264,14 @@ export class SessionManager extends EventEmitter {
     // Orchestrator manager: restrict tools to read-only + inject system prompt
     if (options?.isOrchestrator && options.systemPrompt) {
       args.push("--allowedTools", "Read,Glob,Grep,mcp__orch__*,mcp__perm__*");
-      args.push("--append-system-prompt", options.systemPrompt);
+      // Only inject system prompt on fresh sessions (not resume — CLI rejects it)
+      if (!resumeSessionId) {
+        args.push("--append-system-prompt", options.systemPrompt);
+      }
     }
 
-    // Worker sessions with project context: inject note protocol
-    if (!options?.isOrchestrator && projectId) {
+    // Worker sessions with project context: inject note protocol (fresh only)
+    if (!options?.isOrchestrator && projectId && !resumeSessionId) {
       args.push("--append-system-prompt", buildWorkerNotePrompt());
     }
 
