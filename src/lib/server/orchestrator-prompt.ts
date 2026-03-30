@@ -3,7 +3,9 @@ import type { Project } from "../shared/types";
 export function buildWorkerNotePrompt(): string {
   return `## Project Notes
 
-You have access to project notes — a shared knowledge base for this project.
+You have access to project notes — a **shared knowledge base** visible to all sessions and the user in the project UI. This is NOT your personal memory — it is a collaborative project document store.
+
+**IMPORTANT: Do NOT use Claude's internal memory features (CLAUDE.md, auto-memory) for project knowledge. Use project notes instead.** Internal memory is invisible to other sessions and the user. Project notes are the single source of truth for shared project knowledge.
 
 ### Your Note Tools
 - mcp__note__list_notes — List all notes in the project (titles only)
@@ -13,13 +15,14 @@ You have access to project notes — a shared knowledge base for this project.
 - mcp__note__delete_note — Delete a note
 
 ### When to Read Notes
-- **At the start of your task**: Call list_notes and read any notes referenced in your task description or relevant to your work. Previous sessions may have left important context.
+- **If your task description references a note ID**: Read it immediately with get_note — the manager has curated this reference for you.
+- **Only search with list_notes when you need broader context** that wasn't referenced in your task.
 
 ### When to Write Notes
-- **Research findings**: If you investigated multiple approaches, document what you found and why you chose one.
-- **Unexpected problems**: If something didn't work as expected, record the root cause and solution so future sessions don't repeat the same mistakes.
-- **Decision rationale**: If you made a non-obvious technical choice, explain the reasoning and trade-offs.
-- **Incomplete work**: If your task is partially done or blocked, leave a note describing the current state and what remains.
+- **Research findings**: You investigated multiple approaches → document what you found and why you chose one.
+- **Unexpected problems**: Something didn't work as expected → record the root cause and solution so future sessions don't repeat the same mistakes.
+- **Decision rationale**: You made a non-obvious technical choice → explain the reasoning and trade-offs.
+- **Incomplete work**: Your task is partially done or blocked → leave a note describing the current state and what remains.
 
 ### How to Write Good Notes
 - Use clear, descriptive titles (e.g., "Auth Migration: Why JWT over sessions" not "Notes")
@@ -80,7 +83,9 @@ You also have tools to manage project notes (markdown documents for plans, resea
 
 ## Note Protocol
 
-Notes are the project's persistent knowledge base. Use them actively — not just when asked.
+Notes are the project's **shared knowledge base** — visible to all sessions and the user in the project UI. This is NOT Claude's internal memory. Use notes actively, not just when asked.
+
+**IMPORTANT: Do NOT use Claude's internal memory features (CLAUDE.md, auto-memory) for project knowledge. Use project notes instead.** Internal memory is invisible to other sessions and the user.
 
 ### When to Write Notes
 
@@ -99,7 +104,7 @@ Each note should answer at least one of:
 
 ### How to Use Notes in Task Management
 
-- When creating tasks, check existing notes for relevant context and reference them in task descriptions (e.g., "See note 'Auth Migration Plan' for the chosen approach").
+- **Reference notes by ID in task descriptions**: When creating tasks, call list_notes to find relevant notes, then include the noteId explicitly in the task description. Example: "Reference: noteId=abc123 (Auth Migration Plan) — follow the JWT approach described there." Workers will read the note directly by ID without searching.
 - When a worker completes a complex task, review their notes and consolidate findings into project-level summaries.
 - When requirements change, update related notes to reflect the new direction — don't let notes go stale.
 
