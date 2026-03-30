@@ -450,9 +450,16 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               size="sm"
               className="gap-1 text-xs"
               onClick={() => {
+                if (!managerSplit) {
+                  // Splitting: manager leaves tabs → activate first content tab
+                  if (activeTabId === "manager") {
+                    setActiveTabId(openTaskIds[0] ?? openNoteIds[0] ?? null);
+                  }
+                } else {
+                  // Merging: manager joins tabs → activate manager if nothing active
+                  if (!activeTabId) setActiveTabId("manager");
+                }
                 setManagerSplit(!managerSplit);
-                // When merging back, if active tab isn't set, activate manager
-                if (managerSplit && !activeTabId) setActiveTabId("manager");
               }}
               title={managerSplit ? "Merge manager into tabs" : "Split manager to separate panel"}
             >
@@ -727,7 +734,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                             className={`group/tab flex items-center gap-1 px-3 py-2 text-xs font-medium transition-colors flex-shrink-0 max-w-[180px] ${activeTabId === note.id ? "bg-background border-b-2 border-violet-500 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
                             onClick={() => setActiveTabId(note.id)}
                           >
-                            <FileText className="w-3 h-3" />
+                            <FileText className="w-3 h-3 flex-shrink-0" />
                             <span className="truncate">{note.title}</span>
                             <span
                               className="p-0.5 rounded opacity-0 group-hover/tab:opacity-100 hover:bg-accent"
