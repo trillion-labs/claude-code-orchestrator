@@ -132,6 +132,28 @@ export function ManagerChatPanel({
             <Play className="w-3.5 h-3.5" />
             {hasResumableSession ? "Resume Manager" : "Start Manager"}
           </Button>
+          {hasResumableSession && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+                  <RotateCcw className="w-3 h-3" />
+                  Start Fresh
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset Manager</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will discard the previous manager session and start a fresh one. Conversation history will not be carried over.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={onReset}>Start Fresh</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       )}
     </div>
