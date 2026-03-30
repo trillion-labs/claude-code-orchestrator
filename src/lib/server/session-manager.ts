@@ -49,6 +49,7 @@ export class SessionManager extends EventEmitter {
   private sshManager: SSHConnectionManager;
   private pendingPermissions = new Map<string, PermissionResolver>();
   private orchestratorPort: number;
+  private mcpSetupQueues = new Map<string, Promise<void>>();
 
   constructor(orchestratorPort = 3000) {
     super();
@@ -265,13 +266,33 @@ export class SessionManager extends EventEmitter {
         );
       } else {
         // Remote: set up reverse port forward + remote MCP server (with timeout)
-        const remoteConfig = await Promise.race([
-          this.setupRemoteMcpPermission(sessionId, machine, projectId),
-          new Promise<null>((resolve) => setTimeout(() => {
+        // Serialize MCP setup per machine to prevent concurrent SFTP hangs
+        const machineId = machine.id;
+        const prevSetup = this.mcpSetupQueues.get(machineId) ?? Promise.resolve();
+        let resolveChain!: () => void;
+        const chainSlot = new Promise<void>((res) => { resolveChain = res; });
+        this.mcpSetupQueues.set(machineId, prevSetup.then(() => chainSlot));
+
+        const remoteConfig = await new Promise<string | null>((resolve) => {
+          const timer = setTimeout(() => {
             console.warn(`[Session ${sessionId}] Remote MCP setup timed out after 10s`);
+            resolveChain();
             resolve(null);
-          }, 10000)),
-        ]);
+          }, 10000);
+
+          prevSetup.then(() => this.setupRemoteMcpPermission(sessionId, machine))
+            .then((config) => {
+              clearTimeout(timer);
+              resolveChain();
+              resolve(config);
+            })
+            .catch((err) => {
+              clearTimeout(timer);
+              resolveChain();
+              console.warn(`[Session ${sessionId}] Remote MCP setup failed:`, (err as Error).message);
+              resolve(null);
+            });
+        });
         if (remoteConfig) {
           managed.mcpConfigPath = remoteConfig; // Remote path for cleanup
           args.push(
