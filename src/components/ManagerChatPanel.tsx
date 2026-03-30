@@ -1,7 +1,18 @@
 "use client";
 
-import { X, ExternalLink, Wand2, Play } from "lucide-react";
+import { X, ExternalLink, Wand2, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
 import { PromptInput } from "./PromptInput";
@@ -15,6 +26,7 @@ interface ManagerChatPanelProps {
   onClose: () => void;
   onViewSession: () => void;
   onCreateOrResume: () => void;
+  onReset: () => void;
   onSendPrompt: (prompt: string) => void;
   onCancelPrompt: () => void;
   onPermissionResponse: (requestId: string, allow: boolean, answers?: Record<string, string>, message?: string) => void;
@@ -28,6 +40,7 @@ export function ManagerChatPanel({
   onClose,
   onViewSession,
   onCreateOrResume,
+  onReset,
   onSendPrompt,
   onCancelPrompt,
   onPermissionResponse,
@@ -53,6 +66,30 @@ export function ManagerChatPanel({
               <ExternalLink className="w-3 h-3" />
               View Session
             </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  title="Reset manager session"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reset Manager</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will terminate the current manager session and start a fresh one. Conversation history will not be carried over.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={onReset}>Reset</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </>
         )}
         <button

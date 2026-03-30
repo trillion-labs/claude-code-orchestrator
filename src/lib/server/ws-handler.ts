@@ -860,7 +860,16 @@ export class WebSocketHandler {
             this.send(ws, { type: "error", error: `Project ${msg.projectId} not found` });
             return;
           }
-          if (project.orchestratorSessionId) {
+          // Reset: terminate existing session and clear saved claudeSessionId
+          if (msg.reset) {
+            if (project.orchestratorSessionId) {
+              const existing = this.sessionManager.getSession(project.orchestratorSessionId);
+              if (existing && existing.status !== "terminated" && existing.status !== "error") {
+                await this.sessionManager.terminateSession(project.orchestratorSessionId);
+              }
+            }
+            await this.projectManager.resetOrchestratorSession(project.id);
+          } else if (project.orchestratorSessionId) {
             // Already has an orchestrator — check if it's still alive
             const existing = this.sessionManager.getSession(project.orchestratorSessionId);
             if (existing && existing.status !== "terminated" && existing.status !== "error") {
@@ -877,8 +886,8 @@ export class WebSocketHandler {
           // Build system prompt (board state is fetched via list_tasks tool, not embedded)
           const systemPrompt = buildOrchestratorPrompt(project);
 
-          // Resume previous orchestrator session if available
-          const resumeId = project.orchestratorClaudeSessionId || undefined;
+          // Resume previous orchestrator session if available (skip on reset)
+          const resumeId = msg.reset ? undefined : (project.orchestratorClaudeSessionId || undefined);
 
           const session = await this.sessionManager.createSession(
             machine,

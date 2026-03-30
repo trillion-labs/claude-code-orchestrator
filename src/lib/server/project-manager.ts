@@ -382,4 +382,9 @@ export class ProjectManager {
     // Clear the live session ID but keep claudeSessionId for resume
     await this.store.updateProject(projectId, { orchestratorSessionId: undefined } as any);
   }
+
+  async resetOrchestratorSession(projectId: string): Promise<void> {
+    // Clear both session ID and claudeSessionId — forces fresh session on next create
+    await this.store.updateProject(projectId, { orchestratorSessionId: undefined, orchestratorClaudeSessionId: undefined } as any);
+  }
 }

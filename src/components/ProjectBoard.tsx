@@ -617,6 +617,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               onClose={() => setManagerPanelOpen(false)}
               onViewSession={() => orchestratorSessionId && onViewSession(orchestratorSessionId)}
               onCreateOrResume={() => send({ type: "orchestrator.create", projectId: project.id })}
+              onReset={() => send({ type: "orchestrator.create", projectId: project.id, reset: true })}
               onSendPrompt={(prompt) => send({ type: "orchestrator.prompt", projectId: project.id, prompt })}
               onCancelPrompt={() => {
                 if (orchestratorSessionId) {
