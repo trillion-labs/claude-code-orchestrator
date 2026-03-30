@@ -28,7 +28,8 @@ import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shar
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "./NotesList";
-import { Server, FolderOpen, Link, GripVertical, Wand2, Columns2, Layers, X } from "lucide-react";
+import { NoteDetail } from "./NoteDetail";
+import { Server, FolderOpen, Link, GripVertical, Wand2, Columns2, Layers, X, FileText, Plus } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
@@ -39,12 +40,11 @@ interface ProjectBoardProps {
 // Module-level cache: survives unmount (e.g. projects ↔ sessions view switch)
 interface PanelState {
   openTaskIds: string[];
-  activeTaskId: string | null;
-  managerPanelOpen: boolean;
-  sidePanelMode: "split" | "tabbed";
-  activeTab: "task" | "manager";
   openNoteIds: string[];
-  activeNoteId: string | null;
+  managerPanelOpen: boolean;
+  managerSplit: boolean; // true = manager in separate panel, false = manager as tab
+  activeTabId: string | null; // "manager" | task id | note id
+  noteSidebarOpen: boolean;
 }
 const panelStateCache = new Map<string, PanelState>();
 
@@ -65,17 +65,15 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   // Restore per-project panel state from cache (or use defaults)
   const cached = panelStateCache.get(project.id);
   const [openTaskIds, setOpenTaskIds] = useState<string[]>(cached?.openTaskIds ?? []);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(cached?.activeTaskId ?? null);
+  const [openNoteIds, setOpenNoteIds] = useState<string[]>(cached?.openNoteIds ?? []);
   const [managerPanelOpen, setManagerPanelOpen] = useState(cached?.managerPanelOpen ?? false);
-  const [sidePanelMode, setSidePanelMode] = useState<"split" | "tabbed">(cached?.sidePanelMode ?? "split");
-  const [activeTab, setActiveTab] = useState<"task" | "manager">(cached?.activeTab ?? "task");
+  const [managerSplit, setManagerSplit] = useState(cached?.managerSplit ?? false);
+  const [activeTabId, setActiveTabId] = useState<string | null>(cached?.activeTabId ?? null);
+  const [noteSidebarOpen, setNoteSidebarOpen] = useState(cached?.noteSidebarOpen ?? false);
   const [projectTab, _setProjectTab] = useState<"kanban" | "notes">(globalProjectTab);
   const setProjectTab = (v: "kanban" | "notes") => { globalProjectTab = v; _setProjectTab(v); };
-  const [openNoteIds, setOpenNoteIds] = useState<string[]>(cached?.openNoteIds ?? []);
-  const [activeNoteId, setActiveNoteId] = useState<string | null>(cached?.activeNoteId ?? null);
-  const [taskPanelWidth, setTaskPanelWidth] = useState(480);
+  const [contentPanelWidth, setContentPanelWidth] = useState(580);
   const [managerPanelWidth, setManagerPanelWidth] = useState(480);
-  const [tabbedPanelWidth, setTabbedPanelWidth] = useState(780);
 
   // Save panel state to cache on every state change (keyed by current project)
   const prevProjectId = useRef<string>(project.id);
@@ -84,10 +82,9 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
 
   useEffect(() => {
     panelStateCache.set(currentProjectId.current, {
-      openTaskIds, activeTaskId, managerPanelOpen, sidePanelMode, activeTab,
-      openNoteIds, activeNoteId,
+      openTaskIds, openNoteIds, managerPanelOpen, managerSplit, activeTabId, noteSidebarOpen,
     });
-  }, [openTaskIds, activeTaskId, managerPanelOpen, sidePanelMode, activeTab, openNoteIds, activeNoteId]);
+  }, [openTaskIds, openNoteIds, managerPanelOpen, managerSplit, activeTabId, noteSidebarOpen]);
 
   useEffect(() => {
     // Project switch: restore cached state for the new project
@@ -95,32 +92,24 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
       const next = panelStateCache.get(project.id);
       if (next) {
         setOpenTaskIds(next.openTaskIds);
-        setActiveTaskId(next.activeTaskId);
-        setManagerPanelOpen(next.managerPanelOpen);
-        setSidePanelMode(next.sidePanelMode);
-        setActiveTab(next.activeTab);
         setOpenNoteIds(next.openNoteIds);
-        setActiveNoteId(next.activeNoteId);
+        setManagerPanelOpen(next.managerPanelOpen);
+        setManagerSplit(next.managerSplit);
+        setActiveTabId(next.activeTabId);
+        setNoteSidebarOpen(next.noteSidebarOpen);
       } else {
         setOpenTaskIds([]);
-        setActiveTaskId(null);
-        setManagerPanelOpen(false);
-        setSidePanelMode("split");
-        setActiveTab("task");
         setOpenNoteIds([]);
-        setActiveNoteId(null);
+        setManagerPanelOpen(false);
+        setManagerSplit(false);
+        setActiveTabId(null);
+        setNoteSidebarOpen(false);
       }
       prevProjectId.current = project.id;
     }
   }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const projectTasks = useMemo(() => tasks.get(project.id) || [], [tasks, project.id]);
-
-  // Derive active task from store
-  const activeOpenTask = useMemo(() => {
-    if (!activeTaskId) return null;
-    return projectTasks.find((t) => t.id === activeTaskId) ?? null;
-  }, [activeTaskId, projectTasks]);
 
   // Resolve open tasks for tab rendering
   const openTasks = useMemo(() => {
@@ -129,8 +118,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
       .filter(Boolean) as Task[];
   }, [openTaskIds, projectTasks]);
 
-  const hasTaskPanel = openTasks.length > 0;
-  const resizeRef = useRef<{ startX: number; startWidth: number; target: "task" | "manager" | "tabbed" } | null>(null);
+  // Whether there's any content to show in the content panel (tasks, notes, or non-split manager)
+  const hasContentPanel = openTasks.length > 0 || openNoteIds.length > 0 || (managerPanelOpen && !managerSplit);
+
+  const resizeRef = useRef<{ startX: number; startWidth: number; target: "content" | "manager" } | null>(null);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -138,9 +129,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
       const delta = resizeRef.current.startX - e.clientX;
       const maxWidth = Math.floor(window.innerWidth * 0.7);
       const newWidth = Math.min(maxWidth, Math.max(300, resizeRef.current.startWidth + delta));
-      if (resizeRef.current.target === "task") setTaskPanelWidth(newWidth);
-      else if (resizeRef.current.target === "manager") setManagerPanelWidth(newWidth);
-      else setTabbedPanelWidth(newWidth);
+      if (resizeRef.current.target === "content") setContentPanelWidth(newWidth);
+      else setManagerPanelWidth(newWidth);
     };
     const handleMouseUp = () => {
       resizeRef.current = null;
@@ -262,9 +252,13 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const handleManagerClick = () => {
     if (managerPanelOpen) {
       setManagerPanelOpen(false);
+      // If active tab was manager, switch to something else
+      if (activeTabId === "manager") {
+        setActiveTabId(openTaskIds[0] ?? openNoteIds[0] ?? null);
+      }
     } else {
       setManagerPanelOpen(true);
-      if (sidePanelMode === "tabbed") setActiveTab("manager");
+      if (!managerSplit) setActiveTabId("manager");
       if (!orchestratorSessionId) {
         send({ type: "orchestrator.create", projectId: project.id });
       }
@@ -298,19 +292,20 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const handleCloseTaskTab = useCallback((taskId: string) => {
     setOpenTaskIds((prev) => {
       const next = prev.filter((id) => id !== taskId);
-      if (activeTaskId === taskId) {
+      if (activeTabId === taskId) {
+        // Pick next tab: adjacent task, or any open note, or manager, or null
         const idx = prev.indexOf(taskId);
-        setActiveTaskId(next[Math.min(idx, next.length - 1)] ?? null);
+        const nextTaskId = next[Math.min(idx, next.length - 1)];
+        setActiveTabId(nextTaskId ?? openNoteIds[0] ?? (managerPanelOpen && !managerSplit ? "manager" : null));
       }
       return next;
     });
-  }, [activeTaskId]);
+  }, [activeTabId, openNoteIds, managerPanelOpen, managerSplit]);
 
   const handleOpenTask = useCallback((taskId: string) => {
     setOpenTaskIds((prev) => (prev.includes(taskId) ? prev : [...prev, taskId]));
-    setActiveTaskId(taskId);
-    if (sidePanelMode === "tabbed") setActiveTab("task");
-  }, [sidePanelMode]);
+    setActiveTabId(taskId);
+  }, []);
 
   const handleDeleteTask = (taskId: string) => {
     send({ type: "task.delete", projectId: project.id, taskId });
@@ -327,6 +322,78 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
 
   const handleResumeTask = (task: Task) => {
     send({ type: "task.resume", projectId: project.id, taskId: task.id });
+  };
+
+  // ── Notes data & handlers (for kanban sidebar + side panel) ──
+  const notesMap = useStore((s) => s.notes);
+  const noteContentMap = useStore((s) => s.noteContent);
+  const setNoteContent = useStore((s) => s.setNoteContent);
+  const projectNotes = useMemo(() => notesMap.get(project.id) || [], [notesMap, project.id]);
+  const sortedNotes = useMemo(() => [...projectNotes].sort((a, b) => b.updatedAt - a.updatedAt), [projectNotes]);
+
+  const prevNoteCountRef = useRef(projectNotes.length);
+
+  // Fetch note list when sidebar opens
+  useEffect(() => {
+    if (noteSidebarOpen) {
+      send({ type: "note.list", projectId: project.id });
+    }
+  }, [noteSidebarOpen, project.id, send]);
+
+  // Auto-open newly created notes in the side panel
+  useEffect(() => {
+    if (projectNotes.length > prevNoteCountRef.current) {
+      const newest = [...projectNotes].sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (newest) {
+        handleOpenNote(newest.id);
+      }
+    }
+    prevNoteCountRef.current = projectNotes.length;
+  }, [projectNotes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openNotes = useMemo(
+    () => openNoteIds.map((id) => projectNotes.find((n) => n.id === id)).filter(Boolean) as typeof projectNotes,
+    [openNoteIds, projectNotes]
+  );
+  const activeNote = useMemo(
+    () => (activeTabId ? projectNotes.find((n) => n.id === activeTabId) ?? null : null),
+    [activeTabId, projectNotes]
+  );
+
+  const handleOpenNote = useCallback((noteId: string) => {
+    setOpenNoteIds((prev) => (prev.includes(noteId) ? prev : [...prev, noteId]));
+    setActiveTabId(noteId);
+    if (!noteContentMap.has(noteId)) {
+      send({ type: "note.get", projectId: project.id, noteId });
+    }
+  }, [noteContentMap, project.id, send]);
+
+  const handleCloseNoteTab = useCallback((noteId: string) => {
+    setOpenNoteIds((prev) => {
+      const next = prev.filter((id) => id !== noteId);
+      if (activeTabId === noteId) {
+        const idx = prev.indexOf(noteId);
+        const nextNoteId = next[Math.min(idx, next.length - 1)];
+        setActiveTabId(nextNoteId ?? openTaskIds[0] ?? (managerPanelOpen && !managerSplit ? "manager" : null));
+      }
+      return next;
+    });
+  }, [activeTabId, openTaskIds, managerPanelOpen, managerSplit]);
+
+  const handleUpdateNote = useCallback((noteId: string, updates: { title?: string; content?: string }) => {
+    send({ type: "note.update", projectId: project.id, noteId, updates });
+    if (updates.content !== undefined) {
+      setNoteContent(noteId, updates.content);
+    }
+  }, [project.id, send, setNoteContent]);
+
+  const handleDeleteNote = useCallback((noteId: string) => {
+    send({ type: "note.delete", projectId: project.id, noteId });
+    handleCloseNoteTab(noteId);
+  }, [project.id, send, handleCloseNoteTab]);
+
+  const handleCreateNote = () => {
+    send({ type: "note.create", projectId: project.id, title: "Untitled Note", content: "" });
   };
 
   // Manager session data
@@ -376,17 +443,28 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
           </span>
         </div>
         <div className="flex-shrink-0 flex items-center gap-1.5">
-          {/* Split/Tabbed toggle — only when both panels are open (kanban mode) */}
-          {projectTab === "kanban" && hasTaskPanel && managerPanelOpen && (
+          {/* Split manager toggle — only when manager + other content is open */}
+          {projectTab === "kanban" && managerPanelOpen && (openTasks.length > 0 || openNoteIds.length > 0) && (
             <Button
               variant="ghost"
               size="sm"
               className="gap-1 text-xs"
-              onClick={() => setSidePanelMode(sidePanelMode === "split" ? "tabbed" : "split")}
-              title={sidePanelMode === "split" ? "Switch to tabbed view" : "Switch to split view"}
+              onClick={() => {
+                if (!managerSplit) {
+                  // Splitting: manager leaves tabs → activate first content tab
+                  if (activeTabId === "manager") {
+                    setActiveTabId(openTaskIds[0] ?? openNoteIds[0] ?? null);
+                  }
+                } else {
+                  // Merging: manager joins tabs → activate manager if nothing active
+                  if (!activeTabId) setActiveTabId("manager");
+                }
+                setManagerSplit(!managerSplit);
+              }}
+              title={managerSplit ? "Merge manager into tabs" : "Split manager to separate panel"}
             >
-              {sidePanelMode === "split" ? <Layers className="w-3.5 h-3.5" /> : <Columns2 className="w-3.5 h-3.5" />}
-              {sidePanelMode === "split" ? "Tabbed" : "Split"}
+              {managerSplit ? <Layers className="w-3.5 h-3.5" /> : <Columns2 className="w-3.5 h-3.5" />}
+              {managerSplit ? "Merge" : "Split"}
             </Button>
           )}
           {projectTab === "kanban" && (
@@ -399,6 +477,15 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               >
                 <Wand2 className="w-3.5 h-3.5" />
                 Manager
+              </Button>
+              <Button
+                variant={noteSidebarOpen ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setNoteSidebarOpen(!noteSidebarOpen)}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Notes
               </Button>
               <SessionPickerDialog
                 title="Import Session as Task"
@@ -425,8 +512,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
             send={send}
             openNoteIds={openNoteIds}
             setOpenNoteIds={setOpenNoteIds}
-            activeNoteId={activeNoteId}
-            setActiveNoteId={setActiveNoteId}
+            activeNoteId={activeTabId}
+            setActiveNoteId={setActiveTabId}
           />
         ) : (
         <div className="flex-1 overflow-x-auto min-w-0">
@@ -468,10 +555,10 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
         </div>
         )}
 
-        {/* Side panels (Kanban mode only) */}
-        {projectTab === "kanban" && (hasTaskPanel || managerPanelOpen) && (() => {
-          const bothOpen = hasTaskPanel && managerPanelOpen;
-
+        {/* ── Side panels (Kanban mode only) ── */}
+        {/* Layout: Kanban | [Manager split panel] | [Content panel (tabs)] | [Note sidebar] */}
+        {projectTab === "kanban" && (() => {
+          // Helper: render a task detail for a given task
           const renderTaskDetail = (task: Task) => {
             const session = task.sessionId ? sessions.get(task.sessionId) : undefined;
             const msgs = task.sessionId ? messages.get(task.sessionId) || [] : [];
@@ -520,7 +607,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
             );
           };
 
-          const managerChatEl = managerPanelOpen && (
+          // Helper: manager chat element
+          const managerChatEl = (
             <ManagerChatPanel
               session={managerSession}
               messages={managerMessages}
@@ -529,6 +617,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
               onClose={() => setManagerPanelOpen(false)}
               onViewSession={() => orchestratorSessionId && onViewSession(orchestratorSessionId)}
               onCreateOrResume={() => send({ type: "orchestrator.create", projectId: project.id })}
+              onReset={() => send({ type: "orchestrator.create", projectId: project.id, reset: true })}
               onSendPrompt={(prompt) => send({ type: "orchestrator.prompt", projectId: project.id, prompt })}
               onCancelPrompt={() => {
                 if (orchestratorSessionId) {
@@ -553,7 +642,8 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
             />
           );
 
-          const resizeHandle = (target: "task" | "manager" | "tabbed", width: number) => (
+          // Helper: resize handle
+          const resizeHandle = (target: "content" | "manager", width: number) => (
             <div
               className="w-1.5 flex-shrink-0 cursor-col-resize flex items-center justify-center hover:bg-violet-500/20 active:bg-violet-500/30 transition-colors group"
               onMouseDown={(e) => {
@@ -567,105 +657,137 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
             </div>
           );
 
-          // Task tab bar component
-          const taskTabBar = (includeManager: boolean) => (
-            <div className="flex items-center border-b border-l bg-muted/30 overflow-x-auto">
-              {includeManager && (
-                <button
-                  className={`flex items-center gap-1 px-3 py-2 text-xs font-medium transition-colors flex-shrink-0 border-r border-border/50 ${activeTab === "manager" ? "bg-background border-b-2 border-violet-500 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                  onClick={() => setActiveTab("manager")}
-                >
-                  <Wand2 className="w-3 h-3" />
-                  Manager
-                </button>
-              )}
-              {openTasks.map((task) => {
-                const isActive = includeManager
-                  ? activeTab === "task" && task.id === activeTaskId
-                  : task.id === activeTaskId;
-                return (
-                  <button
-                    key={task.id}
-                    className={`group/tab flex items-center gap-1 px-3 py-2 text-xs font-medium transition-colors flex-shrink-0 max-w-[180px] ${isActive ? "bg-background border-b-2 border-violet-500 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
-                    onClick={() => {
-                      setActiveTaskId(task.id);
-                      if (includeManager) setActiveTab("task");
-                    }}
-                  >
-                    <span className="truncate">{task.title}</span>
-                    <span
-                      className="p-0.5 rounded opacity-0 group-hover/tab:opacity-100 hover:bg-accent"
-                      onClick={(e) => { e.stopPropagation(); handleCloseTaskTab(task.id); }}
-                    >
-                      <X className="w-3 h-3" />
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          );
-
-          // Task panel content (tab bar + active task detail)
-          const taskPanelContent = (
-            <div className="flex flex-col h-full">
-              {openTasks.length > 1 && taskTabBar(false)}
-              <div className="flex-1 min-h-0">
-                {activeOpenTask && renderTaskDetail(activeOpenTask)}
-              </div>
-            </div>
-          );
-
-          // Both panels open — split or tabbed
-          if (bothOpen) {
-            if (sidePanelMode === "split") {
+          // Determine what the active tab should render
+          const renderActiveContent = () => {
+            if (activeTabId === "manager" && managerPanelOpen && !managerSplit) {
+              return managerChatEl;
+            }
+            // Check if it's a task
+            const task = openTasks.find((t) => t.id === activeTabId);
+            if (task) return renderTaskDetail(task);
+            // Check if it's a note
+            const note = openNotes.find((n) => n.id === activeTabId);
+            if (note) {
+              const content = noteContentMap.get(note.id);
               return (
-                <>
-                  {/* Task detail panel */}
-                  <div className="flex-shrink-0 flex" style={{ width: taskPanelWidth }}>
-                    {resizeHandle("task", taskPanelWidth)}
-                    <div className="flex-1 min-w-0">{taskPanelContent}</div>
-                  </div>
-                  {/* Manager chat panel */}
-                  <div className="flex-shrink-0 flex" style={{ width: managerPanelWidth }}>
-                    {resizeHandle("manager", managerPanelWidth)}
-                    <div className="flex-1 min-w-0">{managerChatEl}</div>
-                  </div>
-                </>
+                <NoteDetail
+                  key={note.id}
+                  note={note}
+                  content={content ?? ""}
+                  onClose={() => handleCloseNoteTab(note.id)}
+                  onUpdate={(updates) => handleUpdateNote(note.id, updates)}
+                  onDelete={() => handleDeleteNote(note.id)}
+                />
               );
             }
+            return null;
+          };
 
-            // Tabbed mode — all task tabs + manager tab in one panel
-            return (
-              <div className="flex-shrink-0 flex" style={{ width: tabbedPanelWidth }}>
-                {resizeHandle("tabbed", tabbedPanelWidth)}
-                <div className="flex-1 min-w-0 flex flex-col h-full">
-                  {taskTabBar(true)}
-                  <div className="flex-1 min-h-0">
-                    {activeTab === "task" && activeOpenTask
-                      ? renderTaskDetail(activeOpenTask)
-                      : managerChatEl}
+          // Build tab list: [Manager?] [Tasks...] [Notes...]
+          const showManagerTab = managerPanelOpen && !managerSplit;
+          const tabCount = (showManagerTab ? 1 : 0) + openTasks.length + openNotes.length;
+
+          return (
+            <>
+              {/* Manager split panel (separate, left of content) */}
+              {managerPanelOpen && managerSplit && (
+                <div className="flex-shrink-0 flex" style={{ width: managerPanelWidth }}>
+                  {resizeHandle("manager", managerPanelWidth)}
+                  <div className="flex-1 min-w-0">{managerChatEl}</div>
+                </div>
+              )}
+
+              {/* Content panel (unified tabs: manager + tasks + notes) */}
+              {hasContentPanel && (
+                <div className="flex-shrink-0 flex" style={{ width: contentPanelWidth }}>
+                  {resizeHandle("content", contentPanelWidth)}
+                  <div className="flex-1 min-w-0 flex flex-col h-full">
+                    {/* Tab bar — show when 2+ tabs */}
+                    {tabCount > 1 && (
+                      <div className="flex items-center border-b border-l bg-muted/30 overflow-x-auto">
+                        {showManagerTab && (
+                          <button
+                            className={`flex items-center gap-1 px-3 py-2 text-xs font-medium transition-colors flex-shrink-0 ${activeTabId === "manager" ? "bg-background border-b-2 border-violet-500 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                            onClick={() => setActiveTabId("manager")}
+                          >
+                            <Wand2 className="w-3 h-3" />
+                            Manager
+                          </button>
+                        )}
+                        {openTasks.map((task) => (
+                          <button
+                            key={task.id}
+                            className={`group/tab flex items-center gap-1 px-3 py-2 text-xs font-medium transition-colors flex-shrink-0 max-w-[180px] ${activeTabId === task.id ? "bg-background border-b-2 border-violet-500 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                            onClick={() => setActiveTabId(task.id)}
+                          >
+                            <span className="truncate">{task.title}</span>
+                            <span
+                              className="p-0.5 rounded opacity-0 group-hover/tab:opacity-100 hover:bg-accent"
+                              onClick={(e) => { e.stopPropagation(); handleCloseTaskTab(task.id); }}
+                            >
+                              <X className="w-3 h-3" />
+                            </span>
+                          </button>
+                        ))}
+                        {openNotes.map((note) => (
+                          <button
+                            key={note.id}
+                            className={`group/tab flex items-center gap-1 px-3 py-2 text-xs font-medium transition-colors flex-shrink-0 max-w-[180px] ${activeTabId === note.id ? "bg-background border-b-2 border-violet-500 text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"}`}
+                            onClick={() => setActiveTabId(note.id)}
+                          >
+                            <FileText className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{note.title}</span>
+                            <span
+                              className="p-0.5 rounded opacity-0 group-hover/tab:opacity-100 hover:bg-accent"
+                              onClick={(e) => { e.stopPropagation(); handleCloseNoteTab(note.id); }}
+                            >
+                              <X className="w-3 h-3" />
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex-1 min-h-0">
+                      {renderActiveContent()}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          }
+              )}
 
-          // Single panel type open (tasks only or manager only)
-          if (hasTaskPanel) {
-            return (
-              <div className="flex-shrink-0 flex" style={{ width: tabbedPanelWidth }}>
-                {resizeHandle("tabbed", tabbedPanelWidth)}
-                <div className="flex-1 min-w-0">{taskPanelContent}</div>
-              </div>
-            );
-          }
-
-          // Manager only
-          return (
-            <div className="flex-shrink-0 flex" style={{ width: tabbedPanelWidth }}>
-              {resizeHandle("tabbed", tabbedPanelWidth)}
-              <div className="flex-1 min-w-0">{managerChatEl}</div>
-            </div>
+              {/* Note sidebar (rightmost) */}
+              {noteSidebarOpen && (
+                <div className="flex-shrink-0 w-56 border-l bg-muted/20 flex flex-col h-full">
+                  <div className="flex items-center justify-between px-3 py-2 border-b">
+                    <span className="text-xs font-medium text-muted-foreground">Notes</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCreateNote}>
+                      <Plus className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {sortedNotes.length === 0 ? (
+                      <div className="flex flex-col items-center py-8 text-muted-foreground">
+                        <FileText className="w-6 h-6 mb-2 opacity-40" />
+                        <p className="text-xs">No notes yet</p>
+                      </div>
+                    ) : (
+                      sortedNotes.map((note) => (
+                        <button
+                          key={note.id}
+                          className={`w-full text-left px-2.5 py-2 rounded-md text-xs transition-colors ${
+                            openNoteIds.includes(note.id)
+                              ? "bg-accent border border-violet-500/30"
+                              : "hover:bg-accent/50 border border-transparent"
+                          }`}
+                          onClick={() => handleOpenNote(note.id)}
+                        >
+                          <p className="font-medium truncate">{note.title}</p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
           );
         })()}
       </div>

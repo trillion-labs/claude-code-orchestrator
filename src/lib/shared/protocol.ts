@@ -77,7 +77,7 @@ export type ClientMessage =
   // ── Message history pagination ──
   | { type: "session.history"; sessionId: string; before: number; limit?: number }
   // ── Orchestrator Manager ──
-  | { type: "orchestrator.create"; projectId: string }
+  | { type: "orchestrator.create"; projectId: string; reset?: boolean }
   | { type: "orchestrator.prompt"; projectId: string; prompt: string }
   // ── Prompt queue ──
   | { type: "session.dequeue"; sessionId: string; index: number }
