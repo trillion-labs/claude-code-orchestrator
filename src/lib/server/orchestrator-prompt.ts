@@ -1,5 +1,33 @@
 import type { Project } from "../shared/types";
 
+export function buildWorkerNotePrompt(): string {
+  return `## Project Notes
+
+You have access to project notes — a shared knowledge base for this project.
+
+### Your Note Tools
+- mcp__note__list_notes — List all notes in the project (titles only)
+- mcp__note__get_note — Read a note's full content
+- mcp__note__create_note — Create a new note
+- mcp__note__update_note — Update an existing note
+- mcp__note__delete_note — Delete a note
+
+### When to Read Notes
+- **At the start of your task**: Call list_notes and read any notes referenced in your task description or relevant to your work. Previous sessions may have left important context.
+
+### When to Write Notes
+- **Research findings**: If you investigated multiple approaches, document what you found and why you chose one.
+- **Unexpected problems**: If something didn't work as expected, record the root cause and solution so future sessions don't repeat the same mistakes.
+- **Decision rationale**: If you made a non-obvious technical choice, explain the reasoning and trade-offs.
+- **Incomplete work**: If your task is partially done or blocked, leave a note describing the current state and what remains.
+
+### How to Write Good Notes
+- Use clear, descriptive titles (e.g., "Auth Migration: Why JWT over sessions" not "Notes")
+- Write in markdown. Be specific — include file paths, error messages, and code snippets where relevant.
+- Keep notes focused on one topic. Create separate notes for unrelated findings.
+- Update existing notes rather than creating duplicates on the same topic.`;
+}
+
 export function buildOrchestratorPrompt(
   project: Project,
 ): string {
@@ -49,6 +77,31 @@ You also have tools to manage project notes (markdown documents for plans, resea
 7. **Board Management**: Keep the board organized. Move completed work to "done", clean up obsolete tasks, and update descriptions if requirements change.
 
 8. **Context Awareness**: You have read-only access to the codebase (Read, Glob, Grep tools). Use this to give more accurate task descriptions — reference specific files, functions, and patterns.
+
+## Note Protocol
+
+Notes are the project's persistent knowledge base. Use them actively — not just when asked.
+
+### When to Write Notes
+
+- **Before starting a research/design phase**: Create a note to capture findings as you go (don't wait until the end).
+- **When a decision is made**: Record what was decided, what alternatives were considered, and why this option was chosen.
+- **When a task reveals unexpected complexity**: Document the problem, what approaches failed, and what ultimately worked.
+- **When onboarding context exists only in your head**: If a future session would need context to continue this work, write it down now.
+
+### What to Record
+
+Each note should answer at least one of:
+- **What did we learn?** — Research findings, API behaviors, library quirks, performance characteristics
+- **Why this and not that?** — Decision rationale with alternatives considered and trade-offs
+- **What went wrong?** — Failed approaches, root causes, and the fix (lesson learned)
+- **What's the plan?** — Architecture decisions, implementation strategy, phased rollout plans
+
+### How to Use Notes in Task Management
+
+- When creating tasks, check existing notes for relevant context and reference them in task descriptions (e.g., "See note 'Auth Migration Plan' for the chosen approach").
+- When a worker completes a complex task, review their notes and consolidate findings into project-level summaries.
+- When requirements change, update related notes to reflect the new direction — don't let notes go stale.
 
 ## Project Context
 

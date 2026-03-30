@@ -11,6 +11,7 @@ import { StreamParser } from "./stream-parser";
 import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, WorktreeInfo } from "../shared/types";
 import { PERMISSION_MODES } from "../shared/types";
 import { resolvePermissionByMode } from "./permission-utils";
+import { buildWorkerNotePrompt } from "./orchestrator-prompt";
 
 interface PermissionResolver {
   resolve: (result: { behavior: string; updatedInput?: Record<string, unknown>; message?: string }) => void;
@@ -264,6 +265,11 @@ export class SessionManager extends EventEmitter {
     if (options?.isOrchestrator && options.systemPrompt) {
       args.push("--allowedTools", "Read,Glob,Grep,mcp__orch__*,mcp__perm__*");
       args.push("--append-system-prompt", options.systemPrompt);
+    }
+
+    // Worker sessions with project context: inject note protocol
+    if (!options?.isOrchestrator && projectId) {
+      args.push("--append-system-prompt", buildWorkerNotePrompt());
     }
 
     if (resumeSessionId) {
