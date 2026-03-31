@@ -60,11 +60,30 @@ export class SessionManager extends EventEmitter {
     const sessionId = uuidv4();
     const claudeSessionId = resumeSessionId || uuidv4();
 
+    // Resolve workDir to absolute path to avoid ~ vs /home/... mismatch
+    let resolvedWorkDir = workDir;
+    if (machine.type === "local") {
+      resolvedWorkDir = workDir.replace(/^~(?=\/|$)/, process.env.HOME || "~");
+    } else {
+      try {
+        const ch = await this.sshManager.exec(machine, `realpath "${workDir.replace(/"/g, '\\"')}" 2>/dev/null || echo "${workDir.replace(/"/g, '\\"')}"`);
+        const out = await new Promise<string>((resolve) => {
+          let s = "";
+          ch.on("data", (d: Buffer) => { s += d.toString(); });
+          ch.on("close", () => resolve(s.trim()));
+          ch.on("error", () => resolve(workDir));
+        });
+        if (out && out.startsWith("/")) resolvedWorkDir = out;
+      } catch {
+        // SSH not ready yet — keep original path
+      }
+    }
+
     const session: Session = {
       id: sessionId,
       machineId: machine.id,
       machineName: machine.name,
-      workDir,
+      workDir: resolvedWorkDir,
       status: "starting",
       claudeSessionId,
       createdAt: Date.now(),
@@ -284,13 +303,36 @@ export class SessionManager extends EventEmitter {
 
     try {
       // Load chat history from .jsonl if resuming
+      // NOTE: loadRemoteSessionHistory may update managed.session.claudeSessionId
+      // if the stored UUID doesn't exist and a fallback file is found.
+      // So we must add --resume AFTER history load.
+      let historyResult: "loaded" | "not_found" | "error" | null = null;
       if (resumeSessionId) {
         if (machine.type === "local") {
           await this.loadSessionHistory(managed, resumeSessionId);
+          historyResult = managed.messages.length > 0 ? "loaded" : "not_found";
         } else {
-          await this.loadRemoteSessionHistory(managed, machine, resumeSessionId);
+          historyResult = await this.loadRemoteSessionHistory(managed, machine, resumeSessionId);
         }
       }
+
+      // Add --resume or --session-id AFTER history load.
+      // "not_found" → truly no file, start fresh with new UUID.
+      // "error" (SSH timeout etc.) → still resume with original UUID; Claude has the history.
+      // "loaded" → resume with confirmed UUID.
+      if (!resumeSessionId) {
+        args.push("--session-id", claudeSessionId);
+      } else if (historyResult === "not_found") {
+        // Session file confirmed absent — start fresh with a new UUID
+        console.log(`[Session ${sessionId}] Session file not found, starting fresh (was: ${managed.session.claudeSessionId})`);
+        const freshId = uuidv4();
+        managed.session.claudeSessionId = freshId;
+        args.push("--session-id", freshId);
+      } else {
+        // "loaded" or "error" — resume with the stored UUID
+        args.push("--resume", managed.session.claudeSessionId);
+      }
+
 
       // Emit display name (explicit name takes priority over first user message)
       const displayName = managed.explicitDisplayName || managed.firstUserMessage;
@@ -1752,7 +1794,7 @@ for line in sys.stdin:
     }
   }
 
-  private async loadRemoteSessionHistory(managed: ManagedSession, machine: MachineConfig, claudeSessionId: string): Promise<void> {
+  private async loadRemoteSessionHistory(managed: ManagedSession, machine: MachineConfig, claudeSessionId: string): Promise<"loaded" | "not_found" | "error"> {
     try {
       // Search for the session file in ~/.claude/projects AND workDir ancestors' .claude/projects
       // This handles direnv setups where CLAUDE_CONFIG_DIR points to a custom location
@@ -1784,7 +1826,7 @@ done
 
       if (!filePath) {
         console.warn(`[Session ${managed.session.id}] Remote session file not found for ${claudeSessionId}`);
-        return;
+        return "not_found";
       }
 
       // Detect custom CLAUDE_CONFIG_DIR from the file path
@@ -1812,14 +1854,14 @@ done
         catChannel.on("error", () => resolve(""));
       });
 
-      if (!content) return;
+      if (!content) return "not_found";
 
       // Parse the JSONL content — same logic as loadSessionHistory
       this.parseSessionJsonl(managed, content);
-      const project = filePath.split("/").slice(-2, -1)[0] || "unknown";
-      console.log(`[Session ${managed.session.id}] Loaded ${managed.messages.length} history messages from remote ${project}/${claudeSessionId}.jsonl`);
+      return "loaded";
     } catch (err) {
       console.warn("Could not load remote session history:", (err as Error).message);
+      return "error";
     }
   }
 
