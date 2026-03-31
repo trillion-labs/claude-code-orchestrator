@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import type { ProjectStore } from "./project-store";
 import type { SessionManager } from "./session-manager";
-import type { Project, Task, MachineConfig, PermissionMode, KanbanColumn, Session } from "../shared/types";
+import type { Project, Task, MachineConfig, PermissionMode, KanbanColumn, Session, TrashedProject } from "../shared/types";
 
 export class ProjectManager {
   constructor(
@@ -47,6 +47,22 @@ export class ProjectManager {
 
   async deleteProject(projectId: string): Promise<void> {
     await this.store.deleteProject(projectId);
+  }
+
+  async trashProject(projectId: string): Promise<TrashedProject> {
+    return this.store.trashProject(projectId);
+  }
+
+  async restoreProject(projectId: string): Promise<TrashedProject> {
+    return this.store.restoreProject(projectId);
+  }
+
+  async purgeProject(projectId: string): Promise<void> {
+    return this.store.purgeProject(projectId);
+  }
+
+  getTrash(): TrashedProject[] {
+    return this.store.getTrash();
   }
 
   getAllProjects(): Project[] {

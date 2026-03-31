@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, Note, PermissionRequest, KanbanColumn } from "@/lib/shared/types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, Project, Task, Note, PermissionRequest, KanbanColumn, TrashedProject } from "@/lib/shared/types";
 
 export interface SplitPanel {
   id: string;
@@ -88,6 +88,8 @@ interface SessionState {
   // Custom ordering for sidebar lists (array of IDs)
   sessionOrder: string[];
   projectOrder: string[];
+  // Trash bin
+  trashedProjects: TrashedProject[];
 
   // Actions
   setSessions: (sessions: Session[]) => void;
@@ -188,6 +190,10 @@ interface SessionState {
   reorderProjects: (orderedIds: string[]) => void;
   // Orchestrator sessions
   setOrchestratorSession: (projectId: string, sessionId: string | null) => void;
+  // Trash
+  addToTrash: (item: TrashedProject) => void;
+  removeFromTrash: (projectId: string) => void;
+  setTrashList: (items: TrashedProject[]) => void;
 
   // Split panel
   splitSession: (sessionId: string) => void;
@@ -239,6 +245,7 @@ export const useStore = create<SessionState>((set) => ({
   viewMode: "sessions" as const,
   sessionOrder: [],
   projectOrder: [],
+  trashedProjects: [],
 
   setSessions: (sessions) =>
     set(() => {
@@ -1096,6 +1103,20 @@ export const useStore = create<SessionState>((set) => ({
       }
       return { orchestratorSessions };
     }),
+
+  // ── Trash ──
+
+  addToTrash: (item) =>
+    set((state) => ({
+      trashedProjects: [...state.trashedProjects, item],
+    })),
+
+  removeFromTrash: (projectId) =>
+    set((state) => ({
+      trashedProjects: state.trashedProjects.filter((t) => t.project.id !== projectId),
+    })),
+
+  setTrashList: (items) => set({ trashedProjects: items }),
 
   // ── Split Panel ──
 
