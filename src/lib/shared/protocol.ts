@@ -58,7 +58,7 @@ export type ClientMessage =
   | { type: "file.read"; machineId: string; filePath: string; requestId: string; maxLines?: number }
   // ── Project CRUD ──
   | { type: "project.create"; name: string; machineId: string; workDir: string; permissionMode: PermissionMode }
-  | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode } }
+  | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode; workDir?: string } }
   | { type: "project.delete"; projectId: string }
   | { type: "project.list" }
   // ── Task CRUD ──
