@@ -300,8 +300,17 @@ export class WebSocketHandler {
         );
         this.broadcast({ type: "task.moved", task });
 
-        // Worker sessions are NOT auto-terminated when tasks move to "done".
-        // The manager or user must explicitly terminate sessions.
+        // Terminate worker session when task moves to "done"
+        if (task.column === "done" && task.sessionId) {
+          const workerSession = this.sessionManager.getSession(task.sessionId);
+          if (workerSession && workerSession.status !== "terminated" && workerSession.status !== "error") {
+            try {
+              this.sessionManager.terminateSession(task.sessionId);
+            } catch (err) {
+              console.error(`[Orchestrator] Failed to terminate worker session ${task.sessionId}:`, err);
+            }
+          }
+        }
 
         return { task: { id: task.id, title: task.title, column: task.column } };
       }
