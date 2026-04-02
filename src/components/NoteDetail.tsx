@@ -220,6 +220,7 @@ export function NoteDetail({ note, content, onClose, onUpdate, onDelete }: NoteD
           size="sm"
           className="gap-1.5 text-xs"
           disabled={!isDirty}
+          onMouseDown={(e) => e.preventDefault()}
           onClick={saveContent}
         >
           <Save className="w-3.5 h-3.5" />
@@ -241,6 +242,12 @@ export function NoteDetail({ note, content, onClose, onUpdate, onDelete }: NoteD
               ref={textareaRef}
               value={contentDraft}
               onChange={(e) => setContentDraft(e.target.value)}
+              onBlur={() => {
+                if (isDirty) {
+                  setContentDraft(lastSavedContentRef.current);
+                }
+                setEditingContent(false);
+              }}
               placeholder="Write your notes here... (Markdown supported)"
               className="h-full w-full resize-none text-sm font-mono leading-relaxed bg-transparent border-none outline-none ring-0 placeholder:text-muted-foreground"
             />
