@@ -205,6 +205,12 @@ export class ProjectManager {
       throw new Error(`Cannot resume task in "${task.column}" column`);
     }
 
+    // If the task already has an active session, return it instead of creating a duplicate
+    if (task.sessionId) {
+      const existing = this.sessionManager.getSession(task.sessionId);
+      if (existing) return { task, session: existing };
+    }
+
     // Create a new session with --resume pointing to the old Claude session
     const session = await this.sessionManager.createSession(
       machine,
