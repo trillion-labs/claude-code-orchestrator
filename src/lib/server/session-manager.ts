@@ -39,6 +39,7 @@ interface ManagedSession {
   hasStreamedText: boolean;
   isOrchestrator?: boolean; // Orchestrator manager session
   orchestratorProjectId?: string; // Project ID for orchestrator MCP
+  inManagerConversation?: boolean; // True while Manager is talking to this worker via ask_worker
 }
 
 const MAX_RECENT_MESSAGES = 20; // Keep last 10 turns (user + assistant)
@@ -851,6 +852,62 @@ except:
     this.emit("session:message", sessionId, userMsg);
 
     this.processPrompt(managed, prompt);
+  }
+
+  /**
+   * Send a prompt to a session and wait for the complete response.
+   * Returns the assistant's response text. Used by Manager to ask Workers.
+   * Rejects after timeout (default 5 minutes).
+   */
+  sendPromptAndWaitForResponse(
+    sessionId: string,
+    prompt: string,
+    timeoutMs = 5 * 60 * 1000,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const managed = this.sessions.get(sessionId);
+      if (!managed) return reject(new Error(`Session ${sessionId} not found`));
+
+      // Mark worker as in manager conversation — suppresses completion notifications
+      managed.inManagerConversation = true;
+
+      let timer: ReturnType<typeof setTimeout>;
+
+      const onMessage = (sid: string, message: ConversationMessage) => {
+        if (sid !== sessionId || message.role !== "assistant") return;
+        cleanup();
+        resolve(message.content);
+      };
+
+      const onStatus = (sid: string, status: string, error?: string) => {
+        if (sid !== sessionId) return;
+        if (status === "error" || status === "terminated") {
+          cleanup();
+          reject(new Error(`Worker session ${status}: ${error || "unknown"}`));
+        }
+      };
+
+      const cleanup = () => {
+        managed.inManagerConversation = false;
+        clearTimeout(timer);
+        this.removeListener("session:message", onMessage);
+        this.removeListener("session:status", onStatus);
+      };
+
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timed out waiting for worker response (${timeoutMs}ms)`));
+      }, timeoutMs);
+
+      this.on("session:message", onMessage);
+      this.on("session:status", onStatus);
+
+      // Send the prompt (this queues if busy)
+      this.sendPrompt(sessionId, prompt).catch((err) => {
+        cleanup();
+        reject(err);
+      });
+    });
   }
 
   dequeuePrompt(sessionId: string, index: number): void {
@@ -1666,6 +1723,11 @@ for line in sys.stdin:
   isOrchestratorSession(sessionId: string): boolean {
     const managed = this.sessions.get(sessionId);
     return managed?.isOrchestrator === true;
+  }
+
+  isInManagerConversation(sessionId: string): boolean {
+    const managed = this.sessions.get(sessionId);
+    return managed?.inManagerConversation === true;
   }
 
   private async loadSessionHistory(managed: ManagedSession, claudeSessionId: string): Promise<void> {
