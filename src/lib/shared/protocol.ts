@@ -30,6 +30,10 @@ export type ClientMessage =
       sessionId: string;
     }
   | {
+      type: "session.refresh";
+      sessionId: string;
+    }
+  | {
       type: "session.list";
     }
   | {

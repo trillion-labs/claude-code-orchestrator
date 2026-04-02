@@ -514,6 +514,15 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.refresh": {
+        try {
+          await this.sessionManager.refreshSession(msg.sessionId);
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
       case "session.list": {
         const sessions = this.sessionManager.getAllSessions();
         this.send(ws, { type: "session.list", sessions });

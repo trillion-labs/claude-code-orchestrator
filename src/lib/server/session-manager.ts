@@ -215,6 +215,7 @@ export class SessionManager extends EventEmitter {
 
     adapter.on("error", (err: Error) => {
       console.error(`[Session ${sessionId}] process error:`, err);
+      if (session.status === "starting") return; // Ignore stale errors during refresh
       session.status = "error";
       session.error = err.message;
       this.emit("session:status", sessionId, session.status, session.error);
@@ -223,6 +224,8 @@ export class SessionManager extends EventEmitter {
     adapter.on("close", (code: number | null) => {
       console.log(`[Session ${sessionId}] process exited with code ${code}`);
       if (session.status === "terminated") return;
+      // Ignore stale close events from old SSH channels during refresh
+      if (session.status === "starting") return;
 
       if (managed.interrupted) {
         // Interrupted by user — return to idle so they can send new prompts
@@ -1682,6 +1685,97 @@ for line in sys.stdin:
 
     console.log(`[Session ${session.id}] Re-spawning claude with cwd=${spawnCwd}, args=${args.join(" ")}`);
     await managed.adapter.spawn("claude", args, { cwd: spawnCwd, env: spawnEnv });
+  }
+
+  async refreshSession(sessionId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) throw new Error(`Session ${sessionId} not found`);
+    if (managed.session.status !== "error") {
+      throw new Error(`Session is not in error state (current: ${managed.session.status})`);
+    }
+
+    // Reset state
+    managed.session.status = "starting";
+    managed.session.error = undefined;
+    managed.isProcessingPrompt = false;
+    this.emit("session:status", sessionId, "starting");
+
+    try {
+      const TIMEOUT_MS = 60_000;
+      const reconnect = async () => {
+        // Re-establish SSH reverse port forward + MCP config for remote sessions
+        if (managed.machine.type !== "local" && managed.mcpConfigPath) {
+          const configPath = await this.setupRemoteMcpPermission(
+            sessionId, managed.machine, managed.session.projectId,
+          );
+          if (configPath) managed.mcpConfigPath = configPath;
+        }
+        await this.respawnClaude(managed);
+      };
+
+      await Promise.race([
+        reconnect(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Reconnect timed out after 60s")), TIMEOUT_MS),
+        ),
+      ]);
+
+      // Sync history diff: load remote .jsonl, emit only new messages
+      if (managed.machine.type !== "local") {
+        try {
+          // Snapshot the last message content for diffing (count alone is unreliable due to MAX_RECENT_MESSAGES truncation)
+          const prevLast = managed.messages.length > 0
+            ? managed.messages[managed.messages.length - 1]
+            : null;
+
+          // Suppress emits from parseSessionJsonl — we'll emit the diff ourselves
+          const origEmit = this.emit.bind(this);
+          const suppressedMessages: ConversationMessage[] = [];
+          this.emit = ((event: string, ...args: unknown[]) => {
+            if (event === "session:message" && args[0] === sessionId) {
+              suppressedMessages.push(args[1] as ConversationMessage);
+              return false;
+            }
+            return origEmit(event, ...args);
+          }) as typeof this.emit;
+
+          await this.loadRemoteSessionHistory(managed, managed.machine, managed.session.claudeSessionId);
+          this.emit = origEmit;
+
+          // Find where the old messages end in the new list by matching the last known message
+          let diffStart = 0;
+          if (prevLast && suppressedMessages.length > 0) {
+            for (let i = suppressedMessages.length - 1; i >= 0; i--) {
+              if (suppressedMessages[i].role === prevLast.role &&
+                  suppressedMessages[i].content === prevLast.content) {
+                diffStart = i + 1;
+                break;
+              }
+            }
+          }
+
+          const newMessages = suppressedMessages.slice(diffStart);
+          for (const msg of newMessages) {
+            this.emit("session:message", sessionId, msg);
+          }
+          if (newMessages.length > 0) {
+            console.log(`[Session ${sessionId}] Synced ${newMessages.length} new messages after reconnect`);
+          }
+        } catch (err) {
+          console.warn(`[Session ${sessionId}] History sync failed:`, (err as Error).message);
+        }
+      }
+
+      // respawnClaude spawns the process but Claude CLI in -p mode waits for input
+      // without producing output, so status stays "starting" forever. Set idle explicitly.
+      managed.session.status = "idle";
+      managed.session.error = undefined;
+      this.emit("session:status", sessionId, "idle");
+    } catch (err) {
+      managed.session.status = "error";
+      managed.session.error = `Reconnect failed: ${(err as Error).message}`;
+      this.emit("session:status", sessionId, "error", managed.session.error);
+    }
   }
 
   terminateSession(sessionId: string): void {

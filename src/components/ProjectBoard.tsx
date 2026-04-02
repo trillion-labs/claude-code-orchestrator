@@ -324,6 +324,12 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
     send({ type: "task.resume", projectId: project.id, taskId: task.id });
   };
 
+  const handleRetryTask = (task: Task) => {
+    if (task.sessionId) {
+      send({ type: "session.refresh", sessionId: task.sessionId });
+    }
+  };
+
   // ── Notes data & handlers (for kanban sidebar + side panel) ──
   const notesMap = useStore((s) => s.notes);
   const noteContentMap = useStore((s) => s.noteContent);
@@ -534,6 +540,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                   onTaskClick={(task) => handleOpenTask(task.id)}
                   onTaskSubmit={handleSubmitTask}
                   onTaskDone={handleDoneTask}
+                  onTaskRetry={handleRetryTask}
                   onViewSession={onViewSession}
                   onEditTitle={handleEditTitle}
                 />
