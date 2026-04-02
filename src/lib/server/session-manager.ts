@@ -295,12 +295,6 @@ export class SessionManager extends EventEmitter {
       args.push("--append-system-prompt", buildWorkerNotePrompt());
     }
 
-    if (resumeSessionId) {
-      args.push("--resume", resumeSessionId);
-    } else {
-      args.push("--session-id", claudeSessionId);
-    }
-
     try {
       // Load chat history from .jsonl if resuming
       // NOTE: loadRemoteSessionHistory may update managed.session.claudeSessionId
@@ -332,7 +326,6 @@ export class SessionManager extends EventEmitter {
         // "loaded" or "error" — resume with the stored UUID
         args.push("--resume", managed.session.claudeSessionId);
       }
-
 
       // Emit display name (explicit name takes priority over first user message)
       const displayName = managed.explicitDisplayName || managed.firstUserMessage;
