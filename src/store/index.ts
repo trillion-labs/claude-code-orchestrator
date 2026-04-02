@@ -263,7 +263,8 @@ export const useStore = create<SessionState>((set) => ({
           ...session,
           status,
           ...(totalCostUsd !== undefined && { totalCostUsd }),
-          ...(error !== undefined && { error }),
+          // Clear error when status is not "error", set it when provided
+          error: error !== undefined ? error : (status !== "error" ? undefined : session.error),
           lastActivity: Date.now(),
         });
       }

@@ -186,6 +186,12 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
     }
   };
 
+  const handleRetryTask = (task: Task) => {
+    if (task.sessionId) {
+      send({ type: "session.refresh", sessionId: task.sessionId });
+    }
+  };
+
   const handleLinkSession = (taskId: string, sessionId: string) => {
     const task = findTask(taskId);
     if (task) {
@@ -308,6 +314,7 @@ export function AllTasksBoard({ send, onViewSession }: AllTasksBoardProps) {
                   onTaskClick={(task) => handleOpenTask(task.id)}
                   onTaskSubmit={handleSubmitTask}
                   onTaskDone={handleDoneTask}
+                  onTaskRetry={handleRetryTask}
                   onViewSession={onViewSession}
                   onEditTitle={handleEditTitle}
                   getProjectName={getProjectName}
