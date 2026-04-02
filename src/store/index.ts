@@ -128,7 +128,7 @@ interface SessionState {
 
   // Messages
   addMessage: (sessionId: string, message: ConversationMessage) => void;
-  prependMessages: (sessionId: string, messages: ConversationMessage[]) => void;
+  prependMessages: (sessionId: string, messages: ConversationMessage[], hasMore?: boolean) => void;
 
   // Prompt queue
   promptQueue: Map<string, string[]>;
