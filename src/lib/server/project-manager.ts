@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import type { ProjectStore } from "./project-store";
 import type { SessionManager } from "./session-manager";
-import type { Project, Task, MachineConfig, PermissionMode, KanbanColumn, Session } from "../shared/types";
+import type { Project, Task, MachineConfig, PermissionMode, ReviewMode, KanbanColumn, Session } from "../shared/types";
 
 export class ProjectManager {
   constructor(
@@ -28,6 +28,7 @@ export class ProjectManager {
       machineId,
       workDir,
       permissionMode,
+      reviewMode: "manager-tasks",
       createdAt: now,
       updatedAt: now,
     };
@@ -37,7 +38,7 @@ export class ProjectManager {
 
   async updateProject(
     projectId: string,
-    updates: { name?: string; permissionMode?: PermissionMode },
+    updates: { name?: string; permissionMode?: PermissionMode; reviewMode?: ReviewMode },
   ): Promise<Project> {
     await this.store.updateProject(projectId, updates);
     const project = this.store.getProject(projectId);
@@ -148,6 +149,7 @@ export class ProjectManager {
     projectId: string,
     taskId: string,
     machine: MachineConfig,
+    submittedBy: "manager" | "user" = "user",
   ): Promise<{ task: Task; session: Session }> {
     const project = this.store.getProject(projectId);
     if (!project) throw new Error(`Project ${projectId} not found`);
@@ -179,6 +181,7 @@ export class ProjectManager {
       sessionId: session.id,
       claudeSessionId: session.claudeSessionId,
       lastMachineId: machine.id,
+      submittedBy,
     });
 
     // Wait for session to be idle, then send the task description as prompt
@@ -201,9 +204,10 @@ export class ProjectManager {
     if (!task.claudeSessionId) {
       throw new Error("Task has no claudeSessionId — cannot resume");
     }
-    if (task.column === "todo" || task.column === "done") {
-      throw new Error(`Cannot resume task in "${task.column}" column`);
+    if (task.column === "todo") {
+      throw new Error(`Cannot resume task in "todo" column`);
     }
+    const shouldMoveToReview = task.column === "done";
 
     // If the task already has an active session, return it instead of creating a duplicate
     if (task.sessionId) {
@@ -226,9 +230,11 @@ export class ProjectManager {
     this.sessionManager.setSessionDisplayName(session.id, task.title);
 
     // Update the task's sessionId to the new orchestrator session
+    // If resuming from "done", move back to "in-review"
     await this.store.updateTask(projectId, taskId, {
       sessionId: session.id,
       lastMachineId: machine.id,
+      ...(shouldMoveToReview && { column: "in-review" as const, order: 0 }),
     });
 
     const updatedTask = this.store.getTask(projectId, taskId)!;
