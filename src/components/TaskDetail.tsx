@@ -200,7 +200,7 @@ export function TaskDetail({
                   </Button>
                 </div>
               </>
-            ) : task.claudeSessionId && task.column !== "todo" && task.column !== "done" ? (
+            ) : task.claudeSessionId && task.column !== "todo" ? (
               <>
                 <div className="flex items-center gap-1.5">
                   <Unplug className="w-3.5 h-3.5 text-amber-400" />

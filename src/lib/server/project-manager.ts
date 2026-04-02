@@ -204,9 +204,10 @@ export class ProjectManager {
     if (!task.claudeSessionId) {
       throw new Error("Task has no claudeSessionId — cannot resume");
     }
-    if (task.column === "todo" || task.column === "done") {
-      throw new Error(`Cannot resume task in "${task.column}" column`);
+    if (task.column === "todo") {
+      throw new Error(`Cannot resume task in "todo" column`);
     }
+    const shouldMoveToReview = task.column === "done";
 
     // If the task already has an active session, return it instead of creating a duplicate
     if (task.sessionId) {
@@ -229,9 +230,11 @@ export class ProjectManager {
     this.sessionManager.setSessionDisplayName(session.id, task.title);
 
     // Update the task's sessionId to the new orchestrator session
+    // If resuming from "done", move back to "in-review"
     await this.store.updateTask(projectId, taskId, {
       sessionId: session.id,
       lastMachineId: machine.id,
+      ...(shouldMoveToReview && { column: "in-review" as const, order: 0 }),
     });
 
     const updatedTask = this.store.getTask(projectId, taskId)!;
