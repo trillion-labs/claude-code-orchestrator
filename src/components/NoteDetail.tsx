@@ -1,6 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ComponentProps } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { X, Pencil, Check, Trash2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +20,77 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { Note } from "@/lib/shared/types";
 
+const noteMarkdownComponents: ComponentProps<typeof ReactMarkdown>["components"] = {
+  a({ href, children, ...props }) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+        {children}
+      </a>
+    );
+  },
+  code({ className, children }) {
+    const match = /language-(\S+)/.exec(className || "");
+    const codeString = String(children).replace(/\n$/, "");
+
+    if (!match) {
+      const isInline = !codeString.includes("\n");
+      if (isInline) {
+        return (
+          <code className="px-1.5 py-0.5 rounded bg-black/[0.06] dark:bg-white/10 text-[0.8125rem] font-mono text-orange-600 dark:text-orange-300">
+            {children}
+          </code>
+        );
+      }
+    }
+
+    const language = match ? match[1] : "text";
+
+    return (
+      <div className="relative group not-prose my-3 max-w-full overflow-hidden">
+        <div className="flex items-center px-3 py-1 bg-[#1e1e1e] rounded-t-lg border-b border-white/10">
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{language}</span>
+        </div>
+        <SyntaxHighlighter
+          style={oneDark}
+          language={language}
+          PreTag="div"
+          customStyle={{
+            margin: 0,
+            borderTopLeftRadius: 0,
+            borderTopRightRadius: 0,
+            borderBottomLeftRadius: "0.5rem",
+            borderBottomRightRadius: "0.5rem",
+            fontSize: "0.75rem",
+            lineHeight: "1.5",
+            overflowX: "auto",
+          }}
+        >
+          {codeString}
+        </SyntaxHighlighter>
+      </div>
+    );
+  },
+  pre({ children }) {
+    return <>{children}</>;
+  },
+  table({ children }) {
+    return (
+      <div className="my-3 overflow-x-auto">
+        <table className="w-full text-sm border-collapse">{children}</table>
+      </div>
+    );
+  },
+  thead({ children }) {
+    return <thead className="border-b border-white/10">{children}</thead>;
+  },
+  th({ children }) {
+    return <th className="text-left px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider">{children}</th>;
+  },
+  td({ children }) {
+    return <td className="px-3 py-1.5 text-gray-600 dark:text-gray-300 border-t border-black/[0.04] dark:border-white/[0.04]">{children}</td>;
+  },
+};
+
 interface NoteDetailProps {
   note: Omit<Note, "content">; // index entry (no content)
   content: string; // loaded separately
@@ -26,6 +101,7 @@ interface NoteDetailProps {
 
 export function NoteDetail({ note, content, onClose, onUpdate, onDelete }: NoteDetailProps) {
   const [editingTitle, setEditingTitle] = useState(false);
+  const [editingContent, setEditingContent] = useState(false);
   const [titleDraft, setTitleDraft] = useState(note.title);
   const [contentDraft, setContentDraft] = useState(content);
   const lastSavedContentRef = useRef(content);
@@ -58,14 +134,30 @@ export function NoteDetail({ note, content, onClose, onUpdate, onDelete }: NoteD
       lastSavedContentRef.current = contentDraft;
       onUpdate({ content: contentDraft });
     }
+    setEditingContent(false);
   };
 
-  // Cmd+S handler
+  // Auto-focus textarea when entering edit mode
+  useEffect(() => {
+    if (editingContent) {
+      textareaRef.current?.focus();
+    }
+  }, [editingContent]);
+
+  // Cmd+S to save, Escape to exit edit mode
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
         saveContent();
+      }
+      if (e.key === "Escape" && editingContent) {
+        e.preventDefault();
+        // Discard draft if dirty, revert to last saved
+        if (isDirty) {
+          setContentDraft(lastSavedContentRef.current);
+        }
+        setEditingContent(false);
       }
     };
     document.addEventListener("keydown", handler);
@@ -128,6 +220,7 @@ export function NoteDetail({ note, content, onClose, onUpdate, onDelete }: NoteD
           size="sm"
           className="gap-1.5 text-xs"
           disabled={!isDirty}
+          onMouseDown={(e) => e.preventDefault()}
           onClick={saveContent}
         >
           <Save className="w-3.5 h-3.5" />
@@ -141,15 +234,40 @@ export function NoteDetail({ note, content, onClose, onUpdate, onDelete }: NoteD
         </button>
       </div>
 
-      {/* Content editor */}
-      <div className="flex-1 min-h-0 p-4">
-        <textarea
-          ref={textareaRef}
-          value={contentDraft}
-          onChange={(e) => setContentDraft(e.target.value)}
-          placeholder="Write your notes here... (Markdown supported)"
-          className="h-full w-full resize-none text-sm font-mono leading-relaxed bg-transparent border-none outline-none ring-0 placeholder:text-muted-foreground"
-        />
+      {/* Content: markdown preview or editor */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {editingContent ? (
+          <div className="h-full p-4">
+            <textarea
+              ref={textareaRef}
+              value={contentDraft}
+              onChange={(e) => setContentDraft(e.target.value)}
+              onBlur={() => {
+                if (isDirty) {
+                  setContentDraft(lastSavedContentRef.current);
+                }
+                setEditingContent(false);
+              }}
+              placeholder="Write your notes here... (Markdown supported)"
+              className="h-full w-full resize-none text-sm font-mono leading-relaxed bg-transparent border-none outline-none ring-0 placeholder:text-muted-foreground"
+            />
+          </div>
+        ) : (
+          <div
+            className="h-full p-4 cursor-text"
+            onClick={() => setEditingContent(true)}
+          >
+            {contentDraft ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-7 prose-li:leading-7 prose-headings:text-gray-800 dark:prose-headings:text-gray-100 prose-p:text-gray-600 dark:prose-p:text-gray-300 prose-li:text-gray-600 dark:prose-li:text-gray-300 prose-strong:text-gray-800 dark:prose-strong:text-gray-100 prose-a:text-blue-600 dark:prose-a:text-blue-400">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={noteMarkdownComponents}>
+                  {contentDraft}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Click to edit... (Markdown supported)</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Footer: meta info + delete */}
