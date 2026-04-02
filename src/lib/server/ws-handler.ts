@@ -33,6 +33,7 @@ export class WebSocketHandler {
   private projectStore: ProjectStore;
   private projectManager: ProjectManager;
   private clients = new Set<WebSocket>();
+  private baseMachines: MachineConfig[] = [];
   private machines: MachineConfig[] = [];
 
   constructor(port = 3000) {
@@ -43,15 +44,15 @@ export class WebSocketHandler {
   }
 
   async initialize() {
-    // Load machines from machines.json
+    // Load machines from machines.json (static, cached once)
     try {
       const machinesPath = join(process.cwd(), "machines.json");
       const content = await readFile(machinesPath, "utf-8");
       const config = JSON.parse(content);
-      this.machines = config.machines || [];
+      this.baseMachines = config.machines || [];
     } catch {
       console.warn("Could not load machines.json, using defaults");
-      this.machines = [{
+      this.baseMachines = [{
         id: "local",
         name: "Local Machine",
         type: "local",
@@ -59,18 +60,23 @@ export class WebSocketHandler {
       }];
     }
 
-    // Load SSH hosts from ~/.ssh/config
-    try {
-      const sshHosts = await loadSSHHosts();
-      this.machines.push(...sshHosts);
-    } catch {
-      console.warn("Could not load SSH config");
-    }
-
-    console.log(`[WS] Loaded ${this.machines.length} machines`);
+    // Initial load of all machines (base + SSH)
+    await this.reloadMachines();
 
     // Initialize project store (load from disk)
     await this.projectManager.initialize();
+  }
+
+  /** Reload SSH hosts from ~/.ssh/config and merge with base machines */
+  private async reloadMachines() {
+    let sshHosts: MachineConfig[] = [];
+    try {
+      sshHosts = await loadSSHHosts();
+    } catch {
+      console.warn("Could not load SSH config");
+    }
+    this.machines = [...this.baseMachines, ...sshHosts];
+    console.log(`[WS] Loaded ${this.machines.length} machines (${this.baseMachines.length} base + ${sshHosts.length} SSH)`);
   }
 
   handleConnection(ws: WebSocket) {
@@ -226,7 +232,15 @@ export class WebSocketHandler {
         const tasks = this.projectManager.getProjectTasks(projectId);
         const column = args.column as string | undefined;
         const filtered = column ? tasks.filter((t) => t.column === column) : tasks;
-        return { tasks: filtered.map((t) => ({ id: t.id, title: t.title, column: t.column, order: t.order })) };
+        return { tasks: filtered.map((t) => {
+          const entry: Record<string, unknown> = { id: t.id, title: t.title, column: t.column, order: t.order };
+          if (t.sessionId) {
+            entry.sessionId = t.sessionId;
+            const s = this.sessionManager.getSession(t.sessionId);
+            if (s) entry.sessionStatus = s.status;
+          }
+          return entry;
+        }) };
       }
 
       case "get_tasks": {
@@ -235,7 +249,15 @@ export class WebSocketHandler {
         const found = taskIds
           .map((id) => allTasks.find((t) => t.id === id))
           .filter(Boolean)
-          .map((t) => ({ id: t!.id, title: t!.title, description: t!.description, column: t!.column, order: t!.order }));
+          .map((t) => {
+            const entry: Record<string, unknown> = { id: t!.id, title: t!.title, description: t!.description, column: t!.column, order: t!.order };
+            if (t!.sessionId) {
+              entry.sessionId = t!.sessionId;
+              const s = this.sessionManager.getSession(t!.sessionId);
+              if (s) entry.sessionStatus = s.status;
+            }
+            return entry;
+          });
         return { tasks: found };
       }
 
@@ -277,6 +299,19 @@ export class WebSocketHandler {
           0,
         );
         this.broadcast({ type: "task.moved", task });
+
+        // Terminate worker session when task moves to "done"
+        if (task.column === "done" && task.sessionId) {
+          const workerSession = this.sessionManager.getSession(task.sessionId);
+          if (workerSession && workerSession.status !== "terminated" && workerSession.status !== "error") {
+            try {
+              this.sessionManager.terminateSession(task.sessionId);
+            } catch (err) {
+              console.error(`[Orchestrator] Failed to terminate worker session ${task.sessionId}:`, err);
+            }
+          }
+        }
+
         return { task: { id: task.id, title: task.title, column: task.column } };
       }
 
@@ -310,6 +345,107 @@ export class WebSocketHandler {
             permissionMode: project.permissionMode,
           },
         };
+      }
+
+      // ── Note Tools ──
+
+      case "list_notes": {
+        const notes = this.projectStore.getProjectNotes(projectId);
+        return { notes: notes.map((n) => ({ id: n.id, title: n.title, createdAt: n.createdAt, updatedAt: n.updatedAt })) };
+      }
+
+      case "get_note": {
+        const note = await this.projectStore.getNote(projectId, args.noteId as string);
+        if (!note) throw new Error(`Note ${args.noteId} not found`);
+        return { note: { id: note.id, title: note.title, content: note.content, createdAt: note.createdAt, updatedAt: note.updatedAt } };
+      }
+
+      case "create_note": {
+        const now = Date.now();
+        const note = {
+          id: crypto.randomUUID(),
+          projectId,
+          title: args.title as string,
+          content: args.content as string,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await this.projectStore.createNote(note);
+        const { content: _, ...index } = note;
+        this.broadcast({ type: "note.created", note: index });
+        return { note: { id: note.id, title: note.title } };
+      }
+
+      case "update_note": {
+        const updates: { title?: string; content?: string } = {};
+        if (args.title) updates.title = args.title as string;
+        if (args.content) updates.content = args.content as string;
+        await this.projectStore.updateNote(projectId, args.noteId as string, updates);
+        const updatedIndex = this.projectStore.getNoteIndex(projectId, args.noteId as string);
+        if (updatedIndex) this.broadcast({ type: "note.updated", note: updatedIndex });
+        // Also broadcast content so UI cache is refreshed
+        if (updates.content !== undefined) {
+          const fullNote = await this.projectStore.getNote(projectId, args.noteId as string);
+          if (fullNote) this.broadcast({ type: "note.data", note: fullNote });
+        }
+        return { note: { id: args.noteId, title: updatedIndex?.title } };
+      }
+
+      case "delete_note": {
+        await this.projectStore.deleteNote(projectId, args.noteId as string);
+        this.broadcast({ type: "note.deleted", projectId, noteId: args.noteId as string });
+        return { success: true };
+      }
+
+      // ── Manager ↔ Worker Communication ──
+
+      case "ask_worker": {
+        const targetSessionId = args.sessionId as string;
+        const message = args.message as string;
+        if (!targetSessionId || !message) {
+          throw new Error("ask_worker requires sessionId and message");
+        }
+        // Verify the target is a worker session in this project
+        const targetSession = this.sessionManager.getSession(targetSessionId);
+        if (!targetSession) throw new Error(`Worker session ${targetSessionId} not found`);
+        if (targetSession.projectId !== projectId) {
+          throw new Error(`Session ${targetSessionId} does not belong to this project`);
+        }
+        if (this.sessionManager.isOrchestratorSession(targetSessionId)) {
+          throw new Error("Cannot ask_worker on a manager session");
+        }
+
+        console.log(`[Orchestrator] ask_worker: sending message to worker ${targetSessionId}`);
+        const response = await this.sessionManager.sendPromptAndWaitForResponse(targetSessionId, message);
+
+        // Truncate very long responses to avoid blowing up manager context
+        const maxLen = 12000;
+        const truncated = response.length > maxLen
+          ? response.slice(0, maxLen) + "\n\n... [truncated, response was " + response.length + " chars]"
+          : response;
+
+        return { sessionId: targetSessionId, response: truncated };
+      }
+
+      case "send_to_worker": {
+        const targetSessionId = args.sessionId as string;
+        const message = args.message as string;
+        if (!targetSessionId || !message) {
+          throw new Error("send_to_worker requires sessionId and message");
+        }
+        const targetSession = this.sessionManager.getSession(targetSessionId);
+        if (!targetSession) throw new Error(`Worker session ${targetSessionId} not found`);
+        if (targetSession.projectId !== projectId) {
+          throw new Error(`Session ${targetSessionId} does not belong to this project`);
+        }
+        if (this.sessionManager.isOrchestratorSession(targetSessionId)) {
+          throw new Error("Cannot send_to_worker on a manager session");
+        }
+
+        console.log(`[Orchestrator] send_to_worker: sending message to worker ${targetSessionId} (non-blocking)`);
+        await this.sessionManager.sendPrompt(targetSessionId, message);
+
+        return { sessionId: targetSessionId, status: "sent" };
       }
 
       default:
@@ -362,6 +498,11 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.dequeue": {
+        this.sessionManager.dequeuePrompt(msg.sessionId, msg.index);
+        break;
+      }
+
       case "session.interrupt": {
         this.sessionManager.interruptSession(msg.sessionId);
         break;
@@ -373,6 +514,15 @@ export class WebSocketHandler {
         break;
       }
 
+      case "session.refresh": {
+        try {
+          await this.sessionManager.refreshSession(msg.sessionId);
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
       case "session.list": {
         const sessions = this.sessionManager.getAllSessions();
         this.send(ws, { type: "session.list", sessions });
@@ -380,6 +530,7 @@ export class WebSocketHandler {
       }
 
       case "machines.list": {
+        await this.reloadMachines();
         this.send(ws, { type: "machines.list", machines: this.machines });
         break;
       }
@@ -798,7 +949,16 @@ export class WebSocketHandler {
             this.send(ws, { type: "error", error: `Project ${msg.projectId} not found` });
             return;
           }
-          if (project.orchestratorSessionId) {
+          // Reset: terminate existing session and clear saved claudeSessionId
+          if (msg.reset) {
+            if (project.orchestratorSessionId) {
+              const existing = this.sessionManager.getSession(project.orchestratorSessionId);
+              if (existing && existing.status !== "terminated" && existing.status !== "error") {
+                await this.sessionManager.terminateSession(project.orchestratorSessionId);
+              }
+            }
+            await this.projectManager.resetOrchestratorSession(project.id);
+          } else if (project.orchestratorSessionId) {
             // Already has an orchestrator — check if it's still alive
             const existing = this.sessionManager.getSession(project.orchestratorSessionId);
             if (existing && existing.status !== "terminated" && existing.status !== "error") {
@@ -815,8 +975,8 @@ export class WebSocketHandler {
           // Build system prompt (board state is fetched via list_tasks tool, not embedded)
           const systemPrompt = buildOrchestratorPrompt(project);
 
-          // Resume previous orchestrator session if available
-          const resumeId = project.orchestratorClaudeSessionId || undefined;
+          // Resume previous orchestrator session if available (skip on reset)
+          const resumeId = msg.reset ? undefined : (project.orchestratorClaudeSessionId || undefined);
 
           const session = await this.sessionManager.createSession(
             machine,
@@ -855,6 +1015,75 @@ export class WebSocketHandler {
         }
         break;
       }
+
+      // ── Note CRUD ──
+
+      case "note.create": {
+        try {
+          const now = Date.now();
+          const note = {
+            id: crypto.randomUUID(),
+            projectId: msg.projectId,
+            title: msg.title,
+            content: msg.content,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await this.projectStore.createNote(note);
+          // Broadcast index only (without content)
+          const { content: _, ...index } = note;
+          this.broadcast({ type: "note.created", note: index });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "note.update": {
+        try {
+          await this.projectStore.updateNote(msg.projectId, msg.noteId, msg.updates);
+          const index = this.projectStore.getNoteIndex(msg.projectId, msg.noteId);
+          if (index) this.broadcast({ type: "note.updated", note: index });
+          // Broadcast content so other clients' caches are refreshed
+          if (msg.updates.content !== undefined) {
+            const fullNote = await this.projectStore.getNote(msg.projectId, msg.noteId);
+            if (fullNote) this.broadcast({ type: "note.data", note: fullNote });
+          }
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "note.delete": {
+        try {
+          await this.projectStore.deleteNote(msg.projectId, msg.noteId);
+          this.broadcast({ type: "note.deleted", projectId: msg.projectId, noteId: msg.noteId });
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
+
+      case "note.list": {
+        const notes = this.projectStore.getProjectNotes(msg.projectId);
+        this.send(ws, { type: "note.list", projectId: msg.projectId, notes });
+        break;
+      }
+
+      case "note.get": {
+        try {
+          const note = await this.projectStore.getNote(msg.projectId, msg.noteId);
+          if (note) {
+            this.send(ws, { type: "note.data", note });
+          } else {
+            this.send(ws, { type: "error", error: `Note ${msg.noteId} not found` });
+          }
+        } catch (err) {
+          this.send(ws, { type: "error", error: (err as Error).message });
+        }
+        break;
+      }
     }
   }
 
@@ -867,6 +1096,10 @@ export class WebSocketHandler {
       this.broadcast({ type: "session.message", sessionId, message });
     });
 
+    this.sessionManager.on("session:queueUpdate", (sessionId: string, queue: string[]) => {
+      this.broadcast({ type: "session.queueUpdate", sessionId, queue });
+    });
+
     this.sessionManager.on("session:status", (sessionId: string, status: string, error?: string, totalCostUsd?: number) => {
       this.broadcast({
         type: "session.status",
@@ -877,7 +1110,8 @@ export class WebSocketHandler {
       });
 
       // Auto-move task back to "in-progress" when session becomes busy again
-      if (status === "busy") {
+      // Skip when worker is in manager conversation (ask_worker) — task stays in-review
+      if (status === "busy" && !this.sessionManager.isInManagerConversation(sessionId)) {
         const updatedTask = this.projectManager.handleSessionBusy(sessionId);
         if (updatedTask) {
           this.broadcast({ type: "task.sessionBusy", task: updatedTask });
@@ -886,9 +1120,17 @@ export class WebSocketHandler {
 
       // Auto-move task to "in-review" when linked session completes
       if (status === "idle" && !error) {
-        const updatedTask = this.projectManager.handleSessionCompleted(sessionId);
-        if (updatedTask) {
-          this.broadcast({ type: "task.sessionCompleted", task: updatedTask });
+        // Skip task state change & notification when worker is responding to Manager via ask_worker
+        const inManagerConvo = this.sessionManager.isInManagerConversation(sessionId);
+
+        if (!inManagerConvo) {
+          const updatedTask = this.projectManager.handleSessionCompleted(sessionId);
+          if (updatedTask) {
+            this.broadcast({ type: "task.sessionCompleted", task: updatedTask });
+
+            // Notify the Manager session that this worker finished
+            this.notifyManagerOfWorkerCompletion(updatedTask, sessionId);
+          }
         }
       }
 
@@ -928,6 +1170,25 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:showUser", (sessionId: string, title: string, html: string) => {
       this.broadcast({ type: "session.showUser", sessionId, title, html });
+    });
+  }
+
+  /**
+   * When a worker session completes a task, auto-notify the Manager session
+   * so it can request a summary or take follow-up actions.
+   */
+  private notifyManagerOfWorkerCompletion(task: import("../shared/types").Task, workerSessionId: string): void {
+    const project = this.projectManager.getProject(task.projectId);
+    if (!project?.orchestratorSessionId) return;
+
+    // Don't notify if manager session is dead
+    const managerSession = this.sessionManager.getSession(project.orchestratorSessionId);
+    if (!managerSession || managerSession.status === "terminated" || managerSession.status === "error") return;
+
+    const notification = `[System] Worker completed task "${task.title}" (taskId: ${task.id}, sessionId: ${workerSessionId}). The task has been moved to "in-review". You can use ask_worker to request a summary of what was done, then decide whether to approve (move to done), request changes, or assign follow-up work.`;
+
+    this.sessionManager.sendPrompt(project.orchestratorSessionId, notification).catch((err) => {
+      console.error(`[Orchestrator] Failed to notify manager of worker completion:`, err);
     });
   }
 

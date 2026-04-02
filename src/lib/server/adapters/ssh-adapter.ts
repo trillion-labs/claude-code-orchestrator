@@ -29,7 +29,9 @@ export class SSHAdapter extends ProcessAdapter {
     }
     // Load direnv .envrc if available (sets CLAUDE_CONFIG_DIR etc. on shared machines)
     parts.push('eval "$(direnv export bash 2>/dev/null)"');
-    parts.push(`${command} ${args.join(" ")}`);
+    // Shell-escape args: wrap in single quotes if they contain any shell-sensitive characters
+    const shellEscape = (s: string) => /^[a-zA-Z0-9_./:@=,-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
+    parts.push(`${command} ${args.map(shellEscape).join(" ")}`);
     const fullCommand = parts.join(" && ");
 
     console.log(`[SSH Spawn] ${fullCommand}`);

@@ -146,6 +146,99 @@ const TOOLS = [
       properties: {},
     },
   },
+  // ── Manager ↔ Worker Communication ──
+  {
+    name: "ask_worker",
+    description: "Send a message to a worker session and WAIT for its response (blocking, up to 5 min). Use for questions that need an answer before you can proceed — e.g. requesting a summary, asking for clarification. Use list_tasks to find worker sessionIds.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: {
+          type: "string",
+          description: "The worker session ID. Get this from list_tasks (sessionId field on in-progress/in-review tasks).",
+        },
+        message: {
+          type: "string",
+          description: "The message to send. E.g. 'Summarize what you implemented and any issues you encountered.'",
+        },
+      },
+      required: ["sessionId", "message"],
+    },
+  },
+  {
+    name: "send_to_worker",
+    description: "Send a message to a worker session and return immediately (non-blocking). Use for assigning follow-up work or giving instructions when you don't need to wait for the result. You'll receive a completion notification when the worker finishes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: {
+          type: "string",
+          description: "The worker session ID. Get this from list_tasks (sessionId field on in-progress/in-review tasks).",
+        },
+        message: {
+          type: "string",
+          description: "The instruction to send. E.g. 'Also add input validation for the email field and run the tests.'",
+        },
+      },
+      required: ["sessionId", "message"],
+    },
+  },
+  // ── Note Tools ──
+  {
+    name: "list_notes",
+    description: "List note summaries (id, title, createdAt, updatedAt) in the current project. Does NOT include content — use get_note for full content.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "get_note",
+    description: "Get full note content (title + markdown content) by note ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The note ID to retrieve" },
+      },
+      required: ["noteId"],
+    },
+  },
+  {
+    name: "create_note",
+    description: "Create a new note in the current project. Notes are markdown documents for storing plans, research, decisions, or any project knowledge.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Note title" },
+        content: { type: "string", description: "Note content in markdown format" },
+      },
+      required: ["title", "content"],
+    },
+  },
+  {
+    name: "update_note",
+    description: "Update an existing note's title or content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The note ID to update" },
+        title: { type: "string", description: "New title (optional)" },
+        content: { type: "string", description: "New content in markdown (optional)" },
+      },
+      required: ["noteId"],
+    },
+  },
+  {
+    name: "delete_note",
+    description: "Delete a note from the project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        noteId: { type: "string", description: "The note ID to delete" },
+      },
+      required: ["noteId"],
+    },
+  },
 ];
 
 rl.on("line", async (line) => {

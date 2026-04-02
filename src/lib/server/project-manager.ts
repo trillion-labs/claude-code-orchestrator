@@ -205,6 +205,12 @@ export class ProjectManager {
       throw new Error(`Cannot resume task in "${task.column}" column`);
     }
 
+    // If the task already has an active session, return it instead of creating a duplicate
+    if (task.sessionId) {
+      const existing = this.sessionManager.getSession(task.sessionId);
+      if (existing) return { task, session: existing };
+    }
+
     // Create a new session with --resume pointing to the old Claude session
     const session = await this.sessionManager.createSession(
       machine,
@@ -381,5 +387,10 @@ export class ProjectManager {
   async clearOrchestratorSession(projectId: string): Promise<void> {
     // Clear the live session ID but keep claudeSessionId for resume
     await this.store.updateProject(projectId, { orchestratorSessionId: undefined } as any);
+  }
+
+  async resetOrchestratorSession(projectId: string): Promise<void> {
+    // Clear both session ID and claudeSessionId — forces fresh session on next create
+    await this.store.updateProject(projectId, { orchestratorSessionId: undefined, orchestratorClaudeSessionId: undefined } as any);
   }
 }

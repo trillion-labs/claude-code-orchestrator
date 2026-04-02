@@ -1,4 +1,4 @@
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn } from "./types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn, Note } from "./types";
 
 // ── Client → Server Messages ──
 
@@ -27,6 +27,10 @@ export type ClientMessage =
     }
   | {
       type: "session.terminate";
+      sessionId: string;
+    }
+  | {
+      type: "session.refresh";
       sessionId: string;
     }
   | {
@@ -77,8 +81,16 @@ export type ClientMessage =
   // ── Message history pagination ──
   | { type: "session.history"; sessionId: string; before: number; limit?: number }
   // ── Orchestrator Manager ──
-  | { type: "orchestrator.create"; projectId: string }
-  | { type: "orchestrator.prompt"; projectId: string; prompt: string };
+  | { type: "orchestrator.create"; projectId: string; reset?: boolean }
+  | { type: "orchestrator.prompt"; projectId: string; prompt: string }
+  // ── Prompt queue ──
+  | { type: "session.dequeue"; sessionId: string; index: number }
+  // ── Note CRUD ──
+  | { type: "note.create"; projectId: string; title: string; content: string }
+  | { type: "note.update"; projectId: string; noteId: string; updates: { title?: string; content?: string } }
+  | { type: "note.delete"; projectId: string; noteId: string }
+  | { type: "note.list"; projectId: string }
+  | { type: "note.get"; projectId: string; noteId: string };
 
 // ── Server → Client Messages ──
 
@@ -234,4 +246,12 @@ export type ServerMessage =
   | { type: "session.history"; sessionId: string; messages: ConversationMessage[]; hasMore: boolean }
   // ── Orchestrator Manager ──
   | { type: "orchestrator.created"; projectId: string; session: Session }
-  | { type: "orchestrator.terminated"; projectId: string };
+  | { type: "orchestrator.terminated"; projectId: string }
+  // ── Prompt queue ──
+  | { type: "session.queueUpdate"; sessionId: string; queue: string[] }
+  // ── Note responses ──
+  | { type: "note.created"; note: Omit<Note, "content"> }
+  | { type: "note.updated"; note: Omit<Note, "content"> }
+  | { type: "note.deleted"; projectId: string; noteId: string }
+  | { type: "note.list"; projectId: string; notes: Omit<Note, "content">[] }
+  | { type: "note.data"; note: Note };

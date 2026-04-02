@@ -27,6 +27,7 @@ interface KanbanColumnProps {
   onTaskClick: (task: Task) => void;
   onTaskSubmit: (task: Task) => void;
   onTaskDone: (task: Task) => void;
+  onTaskRetry?: (task: Task) => void;
   onViewSession: (sessionId: string) => void;
   onEditTitle?: (taskId: string, newTitle: string) => void;
   getProjectName?: (projectId: string) => string | undefined;
@@ -40,6 +41,7 @@ export function KanbanColumn({
   onTaskClick,
   onTaskSubmit,
   onTaskDone,
+  onTaskRetry,
   onViewSession,
   onEditTitle,
   getProjectName,
@@ -88,6 +90,11 @@ export function KanbanColumn({
                 onViewSession={
                   task.sessionId
                     ? () => onViewSession(task.sessionId!)
+                    : undefined
+                }
+                onRetry={
+                  task.sessionId && getSession(task.sessionId)?.status === "error"
+                    ? () => onTaskRetry?.(task)
                     : undefined
                 }
                 onEditTitle={onEditTitle}

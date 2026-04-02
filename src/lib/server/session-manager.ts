@@ -11,6 +11,7 @@ import { StreamParser } from "./stream-parser";
 import type { Session, MachineConfig, ClaudeStreamMessage, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, WorktreeInfo } from "../shared/types";
 import { PERMISSION_MODES } from "../shared/types";
 import { resolvePermissionByMode } from "./permission-utils";
+import { buildWorkerNotePrompt } from "./orchestrator-prompt";
 
 interface PermissionResolver {
   resolve: (result: { behavior: string; updatedInput?: Record<string, unknown>; message?: string }) => void;
@@ -38,6 +39,7 @@ interface ManagedSession {
   hasStreamedText: boolean;
   isOrchestrator?: boolean; // Orchestrator manager session
   orchestratorProjectId?: string; // Project ID for orchestrator MCP
+  inManagerConversation?: boolean; // True while Manager is talking to this worker via ask_worker
 }
 
 const MAX_RECENT_MESSAGES = 20; // Keep last 10 turns (user + assistant)
@@ -58,11 +60,30 @@ export class SessionManager extends EventEmitter {
     const sessionId = uuidv4();
     const claudeSessionId = resumeSessionId || uuidv4();
 
+    // Resolve workDir to absolute path to avoid ~ vs /home/... mismatch
+    let resolvedWorkDir = workDir;
+    if (machine.type === "local") {
+      resolvedWorkDir = workDir.replace(/^~(?=\/|$)/, process.env.HOME || "~");
+    } else {
+      try {
+        const ch = await this.sshManager.exec(machine, `realpath "${workDir.replace(/"/g, '\\"')}" 2>/dev/null || echo "${workDir.replace(/"/g, '\\"')}"`);
+        const out = await new Promise<string>((resolve) => {
+          let s = "";
+          ch.on("data", (d: Buffer) => { s += d.toString(); });
+          ch.on("close", () => resolve(s.trim()));
+          ch.on("error", () => resolve(workDir));
+        });
+        if (out && out.startsWith("/")) resolvedWorkDir = out;
+      } catch {
+        // SSH not ready yet — keep original path
+      }
+    }
+
     const session: Session = {
       id: sessionId,
       machineId: machine.id,
       machineName: machine.name,
-      workDir,
+      workDir: resolvedWorkDir,
       status: "starting",
       claudeSessionId,
       createdAt: Date.now(),
@@ -194,6 +215,7 @@ export class SessionManager extends EventEmitter {
 
     adapter.on("error", (err: Error) => {
       console.error(`[Session ${sessionId}] process error:`, err);
+      if (session.status === "starting") return; // Ignore stale errors during refresh
       session.status = "error";
       session.error = err.message;
       this.emit("session:status", sessionId, session.status, session.error);
@@ -202,6 +224,8 @@ export class SessionManager extends EventEmitter {
     adapter.on("close", (code: number | null) => {
       console.log(`[Session ${sessionId}] process exited with code ${code}`);
       if (session.status === "terminated") return;
+      // Ignore stale close events from old SSH channels during refresh
+      if (session.status === "starting") return;
 
       if (managed.interrupted) {
         // Interrupted by user — return to idle so they can send new prompts
@@ -233,7 +257,7 @@ export class SessionManager extends EventEmitter {
     // dynamically in handlePermissionRequest() via resolvePermissionByMode()
     try {
       if (machine.type === "local") {
-        const mcpConfigPath = await this.writeMcpConfig(sessionId, managed.orchestratorProjectId);
+        const mcpConfigPath = await this.writeMcpConfig(sessionId, managed.orchestratorProjectId, projectId);
         managed.mcpConfigPath = mcpConfigPath;
         args.push(
           "--permission-prompt-tool", "mcp__perm__check_permission",
@@ -242,7 +266,7 @@ export class SessionManager extends EventEmitter {
       } else {
         // Remote: set up reverse port forward + remote MCP server (with timeout)
         const remoteConfig = await Promise.race([
-          this.setupRemoteMcpPermission(sessionId, machine),
+          this.setupRemoteMcpPermission(sessionId, machine, projectId),
           new Promise<null>((resolve) => setTimeout(() => {
             console.warn(`[Session ${sessionId}] Remote MCP setup timed out after 10s`);
             resolve(null);
@@ -263,23 +287,47 @@ export class SessionManager extends EventEmitter {
     // Orchestrator manager: restrict tools to read-only + inject system prompt
     if (options?.isOrchestrator && options.systemPrompt) {
       args.push("--allowedTools", "Read,Glob,Grep,mcp__orch__*,mcp__perm__*");
-      args.push("--append-system-prompt", options.systemPrompt);
+      // Only inject system prompt on fresh sessions (not resume — CLI rejects it)
+      if (!resumeSessionId) {
+        args.push("--append-system-prompt", options.systemPrompt);
+      }
     }
 
-    if (resumeSessionId) {
-      args.push("--resume", resumeSessionId);
-    } else {
-      args.push("--session-id", claudeSessionId);
+    // Worker sessions with project context: inject note protocol (fresh only)
+    if (!options?.isOrchestrator && projectId && !resumeSessionId) {
+      args.push("--append-system-prompt", buildWorkerNotePrompt());
     }
 
     try {
       // Load chat history from .jsonl if resuming
+      // NOTE: loadRemoteSessionHistory may update managed.session.claudeSessionId
+      // if the stored UUID doesn't exist and a fallback file is found.
+      // So we must add --resume AFTER history load.
+      let historyResult: "loaded" | "not_found" | "error" | null = null;
       if (resumeSessionId) {
         if (machine.type === "local") {
           await this.loadSessionHistory(managed, resumeSessionId);
+          historyResult = managed.messages.length > 0 ? "loaded" : "not_found";
         } else {
-          await this.loadRemoteSessionHistory(managed, machine, resumeSessionId);
+          historyResult = await this.loadRemoteSessionHistory(managed, machine, resumeSessionId);
         }
+      }
+
+      // Add --resume or --session-id AFTER history load.
+      // "not_found" → truly no file, start fresh with new UUID.
+      // "error" (SSH timeout etc.) → still resume with original UUID; Claude has the history.
+      // "loaded" → resume with confirmed UUID.
+      if (!resumeSessionId) {
+        args.push("--session-id", claudeSessionId);
+      } else if (historyResult === "not_found") {
+        // Session file confirmed absent — start fresh with a new UUID
+        console.log(`[Session ${sessionId}] Session file not found, starting fresh (was: ${managed.session.claudeSessionId})`);
+        const freshId = uuidv4();
+        managed.session.claudeSessionId = freshId;
+        args.push("--session-id", freshId);
+      } else {
+        // "loaded" or "error" — resume with the stored UUID
+        args.push("--resume", managed.session.claudeSessionId);
       }
 
       // Emit display name (explicit name takes priority over first user message)
@@ -821,6 +869,14 @@ except:
     const managed = this.sessions.get(sessionId);
     if (!managed) throw new Error(`Session ${sessionId} not found`);
 
+    if (managed.isProcessingPrompt) {
+      // Queue the prompt — don't add to history or emit yet
+      managed.promptQueue.push(prompt);
+      if (!managed.firstUserMessage) managed.firstUserMessage = prompt;
+      this.emit("session:queueUpdate", sessionId, [...managed.promptQueue]);
+      return;
+    }
+
     // Add user message to history
     const userMsg: ConversationMessage = {
       id: uuidv4(),
@@ -833,13 +889,71 @@ except:
     this.trimMessages(managed);
     this.emit("session:message", sessionId, userMsg);
 
-    if (managed.isProcessingPrompt) {
-      // Queue the prompt
-      managed.promptQueue.push(prompt);
-      return;
-    }
-
     this.processPrompt(managed, prompt);
+  }
+
+  /**
+   * Send a prompt to a session and wait for the complete response.
+   * Returns the assistant's response text. Used by Manager to ask Workers.
+   * Rejects after timeout (default 5 minutes).
+   */
+  sendPromptAndWaitForResponse(
+    sessionId: string,
+    prompt: string,
+    timeoutMs = 5 * 60 * 1000,
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const managed = this.sessions.get(sessionId);
+      if (!managed) return reject(new Error(`Session ${sessionId} not found`));
+
+      // Mark worker as in manager conversation — suppresses completion notifications
+      managed.inManagerConversation = true;
+
+      let timer: ReturnType<typeof setTimeout>;
+
+      const onMessage = (sid: string, message: ConversationMessage) => {
+        if (sid !== sessionId || message.role !== "assistant") return;
+        cleanup();
+        resolve(message.content);
+      };
+
+      const onStatus = (sid: string, status: string, error?: string) => {
+        if (sid !== sessionId) return;
+        if (status === "error" || status === "terminated") {
+          cleanup();
+          reject(new Error(`Worker session ${status}: ${error || "unknown"}`));
+        }
+      };
+
+      const cleanup = () => {
+        managed.inManagerConversation = false;
+        clearTimeout(timer);
+        this.removeListener("session:message", onMessage);
+        this.removeListener("session:status", onStatus);
+      };
+
+      timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timed out waiting for worker response (${timeoutMs}ms)`));
+      }, timeoutMs);
+
+      this.on("session:message", onMessage);
+      this.on("session:status", onStatus);
+
+      // Send the prompt (this queues if busy)
+      this.sendPrompt(sessionId, prompt).catch((err) => {
+        cleanup();
+        reject(err);
+      });
+    });
+  }
+
+  dequeuePrompt(sessionId: string, index: number): void {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) return;
+    if (index < 0 || index >= managed.promptQueue.length) return;
+    managed.promptQueue.splice(index, 1);
+    this.emit("session:queueUpdate", sessionId, [...managed.promptQueue]);
   }
 
   private async processPrompt(managed: ManagedSession, prompt: string) {
@@ -1000,6 +1114,17 @@ except:
 
         if (managed.promptQueue.length > 0) {
           const nextPrompt = managed.promptQueue.shift()!;
+          // Now add the queued user message to history and emit
+          const queuedUserMsg: ConversationMessage = {
+            id: uuidv4(),
+            role: "user",
+            content: nextPrompt,
+            timestamp: Date.now(),
+          };
+          managed.messages.push(queuedUserMsg);
+          this.trimMessages(managed);
+          this.emit("session:message", sessionId, queuedUserMsg);
+          this.emit("session:queueUpdate", sessionId, [...managed.promptQueue]);
           this.processPrompt(managed, nextPrompt);
         }
         break;
@@ -1056,7 +1181,7 @@ except:
 
   // ── MCP Permission Prompt Tool ──
 
-  private async writeMcpConfig(sessionId: string, orchestratorProjectId?: string): Promise<string> {
+  private async writeMcpConfig(sessionId: string, orchestratorProjectId?: string, projectId?: string): Promise<string> {
     const srcPath = join(process.cwd(), "scripts", "permission-mcp-server.mjs");
     // Copy MCP server script to /tmp to avoid issues with .claude/ worktree paths
     const mcpServerPath = join(tmpdir(), `claude-orch-${sessionId}.mcp.mjs`);
@@ -1084,6 +1209,18 @@ except:
             },
           },
         }),
+        // Note MCP server — included for project-linked worker sessions (non-orchestrator)
+        ...(!orchestratorProjectId && projectId && {
+          note: {
+            command: "node",
+            args: [join(tmpdir(), `claude-orch-${sessionId}.note.mjs`)],
+            env: {
+              ORCHESTRATOR_URL: `http://localhost:${this.orchestratorPort}`,
+              SESSION_ID: sessionId,
+              PROJECT_ID: projectId,
+            },
+          },
+        }),
       },
     };
 
@@ -1092,6 +1229,13 @@ except:
       const orchSrcPath = join(process.cwd(), "scripts", "orchestrator-mcp-server.mjs");
       const orchDestPath = join(tmpdir(), `claude-orch-${sessionId}.orchestrator.mjs`);
       await copyFile(orchSrcPath, orchDestPath);
+    }
+
+    // Copy note MCP server script for project-linked worker sessions
+    if (!orchestratorProjectId && projectId) {
+      const noteSrcPath = join(process.cwd(), "scripts", "note-mcp-server.mjs");
+      const noteDestPath = join(tmpdir(), `claude-orch-${sessionId}.note.mjs`);
+      await copyFile(noteSrcPath, noteDestPath);
     }
 
     await writeFile(configPath, JSON.stringify(config), "utf-8");
@@ -1105,6 +1249,7 @@ except:
       // Also clean up copied MCP server script
       try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".mcp.mjs")); } catch { /* ignore */ }
       try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".orchestrator.mjs")); } catch { /* ignore */ }
+      try { await unlink(managed.mcpConfigPath.replace(".mcp.json", ".note.mjs")); } catch { /* ignore */ }
     } else {
       // Remote: clean up remote temp files
       try {
@@ -1118,7 +1263,7 @@ except:
    * Set up reverse port forward + Python MCP server on remote machine.
    * Returns the remote MCP config path, or null if setup fails.
    */
-  private async setupRemoteMcpPermission(sessionId: string, machine: MachineConfig): Promise<string | null> {
+  private async setupRemoteMcpPermission(sessionId: string, machine: MachineConfig, projectId?: string): Promise<string | null> {
     const scriptPath = `/tmp/claude-orch-${sessionId}.mcp.py`;
     const configPath = `/tmp/claude-orch-${sessionId}.mcp.json`;
 
@@ -1238,26 +1383,102 @@ for line in sys.stdin:
     // Step 1: Set up reverse port forward
     const remotePort = await this.sshManager.setupReversePortForward(machine, this.orchestratorPort);
 
-    // Step 2: Write both files via SFTP (exec hangs after forwardIn on same connection)
-    const mcpConfig = JSON.stringify({
-      mcpServers: {
-        perm: {
-          command: "python3",
-          args: [scriptPath],
-          env: {
-            ORCHESTRATOR_URL: `http://127.0.0.1:${remotePort}`,
-            SESSION_ID: sessionId,
-          },
+    // Step 2: Write files via SFTP (exec hangs after forwardIn on same connection)
+    const orchUrl = `http://127.0.0.1:${remotePort}`;
+
+    const mcpServers: Record<string, unknown> = {
+      perm: {
+        command: "python3",
+        args: [scriptPath],
+        env: {
+          ORCHESTRATOR_URL: orchUrl,
+          SESSION_ID: sessionId,
         },
       },
-    });
+    };
+
+    // Add note MCP server for project-linked worker sessions
+    if (projectId) {
+      const noteScriptPath = `/tmp/claude-orch-${sessionId}.note.py`;
+      const notePythonScript = this.buildRemoteNoteMcpScript();
+      mcpServers.note = {
+        command: "python3",
+        args: [noteScriptPath],
+        env: {
+          ORCHESTRATOR_URL: orchUrl,
+          SESSION_ID: sessionId,
+          PROJECT_ID: projectId,
+        },
+      };
+      await this.sshManager.writeRemoteFile(machine, noteScriptPath, notePythonScript, { mode: 0o755 });
+    }
+
+    const mcpConfig = JSON.stringify({ mcpServers });
 
     console.log(`[Remote MCP] Writing files to ${machine.name} via SFTP...`);
     await this.sshManager.writeRemoteFile(machine, scriptPath, pythonScript, { mode: 0o755 });
     await this.sshManager.writeRemoteFile(machine, configPath, mcpConfig);
 
-    console.log(`[Session ${sessionId}] Remote MCP permission: port ${remotePort}, script ${scriptPath}`);
+    console.log(`[Session ${sessionId}] Remote MCP permission: port ${remotePort}, script ${scriptPath}${projectId ? " + note server" : ""}`);
     return configPath;
+  }
+
+  private buildRemoteNoteMcpScript(): string {
+    return `#!/usr/bin/env python3
+import sys, json, os
+try:
+    from urllib.request import Request, urlopen
+except ImportError:
+    from urllib2 import Request, urlopen
+
+SESSION_ID = os.environ.get("SESSION_ID", "")
+PROJECT_ID = os.environ.get("PROJECT_ID", "")
+ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "http://127.0.0.1:0")
+
+TOOLS = [
+    {"name": "list_notes", "description": "List note summaries (id, title, createdAt, updatedAt) in the current project. Does NOT include content.", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "get_note", "description": "Get full note content (title + markdown content) by note ID.", "inputSchema": {"type": "object", "properties": {"noteId": {"type": "string", "description": "The note ID to retrieve"}}, "required": ["noteId"]}},
+    {"name": "create_note", "description": "Create a new note. Notes are markdown documents for plans, research, decisions, or project knowledge.", "inputSchema": {"type": "object", "properties": {"title": {"type": "string", "description": "Note title"}, "content": {"type": "string", "description": "Note content in markdown"}}, "required": ["title", "content"]}},
+    {"name": "update_note", "description": "Update an existing note's title or content.", "inputSchema": {"type": "object", "properties": {"noteId": {"type": "string", "description": "The note ID to update"}, "title": {"type": "string", "description": "New title (optional)"}, "content": {"type": "string", "description": "New content in markdown (optional)"}}, "required": ["noteId"]}},
+    {"name": "delete_note", "description": "Delete a note from the project.", "inputSchema": {"type": "object", "properties": {"noteId": {"type": "string", "description": "The note ID to delete"}}, "required": ["noteId"]}}
+]
+
+def send(obj):
+    sys.stdout.write(json.dumps(obj) + "\\n")
+    sys.stdout.flush()
+
+def call_orchestrator(tool, args):
+    data = json.dumps({"sessionId": SESSION_ID, "projectId": PROJECT_ID, "tool": tool, "args": args}).encode()
+    req = Request(ORCHESTRATOR_URL + "/api/orchestrator", data=data, headers={"Content-Type": "application/json"}, method="POST")
+    resp = urlopen(req, timeout=30)
+    return json.loads(resp.read())
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        msg = json.loads(line)
+    except:
+        continue
+    mid = msg.get("id")
+    method = msg.get("method", "")
+
+    if method == "initialize":
+        send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "note-server", "version": "1.0.0"}}})
+    elif method == "notifications/initialized":
+        pass
+    elif method == "tools/list":
+        send({"jsonrpc": "2.0", "id": mid, "result": {"tools": TOOLS}})
+    elif method == "tools/call":
+        name = msg.get("params", {}).get("name", "")
+        args = msg.get("params", {}).get("arguments", {})
+        try:
+            result = call_orchestrator(name, args)
+            send({"jsonrpc": "2.0", "id": mid, "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]}})
+        except Exception as e:
+            send({"jsonrpc": "2.0", "id": mid, "result": {"content": [{"type": "text", "text": "Error: " + str(e)}], "isError": True}})
+`;
   }
 
   /**
@@ -1466,6 +1687,97 @@ for line in sys.stdin:
     await managed.adapter.spawn("claude", args, { cwd: spawnCwd, env: spawnEnv });
   }
 
+  async refreshSession(sessionId: string): Promise<void> {
+    const managed = this.sessions.get(sessionId);
+    if (!managed) throw new Error(`Session ${sessionId} not found`);
+    if (managed.session.status !== "error") {
+      throw new Error(`Session is not in error state (current: ${managed.session.status})`);
+    }
+
+    // Reset state
+    managed.session.status = "starting";
+    managed.session.error = undefined;
+    managed.isProcessingPrompt = false;
+    this.emit("session:status", sessionId, "starting");
+
+    try {
+      const TIMEOUT_MS = 60_000;
+      const reconnect = async () => {
+        // Re-establish SSH reverse port forward + MCP config for remote sessions
+        if (managed.machine.type !== "local" && managed.mcpConfigPath) {
+          const configPath = await this.setupRemoteMcpPermission(
+            sessionId, managed.machine, managed.session.projectId,
+          );
+          if (configPath) managed.mcpConfigPath = configPath;
+        }
+        await this.respawnClaude(managed);
+      };
+
+      await Promise.race([
+        reconnect(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Reconnect timed out after 60s")), TIMEOUT_MS),
+        ),
+      ]);
+
+      // Sync history diff: load remote .jsonl, emit only new messages
+      if (managed.machine.type !== "local") {
+        try {
+          // Snapshot the last message content for diffing (count alone is unreliable due to MAX_RECENT_MESSAGES truncation)
+          const prevLast = managed.messages.length > 0
+            ? managed.messages[managed.messages.length - 1]
+            : null;
+
+          // Suppress emits from parseSessionJsonl — we'll emit the diff ourselves
+          const origEmit = this.emit.bind(this);
+          const suppressedMessages: ConversationMessage[] = [];
+          this.emit = ((event: string, ...args: unknown[]) => {
+            if (event === "session:message" && args[0] === sessionId) {
+              suppressedMessages.push(args[1] as ConversationMessage);
+              return false;
+            }
+            return origEmit(event, ...args);
+          }) as typeof this.emit;
+
+          await this.loadRemoteSessionHistory(managed, managed.machine, managed.session.claudeSessionId);
+          this.emit = origEmit;
+
+          // Find where the old messages end in the new list by matching the last known message
+          let diffStart = 0;
+          if (prevLast && suppressedMessages.length > 0) {
+            for (let i = suppressedMessages.length - 1; i >= 0; i--) {
+              if (suppressedMessages[i].role === prevLast.role &&
+                  suppressedMessages[i].content === prevLast.content) {
+                diffStart = i + 1;
+                break;
+              }
+            }
+          }
+
+          const newMessages = suppressedMessages.slice(diffStart);
+          for (const msg of newMessages) {
+            this.emit("session:message", sessionId, msg);
+          }
+          if (newMessages.length > 0) {
+            console.log(`[Session ${sessionId}] Synced ${newMessages.length} new messages after reconnect`);
+          }
+        } catch (err) {
+          console.warn(`[Session ${sessionId}] History sync failed:`, (err as Error).message);
+        }
+      }
+
+      // respawnClaude spawns the process but Claude CLI in -p mode waits for input
+      // without producing output, so status stays "starting" forever. Set idle explicitly.
+      managed.session.status = "idle";
+      managed.session.error = undefined;
+      this.emit("session:status", sessionId, "idle");
+    } catch (err) {
+      managed.session.status = "error";
+      managed.session.error = `Reconnect failed: ${(err as Error).message}`;
+      this.emit("session:status", sessionId, "error", managed.session.error);
+    }
+  }
+
   terminateSession(sessionId: string): void {
     const managed = this.sessions.get(sessionId);
     if (!managed) return;
@@ -1542,6 +1854,11 @@ for line in sys.stdin:
     return managed?.isOrchestrator === true;
   }
 
+  isInManagerConversation(sessionId: string): boolean {
+    const managed = this.sessions.get(sessionId);
+    return managed?.inManagerConversation === true;
+  }
+
   private async loadSessionHistory(managed: ManagedSession, claudeSessionId: string): Promise<void> {
     const claudeDir = join(homedir(), ".claude", "projects");
 
@@ -1564,7 +1881,7 @@ for line in sys.stdin:
     }
   }
 
-  private async loadRemoteSessionHistory(managed: ManagedSession, machine: MachineConfig, claudeSessionId: string): Promise<void> {
+  private async loadRemoteSessionHistory(managed: ManagedSession, machine: MachineConfig, claudeSessionId: string): Promise<"loaded" | "not_found" | "error"> {
     try {
       // Search for the session file in ~/.claude/projects AND workDir ancestors' .claude/projects
       // This handles direnv setups where CLAUDE_CONFIG_DIR points to a custom location
@@ -1596,7 +1913,7 @@ done
 
       if (!filePath) {
         console.warn(`[Session ${managed.session.id}] Remote session file not found for ${claudeSessionId}`);
-        return;
+        return "not_found";
       }
 
       // Detect custom CLAUDE_CONFIG_DIR from the file path
@@ -1624,14 +1941,14 @@ done
         catChannel.on("error", () => resolve(""));
       });
 
-      if (!content) return;
+      if (!content) return "not_found";
 
       // Parse the JSONL content — same logic as loadSessionHistory
       this.parseSessionJsonl(managed, content);
-      const project = filePath.split("/").slice(-2, -1)[0] || "unknown";
-      console.log(`[Session ${managed.session.id}] Loaded ${managed.messages.length} history messages from remote ${project}/${claudeSessionId}.jsonl`);
+      return "loaded";
     } catch (err) {
       console.warn("Could not load remote session history:", (err as Error).message);
+      return "error";
     }
   }
 

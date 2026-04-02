@@ -93,6 +93,17 @@ export interface Project {
   updatedAt: number;
 }
 
+// ── Note Types ──
+
+export interface Note {
+  id: string;
+  projectId: string;
+  title: string;
+  content: string; // markdown
+  createdAt: number;
+  updatedAt: number;
+}
+
 // ── Worktree Info ──
 
 export interface WorktreeInfo {

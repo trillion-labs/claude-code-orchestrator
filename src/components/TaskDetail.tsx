@@ -270,7 +270,7 @@ export function TaskDetail({
           <PromptInput
             onSend={onSendPrompt}
             onCancel={onCancelPrompt}
-            disabled={session.status === "busy"}
+            isBusy={session.status === "busy"}
           />
         </div>
       )}

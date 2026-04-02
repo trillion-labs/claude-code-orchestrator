@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { StatusBadge } from "./StatusBadge";
 import { StreamOutput } from "./StreamOutput";
 import { PromptInput } from "./PromptInput";
@@ -8,7 +8,7 @@ import type { Session, ConversationMessage } from "@/lib/shared/types";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2, AppWindow, Rows2, Columns2 } from "lucide-react";
+import { Monitor, Server, X, FolderOpen, Shield, ShieldAlert, ShieldCheck, ShieldOff, Settings, ChevronDown, Check, ClipboardList, GitBranch, FileText, PanelRight, Trash2, AppWindow, Rows2, Columns2, RefreshCw } from "lucide-react";
 import { PERMISSION_MODES } from "@/lib/shared/types";
 import type { PermissionMode } from "@/lib/shared/types";
 import { SettingsDialog } from "./SettingsDialog";
@@ -51,6 +51,35 @@ export function SessionView({
   const isBusy = session.status === "busy" || session.status === "starting";
   const [sessionSettingsOpen, setSessionSettingsOpen] = useState(false);
   const [modePopoverOpen, setModePopoverOpen] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const reconnectStartStatus = useRef<string | null>(null);
+
+  // Track status transitions after reconnect started
+  useEffect(() => {
+    if (!reconnecting) return;
+    // Once status moves away from the initial "error", start watching
+    if (reconnectStartStatus.current === "error" && session.status === "starting") {
+      reconnectStartStatus.current = "starting";
+      return;
+    }
+    // Reset when we reach a terminal state (idle, busy, error again)
+    if (reconnectStartStatus.current === "starting" && session.status !== "starting") {
+      setReconnecting(false);
+      reconnectStartStatus.current = null;
+    }
+  }, [session.status, reconnecting]);
+
+  // Elapsed timer while reconnecting
+  useEffect(() => {
+    if (!reconnecting) { setElapsed(0); return; }
+    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(interval);
+  }, [reconnecting]);
+
+  // Prompt queue
+  const promptQueueRaw = useStore((s) => s.promptQueue.get(session.id));
+  const promptQueue = promptQueueRaw ?? [];
 
   // Plan panel
   const planContent = useStore((s) => s.planContent.get(session.id));
@@ -321,9 +350,29 @@ export function SessionView({
         </div>
       </div>
 
-      {session.error && (
-        <div className="px-4 py-2 bg-destructive/10 text-destructive text-sm">
-          {session.error}
+      {(session.error || reconnecting) && (
+        <div className={`px-4 py-2 text-sm flex items-center justify-between gap-2 ${
+          reconnecting ? "bg-amber-500/10 text-amber-400" : "bg-destructive/10 text-destructive"
+        }`}>
+          <span className="truncate">
+            {reconnecting ? "Reconnecting to remote session..." : session.error}
+          </span>
+          {!isLocal && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 gap-1 text-xs border-amber-500/30 text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
+              disabled={reconnecting}
+              onClick={() => {
+                reconnectStartStatus.current = "error";
+                setReconnecting(true);
+                send({ type: "session.refresh", sessionId: session.id });
+              }}
+            >
+              <RefreshCw className={`w-3 h-3 ${reconnecting ? "animate-spin" : ""}`} />
+              {reconnecting ? `${elapsed}s` : "Reconnect"}
+            </Button>
+          )}
         </div>
       )}
 
@@ -352,9 +401,27 @@ export function SessionView({
             />
           )}
 
+          {/* Queued prompts preview */}
+          {promptQueue.length > 0 && (
+            <div className="border-t bg-muted/30 px-4 py-2 space-y-1">
+              {promptQueue.map((prompt, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground/60 font-mono">
+                  <span className="text-muted-foreground/40 shrink-0">queued</span>
+                  <span className="truncate flex-1">{prompt}</span>
+                  <button
+                    onClick={() => send({ type: "session.dequeue", sessionId: session.id, index: i })}
+                    className="shrink-0 p-0.5 rounded text-muted-foreground/40 hover:bg-destructive/20 hover:text-destructive"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <PromptInput
             onSend={onSendPrompt}
-            disabled={isBusy}
+            isBusy={isBusy}
             onCancel={() => send({ type: "session.interrupt", sessionId: session.id })}
           />
         </div>

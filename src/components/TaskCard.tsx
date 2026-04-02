@@ -14,12 +14,13 @@ interface TaskCardProps {
   onClick: () => void;
   onSubmit?: () => void;
   onDone?: () => void;
+  onRetry?: () => void;
   onViewSession?: () => void;
   onEditTitle?: (taskId: string, newTitle: string) => void;
   projectName?: string;
 }
 
-export function TaskCard({ task, session, onClick, onSubmit, onDone, onViewSession, onEditTitle, projectName }: TaskCardProps) {
+export function TaskCard({ task, session, onClick, onSubmit, onDone, onRetry, onViewSession, onEditTitle, projectName }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -203,7 +204,7 @@ export function TaskCard({ task, session, onClick, onSubmit, onDone, onViewSessi
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                // TODO: retry logic
+                onRetry?.();
               }}
               className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium
                 bg-amber-500/15 text-amber-400 border border-amber-500/25
