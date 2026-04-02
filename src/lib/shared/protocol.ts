@@ -1,4 +1,4 @@
-import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, PermissionRequest, Project, Task, KanbanColumn, Note } from "./types";
+import type { Session, MachineConfig, ConversationMessage, ClaudeSessionInfo, PermissionMode, ReviewMode, PermissionRequest, Project, Task, KanbanColumn, Note } from "./types";
 
 // ── Client → Server Messages ──
 
@@ -62,7 +62,7 @@ export type ClientMessage =
   | { type: "file.read"; machineId: string; filePath: string; requestId: string; maxLines?: number }
   // ── Project CRUD ──
   | { type: "project.create"; name: string; machineId: string; workDir: string; permissionMode: PermissionMode }
-  | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode } }
+  | { type: "project.update"; projectId: string; updates: { name?: string; permissionMode?: PermissionMode; reviewMode?: ReviewMode } }
   | { type: "project.delete"; projectId: string }
   | { type: "project.list" }
   // ── Task CRUD ──

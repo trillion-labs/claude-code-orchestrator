@@ -53,6 +53,16 @@ export const PERMISSION_MODES: Record<PermissionMode, PermissionModeConfig> = {
   },
 };
 
+// ── Review Mode ──
+
+export type ReviewMode = "none" | "manager-tasks" | "all";
+
+export const REVIEW_MODES: { id: ReviewMode; label: string; description: string }[] = [
+  { id: "none",          label: "No Review",       description: "Manager is not notified of completed tasks" },
+  { id: "manager-tasks", label: "Manager Tasks",   description: "Only tasks submitted by the manager" },
+  { id: "all",           label: "All Tasks",       description: "All tasks including user-submitted" },
+];
+
 // ── Kanban Types ──
 
 export type KanbanColumn = "todo" | "in-progress" | "in-review" | "done";
@@ -76,6 +86,7 @@ export interface Task {
   sessionId?: string;
   claudeSessionId?: string;   // Claude CLI session ID (for --resume)
   lastMachineId?: string;     // Machine ID the session last ran on
+  submittedBy?: "manager" | "user";
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
@@ -87,6 +98,7 @@ export interface Project {
   machineId: string;
   workDir: string;
   permissionMode: PermissionMode;
+  reviewMode: ReviewMode;
   orchestratorSessionId?: string;
   orchestratorClaudeSessionId?: string; // Claude CLI session ID (for --resume)
   createdAt: number;

@@ -326,7 +326,7 @@ export class WebSocketHandler {
         if (!project) throw new Error(`Project ${projectId} not found`);
         const submitMachine = this.machines.find((m) => m.id === project.machineId);
         if (!submitMachine) throw new Error("Machine not found for project");
-        const { task, session } = await this.projectManager.submitTask(projectId, args.taskId as string, submitMachine);
+        const { task, session } = await this.projectManager.submitTask(projectId, args.taskId as string, submitMachine, "manager");
         this.broadcast({ type: "task.submitted", task, session });
         this.broadcast({ type: "session.created", session });
         return { task: { id: task.id, title: task.title, column: task.column }, session: { id: session.id, status: session.status } };
@@ -1181,11 +1181,16 @@ export class WebSocketHandler {
     const project = this.projectManager.getProject(task.projectId);
     if (!project?.orchestratorSessionId) return;
 
+    // Check review mode
+    const reviewMode = project.reviewMode ?? "manager-tasks";
+    if (reviewMode === "none") return;
+    if (reviewMode === "manager-tasks" && task.submittedBy !== "manager") return;
+
     // Don't notify if manager session is dead
     const managerSession = this.sessionManager.getSession(project.orchestratorSessionId);
     if (!managerSession || managerSession.status === "terminated" || managerSession.status === "error") return;
 
-    const notification = `[System] Worker completed task "${task.title}" (taskId: ${task.id}, sessionId: ${workerSessionId}). The task has been moved to "in-review". You can use ask_worker to request a summary of what was done, then decide whether to approve (move to done), request changes, or assign follow-up work.`;
+    const notification = `[System] Worker completed task "${task.title}" (taskId: ${task.id}, sessionId: ${workerSessionId}). The task has been moved to "in-review". Use ask_worker to request a summary of what was done, then report the results to the user. Do NOT move the task to "done" without the user's explicit approval.`;
 
     this.sessionManager.sendPrompt(project.orchestratorSessionId, notification).catch((err) => {
       console.error(`[Orchestrator] Failed to notify manager of worker completion:`, err);

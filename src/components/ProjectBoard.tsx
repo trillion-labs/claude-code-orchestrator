@@ -23,13 +23,14 @@ import { TaskDialog } from "./TaskDialog";
 import { TaskDetail } from "./TaskDetail";
 import { ManagerChatPanel } from "./ManagerChatPanel";
 import { SessionPickerDialog } from "./SessionPickerDialog";
-import { KANBAN_COLUMNS } from "@/lib/shared/types";
-import type { Task, KanbanColumn as KanbanColumnType, Project } from "@/lib/shared/types";
+import { KANBAN_COLUMNS, REVIEW_MODES } from "@/lib/shared/types";
+import type { Task, KanbanColumn as KanbanColumnType, Project, ReviewMode } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
 import { Button } from "@/components/ui/button";
 import { NotesList } from "./NotesList";
 import { NoteDetail } from "./NoteDetail";
-import { Server, FolderOpen, Link, GripVertical, Wand2, Columns2, Layers, X, FileText, Plus } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Server, FolderOpen, Link, GripVertical, Wand2, Columns2, Layers, X, FileText, Plus, ChevronDown, Check, Eye } from "lucide-react";
 
 interface ProjectBoardProps {
   project: Project;
@@ -74,6 +75,7 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
   const setProjectTab = (v: "kanban" | "notes") => { globalProjectTab = v; _setProjectTab(v); };
   const [contentPanelWidth, setContentPanelWidth] = useState(580);
   const [managerPanelWidth, setManagerPanelWidth] = useState(480);
+  const [reviewModeOpen, setReviewModeOpen] = useState(false);
 
   // Save panel state to cache on every state change (keyed by current project)
   const prevProjectId = useRef<string>(project.id);
@@ -484,6 +486,41 @@ export function ProjectBoard({ project, send, onViewSession }: ProjectBoardProps
                 <Wand2 className="w-3.5 h-3.5" />
                 Manager
               </Button>
+              {(managerPanelOpen || orchestratorSessionId) && (
+                <Popover open={reviewModeOpen} onOpenChange={setReviewModeOpen}>
+                  <PopoverTrigger asChild>
+                    <button className="shrink-0 inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md font-medium cursor-pointer transition-colors whitespace-nowrap bg-muted text-muted-foreground border border-border hover:bg-accent">
+                      <Eye className="w-3 h-3" />
+                      {REVIEW_MODES.find((m) => m.id === (project.reviewMode ?? "manager-tasks"))?.label ?? "Manager Tasks"}
+                      <ChevronDown className="w-3 h-3 opacity-60" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-1" align="start">
+                    {REVIEW_MODES.map((mode) => (
+                      <button
+                        key={mode.id}
+                        onClick={() => {
+                          send({ type: "project.update", projectId: project.id, updates: { reviewMode: mode.id } });
+                          setReviewModeOpen(false);
+                        }}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-left transition-colors ${
+                          (project.reviewMode ?? "manager-tasks") === mode.id
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent/50 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <span className="w-4 flex justify-center">
+                          {(project.reviewMode ?? "manager-tasks") === mode.id && <Check className="w-3 h-3" />}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium">{mode.label}</div>
+                          <div className="text-[10px] opacity-60">{mode.description}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
               <Button
                 variant={noteSidebarOpen ? "default" : "outline"}
                 size="sm"
