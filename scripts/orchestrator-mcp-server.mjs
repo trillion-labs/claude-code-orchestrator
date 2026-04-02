@@ -146,6 +146,43 @@ const TOOLS = [
       properties: {},
     },
   },
+  // ── Manager ↔ Worker Communication ──
+  {
+    name: "ask_worker",
+    description: "Send a message to a worker session and WAIT for its response (blocking, up to 5 min). Use for questions that need an answer before you can proceed — e.g. requesting a summary, asking for clarification. Use list_tasks to find worker sessionIds.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: {
+          type: "string",
+          description: "The worker session ID. Get this from list_tasks (sessionId field on in-progress/in-review tasks).",
+        },
+        message: {
+          type: "string",
+          description: "The message to send. E.g. 'Summarize what you implemented and any issues you encountered.'",
+        },
+      },
+      required: ["sessionId", "message"],
+    },
+  },
+  {
+    name: "send_to_worker",
+    description: "Send a message to a worker session and return immediately (non-blocking). Use for assigning follow-up work or giving instructions when you don't need to wait for the result. You'll receive a completion notification when the worker finishes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: {
+          type: "string",
+          description: "The worker session ID. Get this from list_tasks (sessionId field on in-progress/in-review tasks).",
+        },
+        message: {
+          type: "string",
+          description: "The instruction to send. E.g. 'Also add input validation for the email field and run the tests.'",
+        },
+      },
+      required: ["sessionId", "message"],
+    },
+  },
   // ── Note Tools ──
   {
     name: "list_notes",

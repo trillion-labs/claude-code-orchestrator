@@ -232,7 +232,15 @@ export class WebSocketHandler {
         const tasks = this.projectManager.getProjectTasks(projectId);
         const column = args.column as string | undefined;
         const filtered = column ? tasks.filter((t) => t.column === column) : tasks;
-        return { tasks: filtered.map((t) => ({ id: t.id, title: t.title, column: t.column, order: t.order })) };
+        return { tasks: filtered.map((t) => {
+          const entry: Record<string, unknown> = { id: t.id, title: t.title, column: t.column, order: t.order };
+          if (t.sessionId) {
+            entry.sessionId = t.sessionId;
+            const s = this.sessionManager.getSession(t.sessionId);
+            if (s) entry.sessionStatus = s.status;
+          }
+          return entry;
+        }) };
       }
 
       case "get_tasks": {
@@ -241,7 +249,15 @@ export class WebSocketHandler {
         const found = taskIds
           .map((id) => allTasks.find((t) => t.id === id))
           .filter(Boolean)
-          .map((t) => ({ id: t!.id, title: t!.title, description: t!.description, column: t!.column, order: t!.order }));
+          .map((t) => {
+            const entry: Record<string, unknown> = { id: t!.id, title: t!.title, description: t!.description, column: t!.column, order: t!.order };
+            if (t!.sessionId) {
+              entry.sessionId = t!.sessionId;
+              const s = this.sessionManager.getSession(t!.sessionId);
+              if (s) entry.sessionStatus = s.status;
+            }
+            return entry;
+          });
         return { tasks: found };
       }
 
@@ -283,6 +299,19 @@ export class WebSocketHandler {
           0,
         );
         this.broadcast({ type: "task.moved", task });
+
+        // Terminate worker session when task moves to "done"
+        if (task.column === "done" && task.sessionId) {
+          const workerSession = this.sessionManager.getSession(task.sessionId);
+          if (workerSession && workerSession.status !== "terminated" && workerSession.status !== "error") {
+            try {
+              this.sessionManager.terminateSession(task.sessionId);
+            } catch (err) {
+              console.error(`[Orchestrator] Failed to terminate worker session ${task.sessionId}:`, err);
+            }
+          }
+        }
+
         return { task: { id: task.id, title: task.title, column: task.column } };
       }
 
@@ -366,6 +395,57 @@ export class WebSocketHandler {
         await this.projectStore.deleteNote(projectId, args.noteId as string);
         this.broadcast({ type: "note.deleted", projectId, noteId: args.noteId as string });
         return { success: true };
+      }
+
+      // ── Manager ↔ Worker Communication ──
+
+      case "ask_worker": {
+        const targetSessionId = args.sessionId as string;
+        const message = args.message as string;
+        if (!targetSessionId || !message) {
+          throw new Error("ask_worker requires sessionId and message");
+        }
+        // Verify the target is a worker session in this project
+        const targetSession = this.sessionManager.getSession(targetSessionId);
+        if (!targetSession) throw new Error(`Worker session ${targetSessionId} not found`);
+        if (targetSession.projectId !== projectId) {
+          throw new Error(`Session ${targetSessionId} does not belong to this project`);
+        }
+        if (this.sessionManager.isOrchestratorSession(targetSessionId)) {
+          throw new Error("Cannot ask_worker on a manager session");
+        }
+
+        console.log(`[Orchestrator] ask_worker: sending message to worker ${targetSessionId}`);
+        const response = await this.sessionManager.sendPromptAndWaitForResponse(targetSessionId, message);
+
+        // Truncate very long responses to avoid blowing up manager context
+        const maxLen = 12000;
+        const truncated = response.length > maxLen
+          ? response.slice(0, maxLen) + "\n\n... [truncated, response was " + response.length + " chars]"
+          : response;
+
+        return { sessionId: targetSessionId, response: truncated };
+      }
+
+      case "send_to_worker": {
+        const targetSessionId = args.sessionId as string;
+        const message = args.message as string;
+        if (!targetSessionId || !message) {
+          throw new Error("send_to_worker requires sessionId and message");
+        }
+        const targetSession = this.sessionManager.getSession(targetSessionId);
+        if (!targetSession) throw new Error(`Worker session ${targetSessionId} not found`);
+        if (targetSession.projectId !== projectId) {
+          throw new Error(`Session ${targetSessionId} does not belong to this project`);
+        }
+        if (this.sessionManager.isOrchestratorSession(targetSessionId)) {
+          throw new Error("Cannot send_to_worker on a manager session");
+        }
+
+        console.log(`[Orchestrator] send_to_worker: sending message to worker ${targetSessionId} (non-blocking)`);
+        await this.sessionManager.sendPrompt(targetSessionId, message);
+
+        return { sessionId: targetSessionId, status: "sent" };
       }
 
       default:
@@ -1021,7 +1101,8 @@ export class WebSocketHandler {
       });
 
       // Auto-move task back to "in-progress" when session becomes busy again
-      if (status === "busy") {
+      // Skip when worker is in manager conversation (ask_worker) — task stays in-review
+      if (status === "busy" && !this.sessionManager.isInManagerConversation(sessionId)) {
         const updatedTask = this.projectManager.handleSessionBusy(sessionId);
         if (updatedTask) {
           this.broadcast({ type: "task.sessionBusy", task: updatedTask });
@@ -1030,9 +1111,17 @@ export class WebSocketHandler {
 
       // Auto-move task to "in-review" when linked session completes
       if (status === "idle" && !error) {
-        const updatedTask = this.projectManager.handleSessionCompleted(sessionId);
-        if (updatedTask) {
-          this.broadcast({ type: "task.sessionCompleted", task: updatedTask });
+        // Skip task state change & notification when worker is responding to Manager via ask_worker
+        const inManagerConvo = this.sessionManager.isInManagerConversation(sessionId);
+
+        if (!inManagerConvo) {
+          const updatedTask = this.projectManager.handleSessionCompleted(sessionId);
+          if (updatedTask) {
+            this.broadcast({ type: "task.sessionCompleted", task: updatedTask });
+
+            // Notify the Manager session that this worker finished
+            this.notifyManagerOfWorkerCompletion(updatedTask, sessionId);
+          }
         }
       }
 
@@ -1072,6 +1161,25 @@ export class WebSocketHandler {
 
     this.sessionManager.on("session:showUser", (sessionId: string, title: string, html: string) => {
       this.broadcast({ type: "session.showUser", sessionId, title, html });
+    });
+  }
+
+  /**
+   * When a worker session completes a task, auto-notify the Manager session
+   * so it can request a summary or take follow-up actions.
+   */
+  private notifyManagerOfWorkerCompletion(task: import("../shared/types").Task, workerSessionId: string): void {
+    const project = this.projectManager.getProject(task.projectId);
+    if (!project?.orchestratorSessionId) return;
+
+    // Don't notify if manager session is dead
+    const managerSession = this.sessionManager.getSession(project.orchestratorSessionId);
+    if (!managerSession || managerSession.status === "terminated" || managerSession.status === "error") return;
+
+    const notification = `[System] Worker completed task "${task.title}" (taskId: ${task.id}, sessionId: ${workerSessionId}). The task has been moved to "in-review". You can use ask_worker to request a summary of what was done, then decide whether to approve (move to done), request changes, or assign follow-up work.`;
+
+    this.sessionManager.sendPrompt(project.orchestratorSessionId, notification).catch((err) => {
+      console.error(`[Orchestrator] Failed to notify manager of worker completion:`, err);
     });
   }
 
