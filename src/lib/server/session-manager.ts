@@ -67,7 +67,8 @@ export class SessionManager extends EventEmitter {
       resolvedWorkDir = workDir.replace(/^~(?=\/|$)/, process.env.HOME || "~");
     } else {
       try {
-        const ch = await this.sshManager.exec(machine, `realpath "${workDir.replace(/"/g, '\\"')}" 2>/dev/null || echo "${workDir.replace(/"/g, '\\"')}"`);
+        // Use `cd && pwd` (not realpath) to preserve symlinks — matches $PWD the user sees
+        const ch = await this.sshManager.exec(machine, `cd "${workDir.replace(/"/g, '\\"')}" 2>/dev/null && pwd || echo "${workDir.replace(/"/g, '\\"')}"`);
         const out = await new Promise<string>((resolve) => {
           let s = "";
           ch.on("data", (d: Buffer) => { s += d.toString(); });
