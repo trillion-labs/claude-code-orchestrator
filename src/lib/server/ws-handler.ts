@@ -1185,8 +1185,8 @@ export class WebSocketHandler {
         await this.projectManager.updateTask(session.projectId, session.taskId, { claudeSessionId });
         console.log(`[Session ${sessionId}] Updated task claudeSessionId → ${claudeSessionId}`);
       }
-      // Initial history load used wrong UUID — reload with the real UUID from Claude
-      await this.sessionManager.ensureSessionHistory(sessionId);
+      // New session ID from Claude after --resume: load new JSONL file and append to existing history
+      await this.sessionManager.ensureSessionHistory(sessionId, true);
       const messages = this.sessionManager.getSessionMessages(sessionId);
       if (messages.length > 0) {
         this.broadcast({ type: "session.history", sessionId, messages, hasMore: false });

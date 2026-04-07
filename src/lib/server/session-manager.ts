@@ -1871,15 +1871,16 @@ for line in sys.stdin:
    * If already in memory, no-op. Otherwise loads from the .jsonl file on disk.
    * Used by session.list reconnect so it uses the same path as task resume.
    */
-  async ensureSessionHistory(sessionId: string): Promise<void> {
+  async ensureSessionHistory(sessionId: string, forceAppend = false): Promise<void> {
     const managed = this.sessions.get(sessionId);
-    if (!managed || managed.messages.length > 0) return;
+    if (!managed) return;
+    if (!forceAppend && managed.messages.length > 0) return;
     const { claudeSessionId } = managed.session;
     if (!claudeSessionId) return;
     if (managed.machine.type === "local") {
-      await this.loadSessionHistory(managed, claudeSessionId);
+      await this.loadSessionHistory(managed, claudeSessionId, forceAppend);
     } else {
-      await this.loadRemoteSessionHistory(managed, managed.machine, claudeSessionId);
+      await this.loadRemoteSessionHistory(managed, managed.machine, claudeSessionId, forceAppend);
     }
   }
 
@@ -1906,7 +1907,7 @@ for line in sys.stdin:
     return managed?.inManagerConversation === true;
   }
 
-  private async loadSessionHistory(managed: ManagedSession, claudeSessionId: string): Promise<void> {
+  private async loadSessionHistory(managed: ManagedSession, claudeSessionId: string, append = false): Promise<void> {
     const claudeDir = join(homedir(), ".claude", "projects");
 
     try {
@@ -1916,7 +1917,7 @@ for line in sys.stdin:
         const filePath = join(claudeDir, project, `${claudeSessionId}.jsonl`);
         try {
           const content = await readFile(filePath, "utf-8");
-          this.parseSessionJsonl(managed, content);
+          this.parseSessionJsonl(managed, content, append);
           return; // Found the file, done
         } catch {
           // File not in this project dir, try next
@@ -1927,7 +1928,7 @@ for line in sys.stdin:
     }
   }
 
-  private async loadRemoteSessionHistory(managed: ManagedSession, machine: MachineConfig, claudeSessionId: string): Promise<"loaded" | "not_found" | "error"> {
+  private async loadRemoteSessionHistory(managed: ManagedSession, machine: MachineConfig, claudeSessionId: string, append = false): Promise<"loaded" | "not_found" | "error"> {
     try {
       // Search for the session file in ~/.claude/projects AND workDir ancestors' .claude/projects
       // This handles direnv setups where CLAUDE_CONFIG_DIR points to a custom location
@@ -1973,7 +1974,7 @@ for line in sys.stdin:
       if (!content) return "not_found";
 
       // Parse the JSONL content — same logic as loadSessionHistory
-      this.parseSessionJsonl(managed, content);
+      this.parseSessionJsonl(managed, content, append);
       return "loaded";
     } catch (err) {
       console.warn("Could not load remote session history:", (err as Error).message);
@@ -1995,7 +1996,7 @@ for line in sys.stdin:
     }
   }
 
-  private parseSessionJsonl(managed: ManagedSession, content: string): void {
+  private parseSessionJsonl(managed: ManagedSession, content: string, append = false): void {
     const lines = content.split("\n").filter(Boolean);
     const allMessages: ConversationMessage[] = [];
 
@@ -2065,7 +2066,12 @@ for line in sys.stdin:
 
     // Only keep and emit the most recent messages
     const recent = allMessages.slice(-MAX_RECENT_MESSAGES);
-    managed.messages = recent;
+    if (append) {
+      // Merge with existing messages and keep the last MAX_RECENT_MESSAGES
+      managed.messages = [...managed.messages, ...recent].slice(-MAX_RECENT_MESSAGES);
+    } else {
+      managed.messages = recent;
+    }
     for (const m of recent) {
       this.emit("session:message", managed.session.id, m);
     }
