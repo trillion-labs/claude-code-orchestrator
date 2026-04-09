@@ -182,6 +182,26 @@ export class SSHConnectionManager extends EventEmitter {
    * Write a file to a remote machine via SFTP.
    * Works even after forwardIn (unlike exec which hangs).
    */
+  async readRemoteFile(machine: MachineConfig, remotePath: string): Promise<string> {
+    const client = await this.getConnection(machine);
+    return new Promise((resolve, reject) => {
+      client.sftp((err, sftp) => {
+        if (err) return reject(err);
+        const stream = sftp.createReadStream(remotePath);
+        const chunks: Buffer[] = [];
+        stream.on("data", (chunk: Buffer) => { chunks.push(chunk); });
+        stream.on("close", () => {
+          sftp.end();
+          resolve(Buffer.concat(chunks).toString("utf-8"));
+        });
+        stream.on("error", (e: Error) => {
+          sftp.end();
+          reject(e);
+        });
+      });
+    });
+  }
+
   async writeRemoteFile(machine: MachineConfig, remotePath: string, content: string, opts?: { mode?: number }): Promise<void> {
     const client = await this.getConnection(machine);
     return new Promise((resolve, reject) => {

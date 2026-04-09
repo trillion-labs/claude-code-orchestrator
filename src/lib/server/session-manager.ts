@@ -1932,14 +1932,8 @@ done
       // originalCwd will be set from the JSONL's cwd field in parseSessionJsonl
       // (project dir name like -fsx-suyeong-lm-evaluation-harness is lossy — can't distinguish hyphens from path separators)
 
-      // Cat the file content
-      const catChannel = await this.sshManager.exec(machine, `cat "${filePath}"`);
-      const content = await new Promise<string>((resolve) => {
-        let out = "";
-        catChannel.on("data", (data: Buffer) => { out += data.toString(); });
-        catChannel.on("close", () => resolve(out));
-        catChannel.on("error", () => resolve(""));
-      });
+      // Read the file via SFTP (binary protocol — reliable even under SSH instability)
+      const content = await this.sshManager.readRemoteFile(machine, filePath);
 
       if (!content) return "not_found";
 
