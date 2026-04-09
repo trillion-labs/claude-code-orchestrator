@@ -8,13 +8,17 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { useStore } from "@/store";
 import type { Session } from "@/lib/shared/types";
 import type { ClientMessage } from "@/lib/shared/protocol";
-import { Monitor, Server, GitBranch, FolderOpen, X, PanelRight, GripVertical } from "lucide-react";
+import { Monitor, Server, GitBranch, FolderOpen, X, PanelRight, GripVertical, Check } from "lucide-react";
 import { TimeAgo } from "./TimeAgo";
 
 interface SessionCardProps {
   session: Session;
   isActive: boolean;
+  isSelected?: boolean;
+  selectMode?: boolean;
   onClick: () => void;
+  onDragSelectStart?: (sessionId: string) => void;
+  onDragSelectEnter?: (sessionId: string) => void;
   attentionCount: number;
   displayName?: string;
   onRename: (name: string) => void;
@@ -25,7 +29,11 @@ interface SessionCardProps {
 export function SessionCard({
   session,
   isActive,
+  isSelected = false,
+  selectMode = false,
   onClick,
+  onDragSelectStart,
+  onDragSelectEnter,
   attentionCount,
   displayName,
   onRename,
@@ -111,25 +119,52 @@ export function SessionCard({
         tabIndex={0}
         onClick={onClick}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
+        onMouseDown={(e) => {
+          if (e.button === 0) onDragSelectStart?.(session.id);
+        }}
+        onMouseEnter={() => onDragSelectEnter?.(session.id)}
         className={`group/card w-full text-left p-3 rounded-lg border transition-colors overflow-hidden cursor-pointer ${
-          isActive
-            ? "bg-accent border-accent-foreground/20"
-            : hasAttention
-              ? "border-amber-500/40 hover:bg-accent/50"
-              : "border-border hover:bg-accent/50"
+          isSelected
+            ? "bg-primary/10 border-primary/50 ring-1 ring-primary/30"
+            : isActive
+              ? "bg-accent border-accent-foreground/20"
+              : hasAttention
+                ? "border-amber-500/40 hover:bg-accent/50"
+                : "border-border hover:bg-accent/50"
         }`}
       >
 
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <button
-            className="cursor-grab active:cursor-grabbing p-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors touch-none shrink-0"
-            {...attributes}
-            {...listeners}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripVertical className="w-3.5 h-3.5" />
-          </button>
+          {/* Checkbox (visible on hover or when selected) / Grip handle (hidden when selected) */}
+          <div className="relative shrink-0 w-3.5 h-3.5">
+            {/* Checkbox overlay */}
+            <div
+              className={`absolute inset-0 rounded border flex items-center justify-center transition-all ${
+                isSelected
+                  ? "bg-primary border-primary opacity-100"
+                  : "border-muted-foreground/40 opacity-0 group-hover/card:opacity-100"
+              }`}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onDragSelectStart?.(session.id);
+              }}
+            >
+              {isSelected && <Check className="w-2.5 h-2.5 text-primary-foreground" />}
+            </div>
+            {/* Grip handle (hidden when selected or in select mode) */}
+            {!isSelected && !selectMode && (
+              <button
+                className="absolute inset-0 cursor-grab active:cursor-grabbing p-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors touch-none group-hover/card:opacity-0"
+                {...attributes}
+                {...listeners}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <GripVertical className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           {isLocal ? (
             <Monitor className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           ) : (
